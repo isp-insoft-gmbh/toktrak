@@ -1,0 +1,4 @@
+[tools]
+coursier = "latest"
+google-java-format = "latest"
+java = "latest"
