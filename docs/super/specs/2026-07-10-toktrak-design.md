@@ -1,13 +1,14 @@
 # TokTrak design
 
 Date: 2026-07-10
-Status: draft for review
+Status: approved
 
 ## Goal
 
 TokTrak tracks projected AI coding harness usage cost for an internal team.
 
-It is for cost awareness and exploration, not billing, performance review, or prompt/code surveillance.
+It is for cost awareness and exploration, not billing, performance review, or
+prompt/code surveillance.
 
 ## Product stance
 
@@ -45,24 +46,27 @@ TokTrak has two parts:
 
 Allowed production dependencies:
 
-- Jackson core/databind/annotations, explicit.
-- Nimbus JOSE JWT, explicit.
+- Jackson core/databind/annotations 2.22.1, explicit JPMS modules.
+- Nimbus JOSE JWT 10.9.1, explicit JPMS module.
 - Datastar browser JS, vendored/pinned.
 - JUnit/test deps only for tests.
+
+Dependency updates must pass the production jlink build; automatic modules are
+rejected.
 
 Rejected dependencies:
 
 - Spring, Netty, servlet/JAX-RS stacks.
 - SQLite or any DB.
 - Full OIDC SDKs that introduce automatic modules incompatible with jlink.
-- Datastar Java SDK core unless it becomes a real JPMS module.
+- Datastar Java SDK core 1.0.0 unless it becomes a real JPMS module.
 
 ## Runtime model
 
 - Requests run on virtual threads.
 - A single writer queue serializes event-log appends.
 - Long-lived writer worker uses one platform thread.
-- Background async work, such as FX/avatar fetches, uses virtual threads.
+- Background async work, such as FX fetches, uses virtual threads.
 - Request context is bound with Java scoped values.
 - Request context contains request id, method, path, user id, token id, mode.
 
@@ -102,7 +106,8 @@ Browser errors render a brutal HTML error page.
 
 Startup config/log corruption failures fail hard before binding the port.
 
-Runtime degraded mode starts only after successful startup when event appending fails.
+Runtime degraded mode starts only after successful startup when event appending
+fails.
 
 Degraded mode:
 
@@ -114,11 +119,14 @@ Degraded mode:
 
 Projection corruption at runtime hard-stops because displayed data cannot be trusted.
 
-`/health` returns `ok` only when service is writable and healthy. In degraded/failure states it returns failure with a terse reason category and no secrets.
+`/health` returns `ok` only when service is writable and healthy. In
+degraded/failure states it returns failure with a terse reason category and no
+secrets.
 
 ## Logging
 
-Use `java.util.logging` with a custom JSON `Formatter` writing compact JSON lines to stdout.
+Use `java.util.logging` with a custom JSON `Formatter` writing compact JSON
+lines to stdout.
 
 Log fields:
 
@@ -134,8 +142,9 @@ Do not log emails, token plaintext, or token hashes.
 
 ## Security headers and browser security
 
-- One opaque auth cookie.
-- Cookie is `HttpOnly` and `SameSite=Lax`.
+- One opaque session cookie plus one short-lived OIDC transaction cookie during
+  login.
+- Both cookies are signed, `HttpOnly`, and `SameSite=Lax`.
 - Cookie `Secure` is derived from `TOKTRAK_BASE_URL`: HTTPS means secure, HTTP means non-secure.
 - Non-localhost HTTP is rejected unless dev auth is explicitly enabled.
 - CSRF token required for mutating browser POST forms.
@@ -150,9 +159,14 @@ Do not log emails, token plaintext, or token hashes.
 OIDC is implemented manually:
 
 - Discovery fetch from `TOKTRAK_OIDC_DISCOVERY_URL`.
-- Authorization redirect.
-- Token exchange using JDK `HttpClient`.
-- ID-token signature and claims validation with Nimbus JOSE JWT and provider JWKS.
+- Authorization-code flow with PKCE.
+- Login generates cryptographically random state, nonce, and PKCE verifier.
+- A short-lived signed transaction cookie binds state, nonce, and verifier to
+  the callback.
+- Token exchange uses JDK `HttpClient`.
+- Nimbus JOSE JWT validates the provider JWKS signature, issuer, audience,
+  authorized party when required, expiry, and nonce.
+- State comparison is constant-time and consumes the transaction cookie.
 - Session cookie is stateless and signed.
 
 Required OIDC env vars in prod:
@@ -172,6 +186,9 @@ Google Workspace discovery URL:
 https://accounts.google.com/.well-known/openid-configuration
 ```
 
+Google Workspace is the primary OIDC provider for isp-insoft today, but the
+project need not hard-code the URL; it only needs to work.
+
 Scopes:
 
 ```text
@@ -181,9 +198,12 @@ openid email profile
 User identity:
 
 - Stable id is `issuer + subject`.
-- Email, display name, and avatar URL are mutable profile fields.
-- Validate `hd == TOKTRAK_ALLOWED_DOMAIN` when present.
-- Also validate email suffix as fallback.
+- Email and display name are mutable profile fields.
+- Require `email_verified == true`.
+- Parse the email address and compare its domain case-insensitively for exact
+  equality with `TOKTRAK_ALLOWED_DOMAIN`; suffix matching is forbidden.
+- When `hd` is present, it must also match the allowed domain exactly,
+  case-insensitively.
 - Non-company domains are rejected even if OAuth succeeds.
 
 Dev auth:
@@ -192,13 +212,17 @@ Dev auth:
 - Dev auth relaxes OIDC requirements.
 - Every page shows a minimal red dev-auth strip.
 - Test corpus users remain visible; dev auth controls only current viewer.
+- When a corpus is loaded, the fake viewer maps to its designated active user.
 
 Sessions:
 
 - Stateless signed cookie.
-- 30-day lifetime, refreshed on activity.
-- No global instant logout without a session DB.
-- Self-deactivation clears current browser cookie and lets other sessions expire naturally.
+- 30-day lifetime, refreshed on activity while the user remains active.
+- Every protected request checks the active-user projection.
+- Self-deactivation immediately invalidates every session for that user; a
+  rejected session cookie is cleared.
+- Individual-session revocation is unavailable without session state.
+- A successful OIDC re-login reactivates the user and issues a new cookie.
 
 ## Users
 
@@ -223,12 +247,8 @@ Self-deactivation:
 
 Profile avatars:
 
-- Provider avatar URL is read from OIDC claims.
-- Server fetches avatar asynchronously.
-- Cached avatar files live under `${TOKTRAK_DATA_DIR}/cache/avatars`.
-- Avatar cache is non-essential and safe to delete.
-- Login/dashboard never blocks on avatar fetch.
-- Initials avatar is fallback.
+- V1 uses initials avatars only.
+- Provider avatar URLs are neither stored nor fetched.
 
 User color:
 
@@ -246,11 +266,12 @@ Token model:
 - Many active tokens per user.
 - Each token has an immutable optional label set at creation.
 - UI proposes default label: `Tracker token YYYY-MM-DD HH:mm`.
-- Plaintext token is shown once.
-- Token hash only is stored.
-- Token hash is SHA-256 over random 256-bit token plus `TOKTRAK_TOKEN_PEPPER`.
+- Plaintext token is shown once, with button for easy copy and paste.
+- Tokens contain 256 random bits and are shown as base64url.
+- Only `HMAC-SHA-256(TOKTRAK_TOKEN_PEPPER, token)` is stored.
+- Direct digest comparisons use `MessageDigest.isEqual`.
 - Pepper is required and stable; changing it invalidates all tracker tokens.
-- No pepper rotation in v1.
+- No pepper rotation in v1. Pepper can be rotated manually. That will invalidate all tokens, which is fine.
 
 Token list shows:
 
@@ -271,13 +292,17 @@ TokTrak has one append-only event log:
 ${TOKTRAK_DATA_DIR}/events.ndjson
 ```
 
+Before reading the log or binding HTTP, the process exclusively locks
+`${TOKTRAK_DATA_DIR}/toktrak.lock` and holds that file lock for its lifetime.
+Lock failure aborts startup.
+
 Format:
 
 - UTF-8.
 - One compact JSON object per line.
 - Newline-terminated.
 - One event envelope per line.
-- Hard max line size: 5 MiB.
+- Hard max line size: 10 MiB.
 
 Envelope fields:
 
@@ -314,7 +339,7 @@ Snapshots:
 - Include `projectionVersion`.
 - Startup reads latest compatible snapshot plus newer raw events.
 - If projection version changes, recompute by appending new snapshot events.
-- Never rewrite the event log in place.
+- Never rewrite the event log in place except for torn-tail recovery.
 - Snapshot event max is 5 MiB; if exceeded, skip snapshot and log.
 
 Backups:
@@ -324,8 +349,10 @@ Backups:
 
 Corruption:
 
-- Bad log line causes loud startup failure.
-- No silent skipping.
+- Startup truncates only a final non-newline-terminated fragment to the last
+  complete newline and logs the recovery.
+- A malformed newline-terminated line causes loud startup failure.
+- No complete event is silently skipped.
 
 Future file I/O optimization:
 
@@ -338,22 +365,27 @@ Future file I/O optimization:
 Request flow:
 
 1. Request enters virtual-thread handler.
-2. Auth/token/request parsing happens outside the write lock.
-3. Ingestion normalizes payload against immutable in-memory projection state.
-4. Event is submitted to bounded writer queue.
-5. Writer appends, flushes, fsyncs where needed.
-6. Projection consumes appended event.
-7. SSE dirty flag is set.
+2. Credential parsing, body parsing, and stateless validation happen outside
+   the writer.
+3. A parsed command is submitted to the bounded writer queue.
+4. The writer performs all state-dependent authorization, normalization, and
+   dedupe against the current projection.
+5. The writer appends the resulting event, flushes, and fsyncs where required.
+6. The projection consumes the appended event.
+7. The request completes.
+8. The SSE dirty flag is set.
 
 Writer queue:
 
 - Single consumer.
-- Bounded to 1024 events.
+- Bounded to 1024 commands.
 - Full queue returns 503.
 - Tracker retries later.
+- Mutation success is returned only after append, required fsync, and
+  projection apply complete.
 - Token mutations and uploads fsync every event.
 - Snapshot writes may batch.
-- Snapshot events use the same queue.
+- Snapshot commands use the same queue.
 
 SSE updates:
 
@@ -398,16 +430,26 @@ ccusage version:
 - Tracker pins ccusage version.
 - Tracker sends ccusage version.
 - Server stores raw data for all supported versions starting from current latest, 20.0.17.
+- In 20.0.17 JSON, report array roots are `daily`, singular `session`, and
+  `blocks`.
 - New schema support must be additive.
 - Unknown/new fields are accepted and stored.
 - Normalization failures mark the payload; data can be ingested later.
 
 Dedupe/idempotency:
 
-- Server dedupes and normalizes.
-- Initial install may upload full history more than once.
-- Scheduled uploads overlap recent days.
-- Repeated data is harmless.
+- Every accepted upload is stored as an event; dedupe happens in projections.
+- Report rows are snapshots, never additive deltas.
+- `generatedAt` must be a valid instant no more than 24 hours after server
+  receipt time.
+- The newest `generatedAt` upserts daily rows by `(userId, period)`, session rows
+  by `(userId, agent, period)`, and blocks by `(userId, id)`.
+- Older uploads may fill absent keys but never replace newer rows.
+- Equal `generatedAt` values resolve by event-log order.
+- Missing rows never delete prior projected rows.
+- A failed report leaves that report's prior projection unchanged.
+- Initial installs and scheduled uploads may overlap or repeat full history
+  without double counting.
 
 Partial reports:
 
@@ -415,12 +457,30 @@ Partial reports:
 - Server stores partial payloads.
 - Dashboard shows subtle ingestion health.
 
+Report authority:
+
+- Daily is canonical for costs, tokens, trends, model mix, and source mix.
+- Session is canonical only for session/project detail.
+- Blocks is canonical only for usage rhythm and block detail.
+- Ccusage 20.0.17 blocks are aggregate and have no agent or per-model token
+  attribution.
+- Session and blocks data never contribute again to daily-derived totals.
+
 Tracker report commands:
 
-- Run daily report with as much detail as ccusage supports, including breakdown.
-- Run session report.
-- Run blocks report where supported.
-- Monthly is derived server-side unless future ccusage data makes direct upload clearly better.
+- Run unified daily report with as much detail as ccusage supports, including
+  breakdown.
+- Run unified session report.
+- Run unified blocks report where supported.
+- Monthly is derived server-side unless future ccusage data makes direct upload
+  clearly better.
+- Resolve the Pi sessions directory in this order: `PI_AGENT_DIR`,
+  `PI_CODING_AGENT_SESSION_DIR`, `sessionDir` in
+  `${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json`, then
+  `~/.pi/agent/sessions`.
+- Set the resolved path as `PI_AGENT_DIR` only in the ccusage child process so
+  unified reports include non-standard Pi storage.
+- Never modify the user's system or shell environment.
 
 ## Tracker install and scheduling
 
@@ -448,6 +508,10 @@ Install paths:
 - Windows: `%LocalAppData%\TokTrak`
 - macOS: `~/Library/Application Support/TokTrak`
 - Linux: `$XDG_DATA_HOME/toktrak` or `~/.local/share/toktrak`
+- macOS/Linux create the directory as `0700` and installed script as `0600`;
+  installation fails if those modes cannot be established.
+- Windows relies on the inherited `%LocalAppData%` ACL and does not rewrite
+  custom ACLs.
 
 No marker/state file is needed for full-history tracking.
 
@@ -464,9 +528,10 @@ Scheduling:
 - macOS: user LaunchAgent only.
 - Windows: user-scoped `schtasks`, only when user logged in.
 - No cron fallback.
-- No root/admin.
-- Installer refuses root/admin execution.
-- Uninstall also refuses root/admin and only works for same user.
+- No root or elevated installation.
+- Installer refuses Unix root and elevated Windows execution; membership in the
+  Windows Administrators group alone is allowed.
+- Uninstall enforces the same rule and only works for the installing user.
 
 Scheduled run behavior:
 
@@ -490,7 +555,8 @@ Logs:
 Self-update:
 
 - Upload response includes latest tracker version and personalized update URL.
-- Update URL requires bearer tracker token.
+- Tracker sends its bearer token only in the update request `Authorization`
+  header; tokens are forbidden in URLs and query parameters.
 - Tracker downloads updated personalized script after successful upload.
 - Update verifies SHA-256 from authenticated server response.
 - Update writes temp file and atomic-renames over installed script.
@@ -587,10 +653,57 @@ FX behavior:
 
 ## Dev/test corpus
 
-- Test corpus is an event log file, not a separate import format.
-- Use plain `.ndjson`, not gzip/zstd.
-- Dev server can use a corpus event log as its data file.
-- Release container image does not include the test corpus.
+The committed manual-testing corpus is `tests/corpus/dev.jsonl`.
+
+Corpus content:
+
+- It is a plain event log, not a separate import format or compressed file.
+- It contains complete ccusage history from all detected agents.
+- Daily data remains canonical; session and blocks data provide only their
+  designated detail views.
+- Five realistic synthetic users with `.invalid` emails receive randomly
+  assigned whole sessions.
+- Session-derived weights partition daily and blocks values while preserving
+  canonical totals exactly.
+- Names, emails, user ids, token ids, session ids, project names, paths, and
+  other personal identifiers are replaced.
+- Agent names, model names, timestamps, token counts, and costs are preserved.
+- One active synthetic user's provider subject is the fixed dev-auth viewer
+  subject.
+- Mixed state includes healthy uploads, one partial upload, one revoked token,
+  and one deleted user.
+
+Corpus creation:
+
+- Run pinned unified ccusage daily, session, and blocks reports once.
+- Resolve non-standard Pi storage and set `PI_AGENT_DIR` only for those child
+  processes.
+- A temporary Node transformer outside the repository reads only whitelisted
+  report fields, sanitizes identifiers, partitions data, and writes the event
+  log.
+- Scan the result for local usernames, emails, home/workspace paths, original
+  project/session identifiers, and unexpected fields before copying it into
+  the repository.
+- Delete all temporary raw reports and transformer files.
+- Commit only `tests/corpus/dev.jsonl`; future additions directly edit it.
+
+Dev behavior:
+
+```text
+mise run dev --corpus tests/corpus/dev.jsonl
+mise run dev --corpus tests/corpus/dev.jsonl --fail-writes
+```
+
+- Dev startup copies the corpus into disposable data under `output/`; it never
+  opens the committed fixture for append.
+- The dev `Clock` is pinned to the corpus's latest usage timestamp so current
+  period views remain populated without changing event timestamps.
+- `--fail-writes` injects writer failure and enters degraded mode immediately
+  after HTTP binding.
+- Corpus loading and fault injection are accepted only in dev mode.
+- The same corpus serves healthy and degraded manual testing.
+- Integration tests may reuse the corpus when runtime remains fast.
+- Release container images exclude the corpus.
 
 ## Container and build
 
@@ -654,18 +767,32 @@ Docs must state:
 
 Test layers:
 
-- Event parsing and envelope validation.
+- Event parsing, envelope validation, and 10 MiB line limit.
+- Data-directory lock rejects a second process.
+- Torn-tail truncation and hard failure for malformed complete lines.
 - Projection rebuild from raw events and snapshots.
 - Snapshot version invalidation/recompute by append.
-- Token hash lookup and revocation.
-- Upload dedupe/idempotency.
+- HMAC token lookup, constant-time digest comparison, and revocation.
+- Production jlink build rejects automatic modules.
+- Upload dedupe/idempotency, including concurrent duplicates, stale uploads,
+  and future `generatedAt` rejection.
+- Mutation responses wait for append, required fsync, and projection apply.
 - Unknown ccusage schema fields are preserved.
+- Daily/session/blocks authority prevents double counting.
+- Pi path resolution and child-only `PI_AGENT_DIR` override.
+- Corpus parsing, dev-viewer mapping, pinned dev clock, and immediate
+  `--fail-writes` degradation.
 - Oversize upload returns 413.
 - Writer queue full returns 503.
 - `/health` success/failure.
 - Fake OIDC provider with JDK `HttpServer`, no mock library.
+- OIDC state, nonce, PKCE, signature, issuer, audience, authorized-party,
+  expiry, verified email, and exact domain validation.
+- Deactivation invalidates all sessions; OIDC re-login reactivates.
 - Dev auth path.
 - Tracker script with fake ccusage command and fake server, Node stdlib only.
+- Tracker update authentication uses headers and never URLs.
+- Tracker install permissions on macOS/Linux.
 - No podman required for tests.
 
 ## Explicit v1 exclusions
@@ -677,7 +804,7 @@ Test layers:
 - Dashboard customization.
 - Cross-user project/session matching.
 - Database.
-- Event log rewrite/compaction.
+- Event log rewrite/compaction beyond torn-tail recovery.
 - Configurable upload max.
 - Request protocol upgrades beyond HTTP/1.1.
 - Automatic root/system install.
