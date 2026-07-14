@@ -2,3 +2,18 @@
 coursier = "latest"
 google-java-format = "latest"
 java = "latest"
+
+[tasks.install]
+run = "java tools/Build.java deps"
+
+[tasks.build]
+run = "java tools/Build.java compile"
+
+[tasks.verify]
+run = "java tools/Build.java test"
+
+[tasks.link-prod]
+run = "java tools/Build.java jlink-prod"
+
+[tasks.dev]
+run = "java tools/Build.java dev --"
