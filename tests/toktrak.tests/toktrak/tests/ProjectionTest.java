@@ -1,13 +1,11 @@
 package toktrak.tests;
 
-import toktrak.*;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import toktrak.*;
 import toktrak.projection.Projection;
 import toktrak.store.EventEnvelope;
 
@@ -16,18 +14,45 @@ final class ProjectionTest {
   void rebuildCountsRawEventsAfterLatestCompatibleSnapshot() {
     var t = Instant.parse("2026-07-10T00:00:00Z");
     var old = EventEnvelope.create("dev-test", t, "system", Map.of());
-    var snap = EventEnvelope.create("projection-snapshot", t, "system", Map.of("projectionVersion", Projection.VERSION, "eventCount", 5));
+    var snap =
+        EventEnvelope.create(
+            "projection-snapshot",
+            t,
+            "system",
+            Map.of("projectionVersion", Projection.VERSION, "eventCount", 5));
     var newer = EventEnvelope.create("dev-test", t, "system", Map.of());
-    var projection = Projection.rebuild(List.of(old, snap, newer));
+    var projection = Projection.empty();
+    projection.apply(old);
+    projection.apply(snap);
+    projection.apply(newer);
     assertEquals(6, projection.eventCount());
+  }
+
+  @Test
+  void rawEventAfterMaximumSnapshotOverflows() {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    var projection = Projection.empty();
+    projection.apply(
+        EventEnvelope.create(
+            "projection-snapshot",
+            at,
+            "system",
+            Map.of("projectionVersion", Projection.VERSION, "eventCount", Integer.MAX_VALUE)));
+
+    var event = EventEnvelope.create("dev-test", at, "system", Map.of());
+    assertThrows(ArithmeticException.class, () -> projection.apply(event));
   }
 
   @Test
   void ignoresIncompatibleSnapshotAndReplaysAllRawEvents() {
     var t = Instant.parse("2026-07-10T00:00:00Z");
     var raw = EventEnvelope.create("dev-test", t, "system", Map.of());
-    var snap = EventEnvelope.create("projection-snapshot", t, "system", Map.of("projectionVersion", -1, "eventCount", 100));
-    var projection = Projection.rebuild(List.of(raw, snap));
+    var snap =
+        EventEnvelope.create(
+            "projection-snapshot", t, "system", Map.of("projectionVersion", -1, "eventCount", 100));
+    var projection = Projection.empty();
+    projection.apply(raw);
+    projection.apply(snap);
     assertEquals(1, projection.eventCount());
   }
 }

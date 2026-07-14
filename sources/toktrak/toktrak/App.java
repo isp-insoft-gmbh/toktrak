@@ -4,25 +4,30 @@ import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import toktrak.log.JsonLogFormatter;
 import toktrak.dev.DevData;
 import toktrak.health.HealthState;
 import toktrak.http.Router;
+import toktrak.log.JsonLogFormatter;
+import toktrak.projection.Projection;
 import toktrak.store.DataLock;
 import toktrak.store.EventLog;
 import toktrak.store.Writer;
-import toktrak.projection.Projection;
 
 public final class App implements AutoCloseable {
   private static final Logger LOG = Logger.getLogger(App.class.getName());
+  private static final int HTTP_BACKLOG = 128;
+  private static final int HTTP_WORKER_COUNT = 64;
+  private static final int HTTP_QUEUE_CAPACITY = 256;
   private final HttpServer server;
   private final ExecutorService executor;
   private final DataLock dataLock;
@@ -33,8 +38,23 @@ public final class App implements AutoCloseable {
   private final int port;
   private final AtomicBoolean closed = new AtomicBoolean();
 
-  private App(HttpServer server, ExecutorService executor, DataLock dataLock, EventLog eventLog,
-      Writer writer, Projection projection, HealthState health, int port) {
+  private App(
+      HttpServer server,
+      ExecutorService executor,
+      DataLock dataLock,
+      EventLog eventLog,
+      Writer writer,
+      Projection projection,
+      HealthState health,
+      int port) {
+    assert server != null;
+    assert executor != null;
+    assert dataLock != null;
+    assert eventLog != null;
+    assert writer != null;
+    assert projection != null;
+    assert health != null;
+    assert port >= 0 && port <= 65_535;
     this.server = server;
     this.executor = executor;
     this.dataLock = dataLock;
@@ -45,45 +65,63 @@ public final class App implements AutoCloseable {
     this.port = port;
   }
 
-  public static App start(String[] args, Map<String, String> env) {
+  public static App start(String[] args, Map<String, String> environment) {
+    Objects.requireNonNull(args, "args");
+    Objects.requireNonNull(environment, "environment");
     configureLogging();
-    Config config = Config.from(args, env);
-    if (config.corpus() != null) DevData.prepareDisposableCorpus(config.corpus(), config.dataDir());
-    DataLock dataLock = DataLock.acquire(config.dataDir());
+    Config config = Config.from(args, environment);
+    DataLock dataLock = DataLock.acquire(config.dataDirectory());
     EventLog eventLog = null;
     Writer writer = null;
     HttpServer server = null;
     ExecutorService executor = null;
     try {
-      Path eventPath = config.dataDir().resolve("events.ndjson");
+      if (config.corpus() != null)
+        DevData.prepareDisposableCorpus(config.corpus(), config.dataDirectory());
+      Path eventPath = config.dataDirectory().resolve("events.ndjson");
       EventLog.recoverTornTail(eventPath);
       eventLog = EventLog.open(eventPath);
-      Projection projection = Projection.rebuild(eventLog.readAll());
+      Projection projection = Projection.empty();
+      eventLog.replay(projection::apply);
       HealthState health = new HealthState();
       writer = Writer.start(eventLog, projection, health, config.clock(), config.failWrites());
-      server = HttpServer.create(new InetSocketAddress("127.0.0.1", config.port()), 0);
-      server.createContext("/", new Router(health, config.devAuth()));
-      executor = Executors.newVirtualThreadPerTaskExecutor();
-      server.setExecutor(executor);
+      executor =
+          new ThreadPoolExecutor(
+              HTTP_WORKER_COUNT,
+              HTTP_WORKER_COUNT,
+              0,
+              TimeUnit.NANOSECONDS,
+              new ArrayBlockingQueue<>(HTTP_QUEUE_CAPACITY),
+              Thread.ofVirtual().name("toktrak-http-", 0).factory(),
+              new ThreadPoolExecutor.AbortPolicy());
+      server = HttpServer.create(new InetSocketAddress("127.0.0.1", config.port()), HTTP_BACKLOG);
+      server.createContext("/", new Router(health, config.devAuth(), executor));
+      server.setExecutor(Runnable::run);
       server.start();
       if (config.failWrites()) health.degrade("writes_failed");
       int port = server.getAddress().getPort();
+      if (port < 0 || port > 65_535)
+        throw new IllegalStateException("HTTP server returned invalid port");
       LOG.info("bound HTTP server on port " + port);
-      return new App(server, executor, dataLock, eventLog, writer, projection, health, port);
-    } catch (Exception ex) {
+      var app = new App(server, executor, dataLock, eventLog, writer, projection, health, port);
+      assert app.port == port;
+      return app;
+    } catch (Exception exception) {
       if (server != null) server.stop(0);
-      if (executor != null) executor.close();
+      if (executor != null) shutdownExecutor(executor);
       if (writer != null) writer.close();
       if (eventLog != null) eventLog.close();
       dataLock.close();
-      if (ex instanceof RuntimeException runtime) throw runtime;
-      throw new IllegalStateException("cannot start TokTrak", ex);
+      if (exception instanceof RuntimeException runtimeException) throw runtimeException;
+      throw new IllegalStateException("cannot start TokTrak", exception);
     }
   }
 
   private static void configureLogging() {
     Logger root = Logger.getLogger("");
-    for (Handler handler : root.getHandlers()) root.removeHandler(handler);
+    Handler[] handlers = root.getHandlers();
+    if (handlers.length > 16) throw new IllegalStateException("logging handlers exceed 16 entries");
+    for (Handler handler : handlers) root.removeHandler(handler);
     var console = new ConsoleHandler();
     boolean quiet = Boolean.getBoolean("toktrak.quiet");
     console.setLevel(quiet ? Level.OFF : Level.ALL);
@@ -92,9 +130,20 @@ public final class App implements AutoCloseable {
     root.setLevel(quiet ? Level.OFF : Level.INFO);
   }
 
-  public int port() { return port; }
-  public Writer writer() { return writer; }
-  public Projection projection() { return projection; }
+  public int port() {
+    assert port >= 0 && port <= 65_535;
+    return port;
+  }
+
+  public Writer writer() {
+    assert writer != null;
+    return writer;
+  }
+
+  public Projection projection() {
+    assert projection != null;
+    return projection;
+  }
 
   @Override
   public void close() {
@@ -116,10 +165,20 @@ public final class App implements AutoCloseable {
   }
 
   private void shutdownExecutor() {
+    shutdownExecutor(executor);
+  }
+
+  private static void shutdownExecutor(ExecutorService executor) {
+    assert executor != null;
     executor.shutdown();
     try {
-      if (!executor.awaitTermination(10, TimeUnit.SECONDS)) executor.shutdownNow();
-    } catch (InterruptedException ex) {
+      if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+        executor.shutdownNow();
+        if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+          LOG.warning("HTTP executor did not terminate");
+        }
+      }
+    } catch (InterruptedException exception) {
       executor.shutdownNow();
       Thread.currentThread().interrupt();
     }

@@ -1,12 +1,11 @@
 package toktrak.tests;
 
-import toktrak.*;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import org.junit.jupiter.api.Test;
+import toktrak.*;
 import toktrak.log.JsonLogFormatter;
 
 final class JsonLogFormatterTest {

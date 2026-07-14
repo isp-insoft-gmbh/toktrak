@@ -7,6 +7,7 @@ import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class DataLock implements AutoCloseable {
@@ -16,30 +17,38 @@ public final class DataLock implements AutoCloseable {
   private final AtomicBoolean closed = new AtomicBoolean();
 
   private DataLock(FileChannel channel, FileLock lock) {
+    assert channel != null && channel.isOpen();
+    assert lock != null && lock.isValid();
     this.channel = channel;
     this.lock = lock;
   }
 
-  public static DataLock acquire(Path dataDir) {
+  public static DataLock acquire(Path dataDirectory) {
+    Objects.requireNonNull(dataDirectory, "dataDirectory");
     try {
-      Files.createDirectories(dataDir);
-      FileChannel channel = FileChannel.open(
-          dataDir.resolve("toktrak.lock"), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+      Files.createDirectories(dataDirectory);
+      FileChannel channel =
+          FileChannel.open(
+              dataDirectory.resolve("toktrak.lock"),
+              StandardOpenOption.CREATE,
+              StandardOpenOption.WRITE);
       try {
         FileLock lock = channel.tryLock();
         if (lock == null) {
           channel.close();
           throw new IllegalStateException(MESSAGE);
         }
-        return new DataLock(channel, lock);
-      } catch (OverlappingFileLockException ex) {
+        var dataLock = new DataLock(channel, lock);
+        assert lock.isValid();
+        return dataLock;
+      } catch (OverlappingFileLockException exception) {
         channel.close();
-        throw new IllegalStateException(MESSAGE, ex);
+        throw new IllegalStateException(MESSAGE, exception);
       }
-    } catch (IllegalStateException ex) {
-      throw ex;
-    } catch (IOException ex) {
-      throw new IllegalStateException("cannot lock TokTrak data directory", ex);
+    } catch (IllegalStateException exception) {
+      throw exception;
+    } catch (IOException exception) {
+      throw new IllegalStateException("cannot lock TokTrak data directory", exception);
     }
   }
 
@@ -49,8 +58,10 @@ public final class DataLock implements AutoCloseable {
     try {
       lock.release();
       channel.close();
-    } catch (IOException ex) {
-      throw new IllegalStateException("cannot release TokTrak data directory lock", ex);
+      assert !lock.isValid();
+      assert !channel.isOpen();
+    } catch (IOException exception) {
+      throw new IllegalStateException("cannot release TokTrak data directory lock", exception);
     }
   }
 }

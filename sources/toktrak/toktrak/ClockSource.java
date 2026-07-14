@@ -7,11 +7,15 @@ public interface ClockSource {
   Instant instant();
 
   static ClockSource system() {
-    return Instant::now;
+    ClockSource clock = Instant::now;
+    assert clock.instant() != null;
+    return clock;
   }
 
   static ClockSource fixed(Instant instant) {
-    Objects.requireNonNull(instant);
-    return () -> instant;
+    Objects.requireNonNull(instant, "instant");
+    ClockSource clock = () -> instant;
+    assert clock.instant().equals(instant);
+    return clock;
   }
 }
