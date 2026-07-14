@@ -6,6 +6,7 @@ public final class Main {
   private Main() {}
 
   public static void main(String[] args) throws Exception {
+    requireAssertions();
     if (args.length == 1 && args[0].equals("--help")) {
       System.out.println("TokTrak dev server");
       return;
@@ -26,5 +27,11 @@ public final class Main {
       Thread.currentThread().interrupt();
       app.close();
     }
+  }
+
+  private static void requireAssertions() {
+    boolean enabled = false;
+    assert enabled = true;
+    if (!enabled) throw new IllegalStateException("Java assertions must be enabled with -ea");
   }
 }

@@ -3,17 +3,22 @@ coursier = "latest"
 google-java-format = "latest"
 java = "latest"
 
-[tasks.install]
-run = "java tools/Build.java deps"
+[tasks.clean]
+description = "Remove generated modules, dependencies, argument files, and runtimes"
+run = "java tools/Build.java clean"
 
-[tasks.build]
-run = "java tools/Build.java compile"
+[tasks.check]
+description = "Resolve dependencies and compile/lint all modules"
+run = "java tools/Build.java check"
 
 [tasks.verify]
-run = "java tools/Build.java test"
-
-[tasks.link-prod]
-run = "java tools/Build.java jlink-prod"
+description = "Compile/lint all modules and run the test suite"
+run = "java tools/Build.java verify"
 
 [tasks.dev]
+description = "Compile and run TokTrak with the cached development runtime"
 run = "java tools/Build.java dev --"
+
+[tasks.prod]
+description = "Build and smoke-test the self-contained production runtime"
+run = "java tools/Build.java prod"

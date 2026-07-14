@@ -1,5 +1,6 @@
-package toktrak;
+package toktrak.tests;
 
+import toktrak.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -13,6 +14,7 @@ final class DataLockTest {
   @Test
   void rejectsSecondLockInSameJvm() throws Exception {
     try (var first = DataLock.acquire(dir)) {
+      assertNotNull(first);
       var ex = assertThrows(IllegalStateException.class, () -> DataLock.acquire(dir));
       assertEquals("TokTrak data directory is already locked", ex.getMessage());
     }

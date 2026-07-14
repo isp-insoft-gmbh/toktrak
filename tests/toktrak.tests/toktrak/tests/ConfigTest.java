@@ -1,4 +1,6 @@
-package toktrak;
+package toktrak.tests;
+
+import toktrak.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 

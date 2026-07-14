@@ -72,13 +72,17 @@ mac: `brew install mise`
 
 lnx: `lol lol lol`
 
-Once install init the project via `mise run install`.
+Tasks resolve dependencies automatically.
 
-Build: `mise run build`
+Quick compile and lint check: `mise run check`
 
-Test: `mise run verify`
+Full test suite: `mise run verify`
 
 Start dev server: `mise run dev`
+
+Build the production runtime: `mise run prod`
+
+Clean generated modules, dependencies, argument files, and runtimes: `mise run clean`
 
 We ship an anonymized corpus of test usage data for easy manual testing.
 
@@ -148,7 +152,7 @@ top level command runner and dev dependencies: `mise`
 
 vendored java dependencies: `vendored`
 
-java dependency resolver: `jresolve` downloads into `output/third-party`
+java dependency resolver: `jresolve` downloads modular dependencies into `output/deps/{main,test}`
 
 source code: `sources`
 
@@ -158,7 +162,9 @@ build output: `output`
 
 java modules: `output/modules`
 
-runtimes via `jlink`: `output/runtimes/{test,dev,prod}`
+generated Java tool argument files: `output/args`
+
+runtimes via `jlink`: `output/runtimes/{test,dev,prod}`; test/dev runtimes exclude `toktrak` and are reused until dependency/JDK inputs change
 
 compiling: `javac` via collection of java @arg files
 

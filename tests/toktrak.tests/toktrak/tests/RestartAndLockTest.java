@@ -1,5 +1,6 @@
-package toktrak;
+package toktrak.tests;
 
+import toktrak.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -27,6 +28,7 @@ final class RestartAndLockTest {
   void secondAppCannotOpenSameDataDir() throws Exception {
     var env = Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0", "TOKTRAK_DATA_DIR", dir.toString());
     try (var first = App.start(new String[] {}, env)) {
+      assertNotNull(first);
       var ex = assertThrows(IllegalStateException.class, () -> App.start(new String[] {}, env));
       assertEquals("TokTrak data directory is already locked", ex.getMessage());
     }

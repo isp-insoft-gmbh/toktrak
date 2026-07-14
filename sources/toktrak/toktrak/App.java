@@ -85,10 +85,11 @@ public final class App implements AutoCloseable {
     Logger root = Logger.getLogger("");
     for (Handler handler : root.getHandlers()) root.removeHandler(handler);
     var console = new ConsoleHandler();
-    console.setLevel(Level.ALL);
+    boolean quiet = Boolean.getBoolean("toktrak.quiet");
+    console.setLevel(quiet ? Level.OFF : Level.ALL);
     console.setFormatter(new JsonLogFormatter());
     root.addHandler(console);
-    root.setLevel(Level.INFO);
+    root.setLevel(quiet ? Level.OFF : Level.INFO);
   }
 
   public int port() { return port; }

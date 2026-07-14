@@ -1,5 +1,6 @@
-package toktrak;
+package toktrak.tests;
 
+import toktrak.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
@@ -29,6 +30,7 @@ final class DevDataTest {
     try (var app = App.start(
         new String[] {"--corpus", corpus.toString()},
         Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0", "TOKTRAK_DATA_DIR", dataDir.toString()))) {
+      assertNotNull(app);
       assertEquals(Files.readString(corpus), Files.readString(dataDir.resolve("events.ndjson")));
     }
   }
