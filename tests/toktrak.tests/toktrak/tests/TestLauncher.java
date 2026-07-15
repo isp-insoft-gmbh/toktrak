@@ -1,6 +1,7 @@
 package toktrak.tests;
 
 import java.io.PrintWriter;
+import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.platform.engine.discovery.DiscoverySelectors;
 import org.junit.platform.launcher.LauncherDiscoveryRequest;
@@ -40,13 +41,49 @@ public final class TestLauncher {
     launcher.execute(testPlan);
     var summary = summaryListener.getSummary();
     long testsFound = summary.getTestsFoundCount();
-    if (testsFound == 0 || testsFound > TEST_COUNT_MAX || !summary.getFailures().isEmpty()) {
-      summary.printTo(new PrintWriter(System.out, true));
+    boolean failed =
+        testsFound == 0 || testsFound > TEST_COUNT_MAX || !summary.getFailures().isEmpty();
+    if (!summary.getFailures().isEmpty())
       summary.printFailuresTo(new PrintWriter(System.err, true));
-      System.exit(1);
-    }
+    long durationMillis =
+        Math.subtractExact(summary.getTimeFinished(), summary.getTimeStarted());
+    System.out.println(
+        formatSummary(
+            durationMillis,
+            summary.getContainersFoundCount(),
+            testsFound,
+            summary.getTestsSucceededCount(),
+            summary.getTestsSkippedCount(),
+            summary.getTestsAbortedCount(),
+            summary.getTestsFailedCount()));
+    if (failed) System.exit(1);
     assert summary.getTestsSucceededCount() == testsFound;
-    summary.printTo(new PrintWriter(System.out, true));
+  }
+
+  static String formatSummary(
+      long durationMillis,
+      long containersFound,
+      long testsFound,
+      long testsPassed,
+      long testsSkipped,
+      long testsAborted,
+      long testsFailed) {
+    assert durationMillis >= 0;
+    assert containersFound >= 0;
+    assert testsFound >= 0;
+    assert testsPassed >= 0;
+    assert testsSkipped >= 0;
+    assert testsAborted >= 0;
+    assert testsFailed >= 0;
+    var lines = new StringJoiner(System.lineSeparator());
+    lines.add("duration: " + durationMillis + " ms");
+    lines.add("junit containers found: " + containersFound);
+    lines.add("tests found: " + testsFound);
+    lines.add("tests passed: " + testsPassed);
+    if (testsSkipped != 0) lines.add("tests skipped: " + testsSkipped);
+    if (testsAborted != 0) lines.add("tests aborted: " + testsAborted);
+    if (testsFailed != 0) lines.add("tests failed: " + testsFailed);
+    return lines.toString();
   }
 
   private static final class BoundedExecutionListener implements TestExecutionListener {
