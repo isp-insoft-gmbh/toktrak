@@ -156,7 +156,7 @@ top level command runner and dev dependencies: `mise`
 
 vendored java dependencies: `vendored`
 
-java dependency resolver: `jresolve` downloads modular dependencies into `output/deps/{main,test}`
+java dependency resolver: `jresolve` downloads modular dependencies into `output/deps/{main,test}` and compiler plugins into `output/deps/build`
 
 source code: `sources`
 

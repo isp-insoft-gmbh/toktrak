@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpServer;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -35,7 +36,8 @@ final class HttpAdmissionTest {
             new ArrayBlockingQueue<>(QUEUE_CAPACITY),
             Thread.ofVirtual().name("http-admission-test-", 0).factory(),
             new ThreadPoolExecutor.AbortPolicy());
-    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 128);
+    HttpServer server =
+        HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 128);
     server.createContext("/", new Router(new HealthState(), true, workers));
     server.setExecutor(Runnable::run);
     try {

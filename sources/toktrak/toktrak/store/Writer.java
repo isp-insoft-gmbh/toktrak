@@ -19,7 +19,6 @@ public final class Writer implements AutoCloseable {
   private static final Duration ABORT_TIMEOUT = Duration.ofSeconds(5);
   private static final Duration TIMEOUT_MAX = Duration.ofMinutes(1);
   private static final long POLL_MILLIS = 100;
-  private static final Runnable NOOP = () -> {};
 
   private final EventLog log;
   private final Projection projection;
@@ -84,8 +83,8 @@ public final class Writer implements AutoCloseable {
         QUEUE_CAPACITY,
         DRAIN_TIMEOUT,
         ABORT_TIMEOUT,
-        NOOP,
-        NOOP);
+        Writer::noop,
+        Writer::noop);
   }
 
   public static Writer startForTest(
@@ -104,8 +103,8 @@ public final class Writer implements AutoCloseable {
         capacity,
         DRAIN_TIMEOUT,
         ABORT_TIMEOUT,
-        NOOP,
-        NOOP);
+        Writer::noop,
+        Writer::noop);
   }
 
   public static Writer startForTest(
@@ -126,8 +125,8 @@ public final class Writer implements AutoCloseable {
         capacity,
         drainTimeout,
         abortTimeout,
-        NOOP,
-        NOOP);
+        Writer::noop,
+        Writer::noop);
   }
 
   public static Writer startForTest(
@@ -238,7 +237,7 @@ public final class Writer implements AutoCloseable {
 
   private void processClaimed(Request request) {
     assert request != null;
-    assert inFlight.get() == request;
+    assert inFlight.compareAndSet(request, request);
     try {
       process(request);
     } finally {
@@ -327,6 +326,8 @@ public final class Writer implements AutoCloseable {
       assert queue.isEmpty();
     }
   }
+
+  private static void noop() {}
 
   private static Duration requireTimeout(Duration timeout, String name) {
     Objects.requireNonNull(timeout, name);

@@ -1,6 +1,7 @@
 package toktrak;
 
 import com.sun.net.httpserver.HttpServer;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.util.Map;
@@ -34,7 +35,6 @@ public final class App implements AutoCloseable {
   private final EventLog eventLog;
   private final Writer writer;
   private final Projection projection;
-  private final HealthState health;
   private final int port;
   private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -45,7 +45,6 @@ public final class App implements AutoCloseable {
       EventLog eventLog,
       Writer writer,
       Projection projection,
-      HealthState health,
       int port) {
     assert server != null;
     assert executor != null;
@@ -53,7 +52,6 @@ public final class App implements AutoCloseable {
     assert eventLog != null;
     assert writer != null;
     assert projection != null;
-    assert health != null;
     assert port >= 0 && port <= 65_535;
     this.server = server;
     this.executor = executor;
@@ -61,7 +59,6 @@ public final class App implements AutoCloseable {
     this.eventLog = eventLog;
     this.writer = writer;
     this.projection = projection;
-    this.health = health;
     this.port = port;
   }
 
@@ -94,7 +91,10 @@ public final class App implements AutoCloseable {
               new ArrayBlockingQueue<>(HTTP_QUEUE_CAPACITY),
               Thread.ofVirtual().name("toktrak-http-", 0).factory(),
               new ThreadPoolExecutor.AbortPolicy());
-      server = HttpServer.create(new InetSocketAddress("127.0.0.1", config.port()), HTTP_BACKLOG);
+      server =
+          HttpServer.create(
+              new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), config.port()),
+              HTTP_BACKLOG);
       server.createContext("/", new Router(health, config.devAuth(), executor));
       server.setExecutor(Runnable::run);
       server.start();
@@ -103,7 +103,7 @@ public final class App implements AutoCloseable {
       if (port < 0 || port > 65_535)
         throw new IllegalStateException("HTTP server returned invalid port");
       LOG.info("TokTrak ready at http://127.0.0.1:" + port + "/");
-      var app = new App(server, executor, dataLock, eventLog, writer, projection, health, port);
+      var app = new App(server, executor, dataLock, eventLog, writer, projection, port);
       assert app.port == port;
       return app;
     } catch (Exception exception) {

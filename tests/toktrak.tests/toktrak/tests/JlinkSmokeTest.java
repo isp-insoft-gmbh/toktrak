@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import toktrak.*;
@@ -19,7 +20,7 @@ final class JlinkSmokeTest {
               image
                   .resolve("bin")
                   .resolve(
-                      System.getProperty("os.name").toLowerCase().contains("win")
+                      System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win")
                           ? "java.exe"
                           : "java")));
     }

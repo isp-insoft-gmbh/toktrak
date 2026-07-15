@@ -35,8 +35,8 @@ public final class Main {
   }
 
   private static void requireAssertions() {
-    boolean enabled = false;
-    assert enabled = true;
-    if (!enabled) throw new IllegalStateException("Java assertions must be enabled with -ea");
+    if (!Main.class.desiredAssertionStatus()) {
+      throw new IllegalStateException("Java assertions must be enabled with -ea");
+    }
   }
 }

@@ -1,6 +1,7 @@
 package toktrak.tests;
 
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -76,7 +77,7 @@ public final class TestLauncher {
     boolean failed =
         testsFound == 0 || testsFound > TEST_COUNT_MAX || !summary.getFailures().isEmpty();
     if (!summary.getFailures().isEmpty())
-      summary.printFailuresTo(new PrintWriter(System.err, true));
+      summary.printFailuresTo(new PrintWriter(System.err, true, StandardCharsets.UTF_8));
     long durationMillis = Math.subtractExact(summary.getTimeFinished(), summary.getTimeStarted());
     System.out.println(
         formatSummary(
@@ -162,8 +163,8 @@ public final class TestLauncher {
   }
 
   private static void requireAssertions() {
-    boolean enabled = false;
-    assert enabled = true;
-    if (!enabled) throw new IllegalStateException("Java assertions must be enabled with -ea");
+    if (!TestLauncher.class.desiredAssertionStatus()) {
+      throw new IllegalStateException("Java assertions must be enabled with -ea");
+    }
   }
 }

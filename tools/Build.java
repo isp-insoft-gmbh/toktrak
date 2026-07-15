@@ -1,3 +1,6 @@
+package tools;
+
+import java.io.Console;
 import java.io.IOException;
 import java.lang.module.ModuleFinder;
 import java.nio.ByteBuffer;
@@ -16,6 +19,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -29,11 +33,13 @@ public final class Build {
   private static final Path TEST_MODULE = MODULES.resolve("toktrak.tests");
   private static final Path MAIN_DEPS = OUTPUT.resolve("deps/main");
   private static final Path TEST_DEPS = OUTPUT.resolve("deps/test");
+  private static final Path BUILD_DEPS = OUTPUT.resolve("deps/build");
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
   private static final Path ARGFILES = OUTPUT.resolve("args");
   private static final Path BUILD_TESTS = OUTPUT.resolve("build-tests");
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
+  private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
   private static final long FILE_BYTES_MAX = 512L * 1024 * 1024;
   private static final int TREE_ENTRIES_MAX = 100_000;
   private static final int COLLECTION_ENTRIES_MAX = 10_000;
@@ -49,7 +55,9 @@ public final class Build {
   private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(10);
   private static final Duration UNIT_TEST_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration PROCESS_KILL_TIMEOUT = Duration.ofSeconds(5);
-  private static final boolean ANSI = System.console() != null && System.getenv("NO_COLOR") == null;
+  private static final boolean ANSI =
+      Optional.ofNullable(System.console()).filter(Console::isTerminal).isPresent()
+          && System.getenv("NO_COLOR") == null;
   private static final List<String> APP_JDK_MODULES = List.of("java.logging", "jdk.httpserver");
   private static final List<String> TEST_JDK_MODULES =
       List.of("java.logging", "java.net.http", "jdk.httpserver");
@@ -92,6 +100,7 @@ public final class Build {
     deleteTree(MODULES);
     deleteTree(MAIN_DEPS);
     deleteTree(TEST_DEPS);
+    deleteTree(BUILD_DEPS);
     deleteTree(RUNTIMES);
     deleteTree(ARGFILES);
     deleteTree(BUILD_TESTS);
@@ -100,8 +109,13 @@ public final class Build {
   private static void deps() throws Exception {
     ensureDependency("sources/main-deps.txt", MAIN_DEPS, "resolve-toktrak-production-dependencies");
     ensureDependency("sources/test-deps.txt", TEST_DEPS, "resolve-toktrak-test-dependencies");
+    ensureBuildDependencies();
     verifyModules(MAIN_DEPS);
     verifyModules(TEST_DEPS);
+  }
+
+  private static void ensureBuildDependencies() throws Exception {
+    ensureDependency("sources/build-deps.txt", BUILD_DEPS, "resolve-build-dependencies");
   }
 
   private static void ensureDependency(String dependencyFile, Path output, String argFileName)
@@ -252,6 +266,7 @@ public final class Build {
     arguments.add("-Xlint:all");
     arguments.add("-Werror");
     arguments.add("-g");
+    addErrorProne(arguments);
     addModuleSourcePaths(arguments);
     arguments.add("--module-path");
     arguments.add(modulePath(List.of(MAIN_DEPS, TEST_DEPS)));
@@ -261,12 +276,17 @@ public final class Build {
     arguments.add("--module");
     arguments.add("toktrak,toktrak.tests");
     Path argFile = writeArgFile("compile-toktrak-and-test-modules", arguments);
+    List<String> fingerprintArguments = new ArrayList<>(arguments);
+    fingerprintArguments.addAll(errorProneJvmArguments());
     String fingerprint =
         compilationFingerprint(
             "modules",
-            List.of(ROOT.resolve("sources/toktrak"), ROOT.resolve("tests/toktrak.tests")),
-            List.of(MAIN_DEPS, TEST_DEPS),
-            arguments);
+            List.of(
+                ROOT.resolve("sources/toktrak"),
+                ROOT.resolve("tests/toktrak.tests"),
+                ERROR_PRONE_CONFIG),
+            List.of(MAIN_DEPS, TEST_DEPS, BUILD_DEPS),
+            fingerprintArguments);
     Path stamp = MODULES.resolve(".compile-fingerprint");
     long started = System.nanoTime();
     if (cacheHit(
@@ -280,7 +300,7 @@ public final class Build {
     }
     deleteTree(MODULES);
     Files.createDirectories(MODULES);
-    runArgFile(javacExecutable(), argFile);
+    runJavacArgFile(argFile);
     writeStamp(stamp, fingerprint);
   }
 
@@ -346,33 +366,38 @@ public final class Build {
   }
 
   private static void testBuildTool() throws Exception {
+    ensureBuildDependencies();
     List<Path> sources =
         List.of(ROOT.resolve("tools/Build.java"), ROOT.resolve("tests/tools/BuildTest.java"));
-    List<String> compileArguments =
-        List.of(
-            "-Xlint:all",
-            "-Werror",
-            "-d",
-            BUILD_TESTS.toString(),
-            sources.get(0).toString(),
-            sources.get(1).toString());
+    var compileArguments = new ArrayList<String>();
+    compileArguments.add("-Xlint:all");
+    compileArguments.add("-Werror");
+    addErrorProne(compileArguments);
+    compileArguments.add("-d");
+    compileArguments.add(BUILD_TESTS.toString());
+    compileArguments.add(sources.get(0).toString());
+    compileArguments.add(sources.get(1).toString());
     Path compileArgFile = writeArgFile("compile-build-tool-tests", compileArguments);
+    List<Path> fingerprintSources = new ArrayList<>(sources);
+    fingerprintSources.add(ERROR_PRONE_CONFIG);
     String compileFingerprint =
-        compilationFingerprint("build-tool-tests", sources, List.of(), compileArguments);
+        compilationFingerprint(
+            "build-tool-tests", fingerprintSources, List.of(BUILD_DEPS), compileArguments);
     Path compileStamp = BUILD_TESTS.resolve(".compile-fingerprint");
     List<Path> requiredClasses =
-        List.of(BUILD_TESTS.resolve("Build.class"), BUILD_TESTS.resolve("BuildTest.class"));
+        List.of(
+            BUILD_TESTS.resolve("tools/Build.class"), BUILD_TESTS.resolve("tools/BuildTest.class"));
     long compileStarted = System.nanoTime();
     if (cacheHit(BUILD_TESTS, compileStamp, compileFingerprint, requiredClasses)) {
       printCached(javacExecutable(), compileArgFile, compileStarted);
     } else {
       deleteTree(BUILD_TESTS);
       Files.createDirectories(BUILD_TESTS);
-      runArgFile(javacExecutable(), compileArgFile);
+      runJavacArgFile(compileArgFile);
       writeStamp(compileStamp, compileFingerprint);
     }
 
-    List<String> testArguments = List.of("-ea", "-cp", BUILD_TESTS.toString(), "BuildTest");
+    List<String> testArguments = List.of("-ea", "-cp", BUILD_TESTS.toString(), "tools.BuildTest");
     Path testArgFile = writeArgFile("run-build-tool-tests", testArguments);
     String testFingerprint = testResultFingerprint(compileFingerprint, testArguments);
     Path testStamp = BUILD_TESTS.resolve(".test-fingerprint");
@@ -568,6 +593,40 @@ public final class Build {
     return List.copyOf(result);
   }
 
+  private static void addErrorProne(List<String> arguments) throws IOException {
+    Objects.requireNonNull(arguments, "arguments");
+    arguments.addAll(errorProneArguments());
+  }
+
+  static List<String> errorProneArgumentsForTest() throws IOException {
+    var arguments = new ArrayList<>(errorProneJvmArguments());
+    arguments.addAll(errorProneArguments());
+    return List.copyOf(arguments);
+  }
+
+  private static List<String> errorProneJvmArguments() {
+    return List.of(
+        "-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "-J--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",
+        "-J--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED",
+        "-J--add-exports=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED",
+        "-J--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED",
+        "-J--add-exports=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED",
+        "-J--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED",
+        "-J--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+        "-J--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED");
+  }
+
+  private static List<String> errorProneArguments() throws IOException {
+    return List.of(
+        "-XDcompilePolicy=simple",
+        "--should-stop=ifError=FLOW",
+        "-processorpath",
+        modulePath(List.of(BUILD_DEPS)),
+        "-Xplugin:ErrorProne @" + ERROR_PRONE_CONFIG);
+  }
+
   private static void addModuleSourcePaths(List<String> command) {
     command.add("--module-source-path");
     command.add("toktrak=" + ROOT.resolve("sources/toktrak"));
@@ -587,8 +646,6 @@ public final class Build {
               "module path exceeds " + COLLECTION_ENTRIES_MAX + " entries");
         }
         paths.addAll(jars);
-      } else if (Files.isDirectory(entry)) {
-        paths.add(entry.toString());
       } else {
         paths.add(entry.toString());
       }
@@ -632,6 +689,13 @@ public final class Build {
   private static void runArgFile(String executable, String name, List<String> arguments)
       throws Exception {
     runArgFile(executable, writeArgFile(name, arguments));
+  }
+
+  private static void runJavacArgFile(Path argFile) throws Exception {
+    var arguments = new ArrayList<>(errorProneJvmArguments());
+    arguments.add("@" + argFile);
+    printInvocation(javacExecutable(), argFile);
+    runProcess(new ProcessBuilder(command(javacExecutable(), arguments)));
   }
 
   private static void runArgFile(
@@ -1072,9 +1136,9 @@ public final class Build {
   }
 
   private static void requireAssertions() {
-    boolean enabled = false;
-    assert enabled = true;
-    if (!enabled) throw new IllegalStateException("Java assertions must be enabled with -ea");
+    if (!Build.class.desiredAssertionStatus()) {
+      throw new IllegalStateException("Java assertions must be enabled with -ea");
+    }
   }
 
   private static void printCached(String executable, Path argFile, long started) {

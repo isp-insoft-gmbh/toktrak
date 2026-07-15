@@ -1,3 +1,5 @@
+package tools;
+
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -8,6 +10,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 public final class BuildTest {
   private BuildTest() {}
@@ -36,6 +39,7 @@ public final class BuildTest {
     passesArgumentsWithSpaces();
     batchesFormatterSources();
     rejectsOversizedCommand();
+    rejectsErrorProneViolation();
     assignsTestGroupTimeouts();
     forceTerminatesHardTimedOutProcess();
     terminatesTimedOutProcess();
@@ -98,10 +102,15 @@ public final class BuildTest {
     try {
       Path tools = Files.createDirectories(directory.resolve("tools"));
       Path tests = Files.createDirectories(directory.resolve("tests/tools"));
+      Path sources = Files.createDirectories(directory.resolve("sources"));
+      Path vendored = Files.createDirectories(directory.resolve("vendored"));
       Files.copy(Path.of("tools/Build.java"), tools.resolve("Build.java"));
+      Files.copy(Path.of("vendored/jresolve.jar"), vendored.resolve("jresolve.jar"));
+      Files.copy(Path.of("sources/build-deps.txt"), sources.resolve("build-deps.txt"));
+      Files.copy(Path.of("sources/error-prone.cfg"), sources.resolve("error-prone.cfg"));
       Files.writeString(
           tests.resolve("BuildTest.java"),
-          "public final class BuildTest {"
+          "package tools; public final class BuildTest {"
               + " private BuildTest() {}"
               + " public static void main(String[] args) { assert args.length == 0; }"
               + " }");
@@ -210,6 +219,34 @@ public final class BuildTest {
         "command exceeds 24576 UTF-8 bytes");
   }
 
+  private static void rejectsErrorProneViolation() throws Exception {
+    Path directory = Files.createTempDirectory("toktrak-error-prone-");
+    try {
+      Path source = directory.resolve("ErrorProneFailure.java");
+      Files.writeString(
+          source,
+          "package fixture; final class ErrorProneFailure {"
+              + " void fail() { new RuntimeException(); }"
+              + " }");
+      var arguments = new ArrayList<>(Build.errorProneArgumentsForTest());
+      arguments.add("-d");
+      arguments.add(directory.toString());
+      arguments.add(source.toString());
+      Process process =
+          new ProcessBuilder(Build.commandForTest(javacExecutable(), arguments))
+              .redirectErrorStream(true)
+              .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+              .start();
+      int exitCode =
+          Build.waitForProcessForTest(process, Duration.ofSeconds(30), Duration.ofSeconds(2), true);
+      if (exitCode == 0) throw new AssertionError("Error Prone accepted DeadException violation");
+    } finally {
+      List<Path> paths = Build.treePathsForTest(directory, 100);
+      for (int index = paths.size() - 1; index >= 0; index--)
+        Files.deleteIfExists(paths.get(index));
+    }
+  }
+
   private static void assignsTestGroupTimeouts() {
     if (!Build.testTimeout("--unit").equals(Duration.ofSeconds(30))) {
       throw new AssertionError("unit test timeout is not 30 seconds");
@@ -249,10 +286,20 @@ public final class BuildTest {
   }
 
   private static String javaExecutable() {
+    return executable("java");
+  }
+
+  private static String javacExecutable() {
+    return executable("javac");
+  }
+
+  private static String executable(String name) {
     return Path.of(
             System.getProperty("java.home"),
             "bin",
-            System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java")
+            System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win")
+                ? name + ".exe"
+                : name)
         .toString();
   }
 
@@ -270,9 +317,9 @@ public final class BuildTest {
   }
 
   private static void requireAssertions() {
-    boolean enabled = false;
-    assert enabled = true;
-    if (!enabled) throw new IllegalStateException("Java assertions must be enabled with -ea");
+    if (!BuildTest.class.desiredAssertionStatus()) {
+      throw new IllegalStateException("Java assertions must be enabled with -ea");
+    }
   }
 
   @FunctionalInterface

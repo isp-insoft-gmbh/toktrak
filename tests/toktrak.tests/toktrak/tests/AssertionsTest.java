@@ -7,8 +7,6 @@ import org.junit.jupiter.api.Test;
 final class AssertionsTest {
   @Test
   void assertionsAreEnabled() {
-    boolean[] enabled = {false};
-    assert enabled[0] = true;
-    assertTrue(enabled[0]);
+    assertTrue(AssertionsTest.class.desiredAssertionStatus());
   }
 }
