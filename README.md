@@ -74,9 +74,13 @@ lnx: `lol lol lol`
 
 Tasks resolve dependencies automatically.
 
-Quick compile and lint check: `mise run check`
+Format Java sources: `mise run fmt [paths...]`
 
-Full test suite: `mise run verify`
+Quick formatting, compile, and lint check: `mise run check`
+
+Run tests: `mise run test [test paths...]`
+
+Full check and test suite: `mise run verify`
 
 Start the seeded, auto-reloading dev server: `mise run dev`
 

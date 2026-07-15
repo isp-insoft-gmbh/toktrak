@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -25,9 +26,14 @@ public final class BuildTest {
     rejectsOversizedHashInput();
     rejectsTraversalAboveLimit();
     rejectsArgumentLimits();
+    selectsTestsByFileAndDirectory();
+    rejectsNonTestSelection();
     rejectsOversizedStamp();
     rejectsInvalidUtf8Stamp();
     waitsForNormalProcess();
+    passesArgumentsWithSpaces();
+    batchesFormatterSources();
+    rejectsOversizedCommand();
     terminatesTimedOutProcess();
   }
 
@@ -71,6 +77,24 @@ public final class BuildTest {
         "argument file exceeds 8388608 UTF-8 bytes");
   }
 
+  private static void selectsTestsByFileAndDirectory() throws Exception {
+    Build.TestSelection junit =
+        Build.testSelectionForTest(List.of("tests/toktrak.tests/toktrak/tests/ConfigTest.java"));
+    if (junit.buildTool() || !junit.classNames().equals(List.of("toktrak.tests.ConfigTest"))) {
+      throw new AssertionError("unexpected JUnit selection: " + junit);
+    }
+    Build.TestSelection build = Build.testSelectionForTest(List.of("tests/tools"));
+    if (!build.buildTool() || !build.classNames().isEmpty()) {
+      throw new AssertionError("unexpected build test selection: " + build);
+    }
+  }
+
+  private static void rejectsNonTestSelection() {
+    expectFailure(
+        () -> Build.testSelectionForTest(List.of("sources/toktrak/toktrak/Main.java")),
+        "not a test source");
+  }
+
   private static void rejectsOversizedStamp() throws Exception {
     Path stamp = Files.createTempFile("toktrak-build-stamp-", ".txt");
     try {
@@ -98,6 +122,34 @@ public final class BuildTest {
     if (exitCode != 0) throw new AssertionError("normal child failed: " + exitCode);
   }
 
+  private static void passesArgumentsWithSpaces() {
+    List<String> command = Build.commandForTest("tool", List.of("path with spaces/Source.java"));
+    if (!command.equals(List.of("tool", "path with spaces/Source.java"))) {
+      throw new AssertionError("unexpected command: " + command);
+    }
+  }
+
+  private static void batchesFormatterSources() {
+    var sources = new ArrayList<String>();
+    for (int index = 0; index < 300; index++) sources.add("Source" + index + ".java");
+    List<List<String>> batches = Build.formatterArgumentsForTest(sources);
+    if (batches.size() != 3) throw new AssertionError("unexpected formatter batches: " + batches);
+    int sourceCount = 0;
+    for (List<String> batch : batches) {
+      Build.commandForTest("google-java-format", batch);
+      sourceCount = Math.addExact(sourceCount, batch.size() - 2);
+    }
+    if (sourceCount != sources.size()) {
+      throw new AssertionError("formatter sources lost: " + sourceCount);
+    }
+  }
+
+  private static void rejectsOversizedCommand() {
+    expectFailure(
+        () -> Build.commandForTest("unused", Collections.nCopies(100, "x".repeat(300))),
+        "command exceeds 24576 UTF-8 bytes");
+  }
+
   private static void terminatesTimedOutProcess() throws Exception {
     Process process = child("sleep");
     expectFailure(
@@ -107,20 +159,22 @@ public final class BuildTest {
   }
 
   private static Process child(String argument) throws Exception {
-    String java =
-        Path.of(
-                System.getProperty("java.home"),
-                "bin",
-                System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java")
-            .toString();
     return new ProcessBuilder(
-            java,
+            javaExecutable(),
             "-ea",
             "-cp",
             System.getProperty("java.class.path"),
             BuildTest.class.getName(),
             argument)
         .start();
+  }
+
+  private static String javaExecutable() {
+    return Path.of(
+            System.getProperty("java.home"),
+            "bin",
+            System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java")
+        .toString();
   }
 
   private static void expectFailure(ThrowingAction action, String message) {

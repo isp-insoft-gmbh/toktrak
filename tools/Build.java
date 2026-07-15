@@ -16,7 +16,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 public final class Build {
@@ -29,12 +31,18 @@ public final class Build {
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
   private static final Path ARGFILES = OUTPUT.resolve("args");
   private static final Path BUILD_TESTS = OUTPUT.resolve("build-tests");
+  private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
+  private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
   private static final long FILE_BYTES_MAX = 512L * 1024 * 1024;
   private static final int TREE_ENTRIES_MAX = 100_000;
   private static final int COLLECTION_ENTRIES_MAX = 10_000;
   private static final int ARGUMENTS_MAX = 10_000;
   private static final int ARGUMENT_BYTES_MAX = 32 * 1024;
   private static final int ARGFILE_BYTES_MAX = 8 * 1024 * 1024;
+  // OS command-line limits vary. Keep formatter commands below 24 KiB and 128 source files;
+  // split larger source sets into bounded batches so repository growth cannot break fmt/check.
+  private static final int COMMAND_BYTES_MAX = 24 * 1024;
+  private static final int FORMAT_BATCH_FILES_MAX = 128;
   private static final int COPY_BUFFER_BYTES = 64 * 1024;
   private static final int STAMP_BYTES_MAX = 128;
   private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(10);
@@ -52,18 +60,25 @@ public final class Build {
   private Build() {}
 
   public static void main(String[] args) throws Exception {
-    requireAssertions();
-    Objects.requireNonNull(args, "args");
-    if (args.length == 0) fail("command required: clean, check, verify, dev, or prod");
-    if (args.length > 256) fail("command arguments exceed 256 entries");
-    deleteTree(ARGFILES);
-    switch (args[0]) {
-      case "clean" -> clean();
-      case "check" -> compile();
-      case "verify" -> test();
-      case "dev" -> dev(List.of(args).subList(1, args.length));
-      case "prod" -> jlinkProd();
-      default -> fail("unknown command: " + args[0]);
+    long started = System.nanoTime();
+    try {
+      requireAssertions();
+      Objects.requireNonNull(args, "args");
+      if (args.length == 0) fail("command required: clean, fmt, check, test, verify, dev, or prod");
+      if (args.length > 256) fail("command arguments exceed 256 entries");
+      deleteTree(ARGFILES);
+      switch (args[0]) {
+        case "clean" -> clean();
+        case "fmt" -> formatCommand(List.of(args).subList(1, args.length));
+        case "check" -> check();
+        case "test" -> testCommand(List.of(args).subList(1, args.length));
+        case "verify" -> verify();
+        case "dev" -> dev(List.of(args).subList(1, args.length));
+        case "prod" -> jlinkProd();
+        default -> fail("unknown command: " + args[0]);
+      }
+    } finally {
+      printTotal(System.nanoTime() - started);
     }
   }
 
@@ -118,6 +133,66 @@ public final class Build {
     return HexFormat.of().formatHex(digest.digest());
   }
 
+  private static void formatCommand(List<String> paths) throws Exception {
+    if (paths.equals(List.of("--help"))) {
+      System.out.println("usage: mise run fmt [Java files or directories...]");
+      return;
+    }
+    format(true, paths);
+  }
+
+  private static void format(boolean replace, List<String> paths) throws Exception {
+    Objects.requireNonNull(paths, "paths");
+    List<String> sourcePaths = javaSourcePaths(paths).stream().map(Path::toString).toList();
+    for (List<String> arguments : formatterArguments(replace, sourcePaths)) {
+      runArguments(
+          googleJavaFormatExecutable(),
+          replace ? "format Java sources" : "check Java source format",
+          arguments);
+    }
+  }
+
+  static List<List<String>> formatterArgumentsForTest(List<String> sourcePaths) {
+    return formatterArguments(false, sourcePaths);
+  }
+
+  private static List<List<String>> formatterArguments(boolean replace, List<String> sourcePaths) {
+    Objects.requireNonNull(sourcePaths, "sourcePaths");
+    if (sourcePaths.isEmpty()) throw new IllegalArgumentException("sourcePaths are empty");
+    List<String> options =
+        replace ? List.of("--replace") : List.of("--dry-run", "--set-exit-if-changed");
+    String executable = googleJavaFormatExecutable();
+    int commandBytes = commandBytes(executable, options);
+    int files = 0;
+    var batch = new ArrayList<>(options);
+    var batches = new ArrayList<List<String>>();
+    for (String sourcePath : sourcePaths) {
+      int sourceBytes = argumentBytes(sourcePath);
+      if (files > 0
+          && (files >= FORMAT_BATCH_FILES_MAX
+              || commandBytes + sourceBytes + 1 > COMMAND_BYTES_MAX)) {
+        batches.add(List.copyOf(batch));
+        batch = new ArrayList<>(options);
+        commandBytes = commandBytes(executable, options);
+        files = 0;
+      }
+      commandBytes = Math.addExact(commandBytes, Math.addExact(sourceBytes, 1));
+      if (commandBytes > COMMAND_BYTES_MAX) {
+        fail("formatter source path exceeds command ceiling: " + sourcePath);
+      }
+      batch.add(sourcePath);
+      files = Math.addExact(files, 1);
+    }
+    batches.add(List.copyOf(batch));
+    assert batches.size() <= sourcePaths.size();
+    return List.copyOf(batches);
+  }
+
+  private static void check() throws Exception {
+    format(false, List.of());
+    compile();
+  }
+
   private static void compile() throws Exception {
     deps();
     deleteTree(MODULES);
@@ -137,9 +212,30 @@ public final class Build {
     runArgFile(javacExecutable(), "compile-toktrak-and-test-modules", arguments);
   }
 
-  private static void test() throws Exception {
+  private static void testCommand(List<String> paths) throws Exception {
+    if (paths.equals(List.of("--help"))) {
+      System.out.println("usage: mise run test [test files or directories...]");
+      return;
+    }
+    test(paths);
+  }
+
+  private static void test(List<String> paths) throws Exception {
+    Objects.requireNonNull(paths, "paths");
+    TestSelection selection = testSelection(paths);
     compile();
-    testBuildTool();
+    runTests(selection);
+  }
+
+  private static void verify() throws Exception {
+    check();
+    runTests(testSelection(List.of()));
+  }
+
+  private static void runTests(TestSelection selection) throws Exception {
+    assert selection != null;
+    if (selection.buildTool()) testBuildTool();
+    if (selection.classNames().isEmpty()) return;
     Path runtime = ensureTestRuntime();
     List<String> arguments = new ArrayList<>();
     arguments.add("-ea");
@@ -150,6 +246,7 @@ public final class Build {
     addExports(arguments);
     arguments.add("-m");
     arguments.add("toktrak.tests/toktrak.tests.TestLauncher");
+    arguments.addAll(selection.classNames());
     runArgFile(runtimeJava(runtime), "run-toktrak-test-suite", arguments);
   }
 
@@ -430,8 +527,57 @@ public final class Build {
     Objects.requireNonNull(executable, "executable");
     Objects.requireNonNull(argFile, "argFile");
     printInvocation(executable, argFile);
+    runProcess(new ProcessBuilder(executable, "@" + argFile));
+  }
+
+  static List<String> commandForTest(String executable, List<String> arguments) {
+    return command(executable, arguments);
+  }
+
+  private static void runArguments(String executable, String name, List<String> arguments)
+      throws Exception {
+    Objects.requireNonNull(name, "name");
+    if (name.isBlank()) throw new IllegalArgumentException("name is blank");
+    List<String> command = command(executable, arguments);
+    printInvocation(executable, name);
+    runProcess(new ProcessBuilder(command));
+  }
+
+  private static List<String> command(String executable, List<String> arguments) {
+    int bytes = commandBytes(executable, arguments);
+    if (bytes > COMMAND_BYTES_MAX) {
+      fail("command exceeds " + COMMAND_BYTES_MAX + " UTF-8 bytes");
+    }
+    var command = new ArrayList<String>(Math.addExact(arguments.size(), 1));
+    command.add(executable);
+    command.addAll(arguments);
+    return List.copyOf(command);
+  }
+
+  private static int commandBytes(String executable, List<String> arguments) {
+    Objects.requireNonNull(executable, "executable");
+    Objects.requireNonNull(arguments, "arguments");
+    if (arguments.size() > ARGUMENTS_MAX) fail("arguments exceed " + ARGUMENTS_MAX + " entries");
+    int bytes = executable.getBytes(StandardCharsets.UTF_8).length;
+    for (String argument : arguments) {
+      bytes = Math.addExact(bytes, Math.addExact(argumentBytes(argument), 1));
+    }
+    return bytes;
+  }
+
+  private static int argumentBytes(String argument) {
+    Objects.requireNonNull(argument, "argument");
+    int bytes = argument.getBytes(StandardCharsets.UTF_8).length;
+    if (bytes > ARGUMENT_BYTES_MAX) {
+      fail("argument exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
+    }
+    return bytes;
+  }
+
+  private static void runProcess(ProcessBuilder builder) throws Exception {
+    Objects.requireNonNull(builder, "builder");
     long started = System.nanoTime();
-    Process process = new ProcessBuilder(executable, "@" + argFile).inheritIO().start();
+    Process process = builder.inheritIO().start();
     int code;
     try {
       code = waitForProcess(process, PROCESS_TIMEOUT, PROCESS_KILL_TIMEOUT);
@@ -525,6 +671,105 @@ public final class Build {
     return List.copyOf(result);
   }
 
+  static TestSelection testSelectionForTest(List<String> paths) throws IOException {
+    return testSelection(paths);
+  }
+
+  private static TestSelection testSelection(List<String> paths) throws IOException {
+    var classNames = new TreeSet<String>();
+    boolean buildTool = false;
+    for (Path path :
+        selectedFiles(
+            paths,
+            List.of(ROOT.resolve("tests")),
+            candidate -> candidate.getFileName().toString().endsWith("Test.java"),
+            "test source")) {
+      if (path.equals(BUILD_TEST_SOURCE)) {
+        buildTool = true;
+      } else if (path.startsWith(JUNIT_TEST_SOURCES)) {
+        String relative = JUNIT_TEST_SOURCES.relativize(path).toString();
+        classNames.add(
+            relative
+                .substring(0, relative.length() - ".java".length())
+                .replace('\\', '.')
+                .replace('/', '.'));
+      } else {
+        fail("unknown test source: " + ROOT.relativize(path));
+      }
+    }
+    return new TestSelection(buildTool, List.copyOf(classNames));
+  }
+
+  private static List<Path> javaSourcePaths(List<String> paths) throws IOException {
+    return selectedFiles(
+        paths,
+        List.of(ROOT.resolve("sources"), ROOT.resolve("tests"), ROOT.resolve("tools")),
+        candidate -> candidate.getFileName().toString().endsWith(".java"),
+        "Java source");
+  }
+
+  private static List<Path> selectedFiles(
+      List<String> requestedPaths,
+      List<Path> defaults,
+      Predicate<Path> predicate,
+      String description)
+      throws IOException {
+    Objects.requireNonNull(requestedPaths, "requestedPaths");
+    Objects.requireNonNull(defaults, "defaults");
+    Objects.requireNonNull(predicate, "predicate");
+    Objects.requireNonNull(description, "description");
+    if (requestedPaths.size() > 256) fail("paths exceed 256 entries");
+    var result = new TreeSet<Path>();
+    List<Path> paths =
+        requestedPaths.isEmpty()
+            ? defaults
+            : requestedPaths.stream().map(Build::resolveProjectPath).toList();
+    int traversed = 0;
+    for (Path path : paths) {
+      if (Files.isSymbolicLink(path)) fail("symbolic paths are not supported: " + path);
+      if (Files.isRegularFile(path)) {
+        traversed = Math.addExact(traversed, 1);
+        if (!predicate.test(path)) fail("not a " + description + ": " + path);
+        result.add(path);
+      } else if (Files.isDirectory(path)) {
+        int remaining = COLLECTION_ENTRIES_MAX - traversed;
+        if (remaining <= 0) fail("selected paths exceed " + COLLECTION_ENTRIES_MAX + " entries");
+        List<Path> children = treePaths(path, remaining);
+        traversed = Math.addExact(traversed, children.size());
+        for (Path child : children) {
+          if (Files.isSymbolicLink(child)) fail("symbolic paths are not supported: " + child);
+          if (Files.isRegularFile(child) && predicate.test(child)) result.add(child);
+        }
+      } else {
+        fail("path does not exist: " + path);
+      }
+      if (result.size() > COLLECTION_ENTRIES_MAX) {
+        fail("selected files exceed " + COLLECTION_ENTRIES_MAX + " entries");
+      }
+    }
+    if (result.isEmpty()) fail("no " + description + " files selected");
+    return List.copyOf(result);
+  }
+
+  private static Path resolveProjectPath(String value) {
+    Objects.requireNonNull(value, "path");
+    if (value.getBytes(StandardCharsets.UTF_8).length > ARGUMENT_BYTES_MAX) {
+      fail("path exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
+    }
+    Path path = Path.of(value);
+    path = (path.isAbsolute() ? path : ROOT.resolve(path)).normalize();
+    if (!path.startsWith(ROOT)) fail("path escapes project: " + value);
+    return path;
+  }
+
+  static record TestSelection(boolean buildTool, List<String> classNames) {
+    TestSelection {
+      Objects.requireNonNull(classNames, "classNames");
+      assert buildTool || !classNames.isEmpty();
+      assert classNames.size() <= COLLECTION_ENTRIES_MAX;
+    }
+  }
+
   private static List<Path> directoryEntries(Path directory, int entriesMax) throws IOException {
     Objects.requireNonNull(directory, "directory");
     assert entriesMax > 0 && entriesMax <= TREE_ENTRIES_MAX;
@@ -616,11 +861,23 @@ public final class Build {
   }
 
   private static void printInvocation(String executable, Path argFile) {
-    String tool = Path.of(executable).getFileName().toString().replaceFirst("(?i)\\.exe$", "");
     String directory =
         "@" + ROOT.relativize(argFile.getParent()).toString().replace('\\', '/') + "/";
     System.out.println(
-        emphasize(tool) + "  " + dim(directory) + emphasize(argFile.getFileName().toString()));
+        emphasize(toolName(executable))
+            + "  "
+            + dim(directory)
+            + emphasize(argFile.getFileName().toString()));
+  }
+
+  private static void printInvocation(String executable, String name) {
+    assert name != null && !name.isBlank();
+    System.out.println(emphasize(toolName(executable)) + "  " + dim(name));
+  }
+
+  private static String toolName(String executable) {
+    assert executable != null && !executable.isBlank();
+    return Path.of(executable).getFileName().toString().replaceFirst("(?i)\\.exe$", "");
   }
 
   private static void printCompletion(String state, long elapsedNanos, String cpu) {
@@ -629,6 +886,11 @@ public final class Build {
     String cpuSuffix = cpu == null ? "" : dim("  cpu ") + emphasize(cpu);
     System.out.println(
         "       " + styledState + " " + emphasize(formatDuration(elapsedNanos)) + cpuSuffix);
+  }
+
+  private static void printTotal(long elapsedNanos) {
+    assert elapsedNanos >= 0;
+    System.out.println(dim("total  ") + emphasize(formatDuration(elapsedNanos)));
   }
 
   private static String formatDuration(long nanoseconds) {
@@ -664,6 +926,10 @@ public final class Build {
   private static String javacExecutable() {
     return Path.of(System.getProperty("java.home"), "bin", isWindows() ? "javac.exe" : "javac")
         .toString();
+  }
+
+  private static String googleJavaFormatExecutable() {
+    return isWindows() ? "google-java-format.exe" : "google-java-format";
   }
 
   private static String jlinkExecutable() {
