@@ -102,7 +102,7 @@ public final class App implements AutoCloseable {
       int port = server.getAddress().getPort();
       if (port < 0 || port > 65_535)
         throw new IllegalStateException("HTTP server returned invalid port");
-      LOG.info("bound HTTP server on port " + port);
+      LOG.info("TokTrak ready at http://127.0.0.1:" + port + "/");
       var app = new App(server, executor, dataLock, eventLog, writer, projection, health, port);
       assert app.port == port;
       return app;

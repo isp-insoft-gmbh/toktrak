@@ -2,6 +2,7 @@
 coursier = "latest"
 google-java-format = "latest"
 java = "latest"
+watchexec = "latest"
 
 [tasks.clean]
 description = "Remove generated modules, dependencies, argument files, and runtimes"
@@ -16,8 +17,14 @@ description = "Compile/lint all modules and run the test suite"
 run = "java -ea tools/Build.java verify"
 
 [tasks.dev]
-description = "Compile and run TokTrak with the cached development runtime"
-run = "java -ea tools/Build.java dev --"
+description = "Run seeded TokTrak and restart when development files change"
+usage = 'flag "--fail-writes" help="Start with degraded writes"'
+run = "mise watch --restart --watch sources --watch tools --watch tests/corpus/dev.jsonl --watch mise.toml -- dev-server{% if usage.fail_writes %} --fail-writes{% endif %}"
+
+[tasks.dev-server]
+hide = true
+env = { TOKTRAK_DEV_AUTH = "true" }
+run = "java -ea tools/Build.java dev -- --corpus tests/corpus/dev.jsonl"
 
 [tasks.prod]
 description = "Build and smoke-test the self-contained production runtime"

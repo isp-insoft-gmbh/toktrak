@@ -78,7 +78,7 @@ Quick compile and lint check: `mise run check`
 
 Full test suite: `mise run verify`
 
-Start dev server: `mise run dev`
+Start the seeded, auto-reloading dev server: `mise run dev`
 
 Build the production runtime: `mise run prod`
 
