@@ -13,4 +13,9 @@
 - Separate control and data planes; batch I/O and computation.
 - Follow Java naming conventions. Use precise nouns and verbs, suffix qualifiers (`latencyMillisMax`), and avoid abbreviations.
 
+## Refaster
+
+- For three or more identical code-pattern transformations, fetch current Refaster documentation and known limitations, then attempt one Refaster rule first.
+- If a rule is impossible or unsafe, log the date, pattern, and reason in `docs/REFASTER_RULE_FAILS.md`; abandon only the rule attempt and continue the original task.
+
 Adapted from [TigerStyle](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md).

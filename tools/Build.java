@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -34,9 +35,16 @@ public final class Build {
   private static final Path MAIN_DEPS = OUTPUT.resolve("deps/main");
   private static final Path TEST_DEPS = OUTPUT.resolve("deps/test");
   private static final Path BUILD_DEPS = OUTPUT.resolve("deps/build");
+  private static final Path REFASTER_DEPS = OUTPUT.resolve("deps/refaster");
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
   private static final Path ARGFILES = OUTPUT.resolve("args");
   private static final Path BUILD_TESTS = OUTPUT.resolve("build-tests");
+  private static final Path REFASTER_OUTPUT = OUTPUT.resolve("refaster");
+  private static final Path REFASTER_CLASSES = REFASTER_OUTPUT.resolve("classes");
+  private static final Path REFASTER_APPLY_MODULES = REFASTER_OUTPUT.resolve("apply-modules");
+  private static final Path REFASTER_APPLY_BUILD = REFASTER_OUTPUT.resolve("apply-build");
+  private static final Path REFASTER_RULE = REFASTER_OUTPUT.resolve("toktrak.refaster");
+  private static final Path REFASTER_SOURCE = ROOT.resolve("tools/refaster/Rules.java");
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
   private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
@@ -52,6 +60,7 @@ public final class Build {
   private static final int FORMAT_BATCH_FILES_MAX = 128;
   private static final int COPY_BUFFER_BYTES = 64 * 1024;
   private static final int STAMP_BYTES_MAX = 128;
+  private static final int GIT_STATUS_BYTES_MAX = 1024 * 1024;
   private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(10);
   private static final Duration UNIT_TEST_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration PROCESS_KILL_TIMEOUT = Duration.ofSeconds(5);
@@ -76,7 +85,7 @@ public final class Build {
       Objects.requireNonNull(args, "args");
       if (args.length == 0) {
         throw new IllegalStateException(
-            "command required: clean, fmt, check, test, verify, dev, or prod");
+            "command required: clean, fmt, check, test, refactor, ci, verify, dev, or prod");
       }
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
@@ -86,6 +95,8 @@ public final class Build {
         case "fmt" -> formatCommand(List.of(args).subList(1, args.length));
         case "check" -> check();
         case "test" -> testCommand(List.of(args).subList(1, args.length));
+        case "refactor" -> refactor();
+        case "ci" -> ci();
         case "verify" -> verify();
         case "dev" -> dev(List.of(args).subList(1, args.length));
         case "prod" -> jlinkProd();
@@ -101,37 +112,47 @@ public final class Build {
     deleteTree(MAIN_DEPS);
     deleteTree(TEST_DEPS);
     deleteTree(BUILD_DEPS);
+    deleteTree(REFASTER_DEPS);
     deleteTree(RUNTIMES);
     deleteTree(ARGFILES);
     deleteTree(BUILD_TESTS);
+    deleteTree(REFASTER_OUTPUT);
   }
 
   private static void deps() throws Exception {
-    ensureDependency("sources/main-deps.txt", MAIN_DEPS, "resolve-toktrak-production-dependencies");
-    ensureDependency("sources/test-deps.txt", TEST_DEPS, "resolve-toktrak-test-dependencies");
+    ensureDependency(
+        "sources/main-deps.txt", MAIN_DEPS, "resolve-toktrak-production-dependencies", true);
+    ensureDependency("sources/test-deps.txt", TEST_DEPS, "resolve-toktrak-test-dependencies", true);
     ensureBuildDependencies();
+    ensureRefasterDependencies();
     verifyModules(MAIN_DEPS);
     verifyModules(TEST_DEPS);
   }
 
   private static void ensureBuildDependencies() throws Exception {
-    ensureDependency("sources/build-deps.txt", BUILD_DEPS, "resolve-build-dependencies");
+    ensureDependency("sources/build-deps.txt", BUILD_DEPS, "resolve-build-dependencies", true);
   }
 
-  private static void ensureDependency(String dependencyFile, Path output, String argFileName)
+  private static void ensureRefasterDependencies() throws Exception {
+    ensureDependency(
+        "sources/refaster-deps.txt", REFASTER_DEPS, "resolve-refaster-dependencies", false);
+  }
+
+  private static void ensureDependency(
+      String dependencyFile, Path output, String argFileName, boolean useModuleNames)
       throws Exception {
     long started = System.nanoTime();
     Path source = ROOT.resolve(dependencyFile);
-    Path argFile =
-        writeArgFile(
-            argFileName,
+    var arguments =
+        new ArrayList<>(
             List.of(
                 "-ea",
                 "-jar",
                 ROOT.resolve("vendored/jresolve.jar").toString(),
-                "--use-module-names",
                 "--output-directory=" + output,
                 "--dependency-file=" + source));
+    if (useModuleNames) arguments.add("--use-module-names");
+    Path argFile = writeArgFile(argFileName, arguments);
     String fingerprint = dependencyFingerprint(source);
     Path stamp = output.resolve(".fingerprint");
     if (Files.isDirectory(output) && Files.exists(stamp) && readStamp(stamp).equals(fingerprint)) {
@@ -262,6 +283,7 @@ public final class Build {
 
   private static void compile() throws Exception {
     deps();
+    compileRefaster();
     List<String> arguments = new ArrayList<>();
     arguments.add("-Xlint:all");
     arguments.add("-Werror");
@@ -304,6 +326,52 @@ public final class Build {
     writeStamp(stamp, fingerprint);
   }
 
+  private static void compileRefaster() throws Exception {
+    var arguments = new ArrayList<String>();
+    arguments.add("-Xlint:all");
+    arguments.add("-Werror");
+    arguments.add("-cp");
+    arguments.add(refasterJar().toString());
+    arguments.add("-d");
+    arguments.add(REFASTER_CLASSES.toString());
+    arguments.add("-Xplugin:RefasterRuleCompiler --out " + REFASTER_RULE);
+    arguments.add(REFASTER_SOURCE.toString());
+    Path argFile = writeArgFile("compile-refaster-rules", arguments);
+    List<String> fingerprintArguments = new ArrayList<>(arguments);
+    fingerprintArguments.addAll(errorProneJvmArguments());
+    String fingerprint =
+        compilationFingerprint(
+            "refaster", List.of(REFASTER_SOURCE), List.of(REFASTER_DEPS), fingerprintArguments);
+    Path stamp = REFASTER_OUTPUT.resolve(".compile-fingerprint");
+    List<Path> requiredFiles =
+        List.of(REFASTER_CLASSES.resolve("tools/refaster/Rules.class"), REFASTER_RULE);
+    long started = System.nanoTime();
+    if (cacheHit(REFASTER_OUTPUT, stamp, fingerprint, requiredFiles)
+        && Files.size(REFASTER_RULE) > 0) {
+      printCached(javacExecutable(), argFile, started);
+      return;
+    }
+    deleteTree(REFASTER_CLASSES);
+    Files.deleteIfExists(REFASTER_RULE);
+    Files.createDirectories(REFASTER_CLASSES);
+    runJavacArgFile(argFile);
+    if (!Files.isRegularFile(REFASTER_RULE) || Files.size(REFASTER_RULE) == 0) {
+      throw new IllegalStateException("Refaster rule was not generated");
+    }
+    writeStamp(stamp, fingerprint);
+  }
+
+  private static Path refasterJar() throws IOException {
+    List<Path> matches =
+        jarPaths(List.of(REFASTER_DEPS)).stream()
+            .filter(path -> path.getFileName().toString().startsWith("error_prone_refaster-"))
+            .toList();
+    if (matches.size() != 1) {
+      throw new IllegalStateException("expected one Refaster compiler JAR: " + matches);
+    }
+    return matches.getFirst();
+  }
+
   private static void testCommand(List<String> paths) throws Exception {
     if (paths.equals(List.of("--help"))) {
       System.out.println("usage: mise run test [test files or directories...]");
@@ -317,6 +385,113 @@ public final class Build {
     TestSelection selection = testSelection(paths);
     if (!selection.classNames().isEmpty()) compile();
     runTests(selection);
+  }
+
+  private static void refactor() throws Exception {
+    deps();
+    compileRefaster();
+    applyRefasterToModules();
+    applyRefasterToBuildTool();
+    format(true, List.of());
+  }
+
+  private static void applyRefasterToModules() throws Exception {
+    var arguments = new ArrayList<String>();
+    arguments.addAll(refasterPatchArguments());
+    addModuleSourcePaths(arguments);
+    arguments.add("--module-path");
+    arguments.add(modulePath(List.of(MAIN_DEPS, TEST_DEPS)));
+    addExports(arguments);
+    arguments.add("-d");
+    arguments.add(REFASTER_APPLY_MODULES.toString());
+    arguments.add("--module");
+    arguments.add("toktrak,toktrak.tests");
+    deleteTree(REFASTER_APPLY_MODULES);
+    Files.createDirectories(REFASTER_APPLY_MODULES);
+    runJavacArgFile(writeArgFile("apply-refaster-to-modules", arguments));
+  }
+
+  private static void applyRefasterToBuildTool() throws Exception {
+    var arguments = new ArrayList<String>();
+    arguments.addAll(refasterPatchArguments());
+    arguments.add("-d");
+    arguments.add(REFASTER_APPLY_BUILD.toString());
+    arguments.add(ROOT.resolve("tools/Build.java").toString());
+    arguments.add(BUILD_TEST_SOURCE.toString());
+    deleteTree(REFASTER_APPLY_BUILD);
+    Files.createDirectories(REFASTER_APPLY_BUILD);
+    runJavacArgFile(writeArgFile("apply-refaster-to-build-tool", arguments));
+  }
+
+  private static void ci() throws Exception {
+    refactor();
+    if (isGitDirty(ROOT)) {
+      throw new IllegalStateException("working tree is dirty after refactor");
+    }
+    verify();
+  }
+
+  static boolean isGitDirtyForTest(Path repository) throws Exception {
+    return isGitDirty(repository);
+  }
+
+  private static boolean isGitDirty(Path repository) throws Exception {
+    Objects.requireNonNull(repository, "repository");
+    Process process =
+        new ProcessBuilder("git", "status", "--porcelain=v1", "--untracked-files=all")
+            .directory(repository.toFile())
+            .redirectErrorStream(true)
+            .start();
+    var output = new AtomicReference<byte[]>();
+    var readFailure = new AtomicReference<IOException>();
+    Thread reader =
+        Thread.ofVirtual()
+            .name("toktrak-git-status-reader")
+            .start(
+                () -> {
+                  try {
+                    byte[] bytes = process.getInputStream().readNBytes(GIT_STATUS_BYTES_MAX + 1);
+                    output.set(bytes);
+                    if (bytes.length > GIT_STATUS_BYTES_MAX) process.destroyForcibly();
+                  } catch (IOException exception) {
+                    readFailure.set(exception);
+                    process.destroyForcibly();
+                  }
+                });
+    int exitCode;
+    try {
+      exitCode = waitForProcess(process, PROCESS_TIMEOUT, PROCESS_KILL_TIMEOUT, false);
+    } catch (InterruptedException exception) {
+      terminate(process, PROCESS_KILL_TIMEOUT);
+      reader.interrupt();
+      Thread.currentThread().interrupt();
+      throw exception;
+    }
+    if (!reader.join(PROCESS_KILL_TIMEOUT)) {
+      process.destroyForcibly();
+      throw new IllegalStateException("Git status reader did not terminate");
+    }
+    if (readFailure.get() != null) {
+      throw new IllegalStateException("cannot read Git status", readFailure.get());
+    }
+    byte[] bytes = Objects.requireNonNull(output.get(), "Git status output");
+    if (bytes.length > GIT_STATUS_BYTES_MAX) {
+      throw new IllegalStateException(
+          "Git status exceeds " + GIT_STATUS_BYTES_MAX + " UTF-8 bytes");
+    }
+    if (exitCode != 0) throw new IllegalStateException("Git status failed: " + exitCode);
+    try {
+      String status =
+          StandardCharsets.UTF_8
+              .newDecoder()
+              .onMalformedInput(CodingErrorAction.REPORT)
+              .onUnmappableCharacter(CodingErrorAction.REPORT)
+              .decode(ByteBuffer.wrap(bytes))
+              .toString();
+      return !status.isEmpty();
+    } catch (CharacterCodingException exception) {
+      throw new IllegalStateException("Git status is not valid UTF-8", exception);
+    }
   }
 
   private static void verify() throws Exception {
@@ -367,6 +542,8 @@ public final class Build {
 
   private static void testBuildTool() throws Exception {
     ensureBuildDependencies();
+    ensureRefasterDependencies();
+    compileRefaster();
     List<Path> sources =
         List.of(ROOT.resolve("tools/Build.java"), ROOT.resolve("tests/tools/BuildTest.java"));
     var compileArguments = new ArrayList<String>();
@@ -380,9 +557,14 @@ public final class Build {
     Path compileArgFile = writeArgFile("compile-build-tool-tests", compileArguments);
     List<Path> fingerprintSources = new ArrayList<>(sources);
     fingerprintSources.add(ERROR_PRONE_CONFIG);
+    fingerprintSources.add(REFASTER_SOURCE);
+    fingerprintSources.add(REFASTER_RULE);
     String compileFingerprint =
         compilationFingerprint(
-            "build-tool-tests", fingerprintSources, List.of(BUILD_DEPS), compileArguments);
+            "build-tool-tests",
+            fingerprintSources,
+            List.of(BUILD_DEPS, REFASTER_DEPS),
+            compileArguments);
     Path compileStamp = BUILD_TESTS.resolve(".compile-fingerprint");
     List<Path> requiredClasses =
         List.of(
@@ -604,6 +786,12 @@ public final class Build {
     return List.copyOf(arguments);
   }
 
+  static List<String> refasterArgumentsForTest() throws IOException {
+    var arguments = new ArrayList<>(errorProneJvmArguments());
+    arguments.addAll(refasterPatchArguments());
+    return List.copyOf(arguments);
+  }
+
   private static List<String> errorProneJvmArguments() {
     return List.of(
         "-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
@@ -619,12 +807,22 @@ public final class Build {
   }
 
   private static List<String> errorProneArguments() throws IOException {
+    return errorProneArguments("");
+  }
+
+  private static List<String> refasterPatchArguments() throws IOException {
+    return errorProneArguments(
+        " -XepPatchChecks:refaster:" + REFASTER_RULE + " -XepPatchLocation:IN_PLACE");
+  }
+
+  private static List<String> errorProneArguments(String pluginArguments) throws IOException {
+    assert pluginArguments != null;
     return List.of(
         "-XDcompilePolicy=simple",
         "--should-stop=ifError=FLOW",
         "-processorpath",
         modulePath(List.of(BUILD_DEPS)),
-        "-Xplugin:ErrorProne @" + ERROR_PRONE_CONFIG);
+        "-Xplugin:ErrorProne @" + ERROR_PRONE_CONFIG + pluginArguments);
   }
 
   private static void addModuleSourcePaths(List<String> command) {
@@ -1224,6 +1422,6 @@ public final class Build {
   }
 
   private static boolean isWindows() {
-    return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
+    return System.getProperty("os.name").startsWith("Windows");
   }
 }

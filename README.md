@@ -80,7 +80,11 @@ Quick formatting, compile, and lint check: `mise run check`
 
 Run tests: `mise run test [test paths...]`
 
-Full check and test suite: `mise run verify`
+Apply Refaster rules and format changed Java: `mise run refactor`
+
+Full read-only check and test suite: `mise run verify`
+
+CI refactor/clean-tree gate followed by verification: `mise run ci`
 
 Start the seeded, auto-reloading dev server: `mise run dev`
 
@@ -156,7 +160,7 @@ top level command runner and dev dependencies: `mise`
 
 vendored java dependencies: `vendored`
 
-java dependency resolver: `jresolve` downloads modular dependencies into `output/deps/{main,test}` and compiler plugins into `output/deps/build`
+java dependency resolver: `jresolve` downloads modular dependencies into `output/deps/{main,test}`, compiler plugins into `output/deps/build`, and the isolated shaded Refaster compiler into `output/deps/refaster`
 
 source code: `sources`
 
@@ -167,6 +171,8 @@ build output: `output`
 java modules: `output/modules`
 
 generated Java tool argument files: `output/args`
+
+Refaster rule source: `tools/refaster/Rules.java`; generated rules/classes: `output/refaster`
 
 runtimes via `jlink`: `output/runtimes/{test,dev,prod}`; test/dev runtimes exclude `toktrak` and are reused until dependency/JDK inputs change
 

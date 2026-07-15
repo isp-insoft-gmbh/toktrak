@@ -22,9 +22,17 @@ description = "Run tests, optionally limited to test files or directories"
 raw_args = true
 run = "java -ea tools/Build.java test"
 
+[tasks.refactor]
+description = "Apply Refaster rules and format Java sources"
+run = "java -ea tools/Build.java refactor"
+
 [tasks.verify]
 description = "Check formatting, compile/lint all modules, and run the full test suite"
 run = "java -ea tools/Build.java verify"
+
+[tasks.ci]
+description = "Apply Refaster rules, require a clean tree, and verify"
+run = "java -ea tools/Build.java ci"
 
 [tasks.dev]
 description = "Run seeded TokTrak and restart when development files change"

@@ -10,7 +10,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 
 public final class BuildTest {
   private BuildTest() {}
@@ -40,6 +39,8 @@ public final class BuildTest {
     batchesFormatterSources();
     rejectsOversizedCommand();
     rejectsErrorProneViolation();
+    appliesWindowsOsNameRule();
+    detectsDirtyGitTree();
     assignsTestGroupTimeouts();
     forceTerminatesHardTimedOutProcess();
     terminatesTimedOutProcess();
@@ -101,12 +102,15 @@ public final class BuildTest {
     Path directory = Files.createTempDirectory("toktrak-build-tool-only-");
     try {
       Path tools = Files.createDirectories(directory.resolve("tools"));
+      Path refasterTools = Files.createDirectories(directory.resolve("tools/refaster"));
       Path tests = Files.createDirectories(directory.resolve("tests/tools"));
       Path sources = Files.createDirectories(directory.resolve("sources"));
       Path vendored = Files.createDirectories(directory.resolve("vendored"));
       Files.copy(Path.of("tools/Build.java"), tools.resolve("Build.java"));
+      Files.copy(Path.of("tools/refaster/Rules.java"), refasterTools.resolve("Rules.java"));
       Files.copy(Path.of("vendored/jresolve.jar"), vendored.resolve("jresolve.jar"));
       Files.copy(Path.of("sources/build-deps.txt"), sources.resolve("build-deps.txt"));
+      Files.copy(Path.of("sources/refaster-deps.txt"), sources.resolve("refaster-deps.txt"));
       Files.copy(Path.of("sources/error-prone.cfg"), sources.resolve("error-prone.cfg"));
       Files.writeString(
           tests.resolve("BuildTest.java"),
@@ -247,6 +251,75 @@ public final class BuildTest {
     }
   }
 
+  private static void appliesWindowsOsNameRule() throws Exception {
+    Path directory = Files.createTempDirectory("toktrak-refaster-");
+    try {
+      Path source = directory.resolve("Demo.java");
+      Files.writeString(
+          source,
+          "package probe; import java.util.Locale; final class Demo { boolean windows() { return"
+              + " System.getProperty(\"os.name\").toLowerCase(Locale.ROOT).contains(\"win\"); }"
+              + " boolean arbitrary(String value) { return"
+              + " value.toLowerCase(Locale.ROOT).contains(\"win\"); } }");
+      var arguments = new ArrayList<>(Build.refasterArgumentsForTest());
+      arguments.add("-d");
+      arguments.add(directory.toString());
+      arguments.add(source.toString());
+      Process process =
+          new ProcessBuilder(Build.commandForTest(javacExecutable(), arguments))
+              .redirectErrorStream(true)
+              .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+              .start();
+      int exitCode =
+          Build.waitForProcessForTest(process, Duration.ofSeconds(30), Duration.ofSeconds(2), true);
+      if (exitCode != 0) throw new AssertionError("Refaster failed: " + exitCode);
+      String transformed = Files.readString(source);
+      if (!transformed.contains("System.getProperty(\"os.name\").startsWith(\"Windows\")")) {
+        throw new AssertionError("OS-name pattern was not refactored: " + transformed);
+      }
+      if (!transformed.contains("value.toLowerCase(Locale.ROOT).contains(\"win\")")) {
+        throw new AssertionError("arbitrary string pattern was refactored: " + transformed);
+      }
+    } finally {
+      List<Path> paths = Build.treePathsForTest(directory, 100);
+      for (int index = paths.size() - 1; index >= 0; index--)
+        Files.deleteIfExists(paths.get(index));
+    }
+  }
+
+  private static void detectsDirtyGitTree() throws Exception {
+    Path directory = Files.createTempDirectory("toktrak-git-dirty-");
+    try {
+      runGit(directory, "init", "--quiet");
+      if (Build.isGitDirtyForTest(directory)) {
+        throw new AssertionError("clean Git tree reported dirty");
+      }
+      Files.writeString(directory.resolve("untracked.txt"), "dirty");
+      if (!Build.isGitDirtyForTest(directory)) {
+        throw new AssertionError("dirty Git tree reported clean");
+      }
+    } finally {
+      List<Path> paths = Build.treePathsForTest(directory, 1_000);
+      for (int index = paths.size() - 1; index >= 0; index--)
+        Files.deleteIfExists(paths.get(index));
+    }
+  }
+
+  private static void runGit(Path directory, String... arguments) throws Exception {
+    var command = new ArrayList<String>();
+    command.add("git");
+    command.addAll(List.of(arguments));
+    Process process =
+        new ProcessBuilder(command)
+            .directory(directory.toFile())
+            .redirectErrorStream(true)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .start();
+    int exitCode =
+        Build.waitForProcessForTest(process, Duration.ofSeconds(30), Duration.ofSeconds(2), true);
+    if (exitCode != 0) throw new AssertionError("Git failed: " + command);
+  }
+
   private static void assignsTestGroupTimeouts() {
     if (!Build.testTimeout("--unit").equals(Duration.ofSeconds(30))) {
       throw new AssertionError("unit test timeout is not 30 seconds");
@@ -297,9 +370,7 @@ public final class BuildTest {
     return Path.of(
             System.getProperty("java.home"),
             "bin",
-            System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win")
-                ? name + ".exe"
-                : name)
+            System.getProperty("os.name").startsWith("Windows") ? name + ".exe" : name)
         .toString();
   }
 
