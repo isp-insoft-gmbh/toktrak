@@ -30,6 +30,7 @@ public final class BuildTest {
     rejectsNonTestSelection();
     rejectsOversizedStamp();
     rejectsInvalidUtf8Stamp();
+    validatesCacheArtifacts();
     waitsForNormalProcess();
     passesArgumentsWithSpaces();
     batchesFormatterSources();
@@ -112,6 +113,29 @@ public final class BuildTest {
       expectFailure(() -> Build.readStampForTest(stamp), "stamp is not valid UTF-8");
     } finally {
       Files.deleteIfExists(stamp);
+    }
+  }
+
+  private static void validatesCacheArtifacts() throws Exception {
+    Path directory = Files.createTempDirectory("toktrak-build-cache-");
+    Path stamp = directory.resolve(".fingerprint");
+    Path required = directory.resolve("Output.class");
+    try {
+      Files.writeString(stamp, "expected");
+      if (Build.cacheHitForTest(directory, stamp, "expected", List.of(required))) {
+        throw new AssertionError("cache hit without required artifact");
+      }
+      Files.createFile(required);
+      if (!Build.cacheHitForTest(directory, stamp, "expected", List.of(required))) {
+        throw new AssertionError("valid cache missed");
+      }
+      if (Build.cacheHitForTest(directory, stamp, "changed", List.of(required))) {
+        throw new AssertionError("stale fingerprint hit");
+      }
+    } finally {
+      Files.deleteIfExists(required);
+      Files.deleteIfExists(stamp);
+      Files.deleteIfExists(directory);
     }
   }
 

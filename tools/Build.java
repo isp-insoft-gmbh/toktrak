@@ -26,6 +26,7 @@ public final class Build {
   private static final Path OUTPUT = ROOT.resolve("output");
   private static final Path MODULES = OUTPUT.resolve("modules");
   private static final Path APP_MODULE = MODULES.resolve("toktrak");
+  private static final Path TEST_MODULE = MODULES.resolve("toktrak.tests");
   private static final Path MAIN_DEPS = OUTPUT.resolve("deps/main");
   private static final Path TEST_DEPS = OUTPUT.resolve("deps/test");
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
@@ -122,8 +123,7 @@ public final class Build {
     deleteTree(output);
     Files.createDirectories(output);
     runArgFile(javaExecutable(), argFile);
-    Files.writeString(
-        stamp, fingerprint, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    writeStamp(stamp, fingerprint);
   }
 
   private static String dependencyFingerprint(Path dependencyFile) throws Exception {
@@ -131,6 +131,53 @@ public final class Build {
     updateDigestFromFile(digest, dependencyFile);
     updateDigestFromFile(digest, ROOT.resolve("vendored/jresolve.jar"));
     return HexFormat.of().formatHex(digest.digest());
+  }
+
+  private static String compilationFingerprint(
+      String name, List<Path> sources, List<Path> dependencyDirectories, List<String> arguments)
+      throws Exception {
+    Objects.requireNonNull(name, "name");
+    Objects.requireNonNull(sources, "sources");
+    Objects.requireNonNull(dependencyDirectories, "dependencyDirectories");
+    Objects.requireNonNull(arguments, "arguments");
+    requireCollectionSize(sources, "compilation sources");
+    requireCollectionSize(dependencyDirectories, "compilation dependency directories");
+    var digest = MessageDigest.getInstance("SHA-256");
+    update(digest, "compile\n" + name + "\n" + platformFingerprint() + "\n");
+    update(digest, argumentFileContent(arguments));
+    for (Path source : sources) {
+      update(digest, ROOT.relativize(source).toString() + "\n");
+      if (Files.isDirectory(source)) {
+        updateTree(digest, source, ".java");
+      } else {
+        updateDigestFromFile(digest, source);
+      }
+    }
+    for (Path jar : jarPaths(dependencyDirectories)) {
+      update(digest, jar.getFileName().toString() + "\n");
+      updateDigestFromFile(digest, jar);
+    }
+    return HexFormat.of().formatHex(digest.digest());
+  }
+
+  private static String testResultFingerprint(String compileFingerprint, List<String> arguments)
+      throws Exception {
+    Objects.requireNonNull(compileFingerprint, "compileFingerprint");
+    Objects.requireNonNull(arguments, "arguments");
+    var digest = MessageDigest.getInstance("SHA-256");
+    update(digest, "test\n" + platformFingerprint() + "\n" + compileFingerprint + "\n");
+    update(digest, argumentFileContent(arguments));
+    return HexFormat.of().formatHex(digest.digest());
+  }
+
+  private static String platformFingerprint() {
+    return System.getProperty("java.runtime.version")
+        + "\n"
+        + System.getProperty("java.vendor")
+        + "\n"
+        + System.getProperty("os.name")
+        + "\n"
+        + System.getProperty("os.arch");
   }
 
   private static void formatCommand(List<String> paths) throws Exception {
@@ -195,8 +242,6 @@ public final class Build {
 
   private static void compile() throws Exception {
     deps();
-    deleteTree(MODULES);
-    Files.createDirectories(MODULES);
     List<String> arguments = new ArrayList<>();
     arguments.add("-Xlint:all");
     arguments.add("-Werror");
@@ -209,7 +254,28 @@ public final class Build {
     arguments.add(MODULES.toString());
     arguments.add("--module");
     arguments.add("toktrak,toktrak.tests");
-    runArgFile(javacExecutable(), "compile-toktrak-and-test-modules", arguments);
+    Path argFile = writeArgFile("compile-toktrak-and-test-modules", arguments);
+    String fingerprint =
+        compilationFingerprint(
+            "modules",
+            List.of(ROOT.resolve("sources/toktrak"), ROOT.resolve("tests/toktrak.tests")),
+            List.of(MAIN_DEPS, TEST_DEPS),
+            arguments);
+    Path stamp = MODULES.resolve(".compile-fingerprint");
+    long started = System.nanoTime();
+    if (cacheHit(
+        MODULES,
+        stamp,
+        fingerprint,
+        List.of(
+            APP_MODULE.resolve("module-info.class"), TEST_MODULE.resolve("module-info.class")))) {
+      printCached(javacExecutable(), argFile, started);
+      return;
+    }
+    deleteTree(MODULES);
+    Files.createDirectories(MODULES);
+    runArgFile(javacExecutable(), argFile);
+    writeStamp(stamp, fingerprint);
   }
 
   private static void testCommand(List<String> paths) throws Exception {
@@ -251,22 +317,43 @@ public final class Build {
   }
 
   private static void testBuildTool() throws Exception {
-    deleteTree(BUILD_TESTS);
-    Files.createDirectories(BUILD_TESTS);
-    runArgFile(
-        javacExecutable(),
-        "compile-build-tool-tests",
+    List<Path> sources =
+        List.of(ROOT.resolve("tools/Build.java"), ROOT.resolve("tests/tools/BuildTest.java"));
+    List<String> compileArguments =
         List.of(
             "-Xlint:all",
             "-Werror",
             "-d",
             BUILD_TESTS.toString(),
-            ROOT.resolve("tools/Build.java").toString(),
-            ROOT.resolve("tests/tools/BuildTest.java").toString()));
-    runArgFile(
-        javaExecutable(),
-        "run-build-tool-tests",
-        List.of("-ea", "-cp", BUILD_TESTS.toString(), "BuildTest"));
+            sources.get(0).toString(),
+            sources.get(1).toString());
+    Path compileArgFile = writeArgFile("compile-build-tool-tests", compileArguments);
+    String compileFingerprint =
+        compilationFingerprint("build-tool-tests", sources, List.of(), compileArguments);
+    Path compileStamp = BUILD_TESTS.resolve(".compile-fingerprint");
+    List<Path> requiredClasses =
+        List.of(BUILD_TESTS.resolve("Build.class"), BUILD_TESTS.resolve("BuildTest.class"));
+    long compileStarted = System.nanoTime();
+    if (cacheHit(BUILD_TESTS, compileStamp, compileFingerprint, requiredClasses)) {
+      printCached(javacExecutable(), compileArgFile, compileStarted);
+    } else {
+      deleteTree(BUILD_TESTS);
+      Files.createDirectories(BUILD_TESTS);
+      runArgFile(javacExecutable(), compileArgFile);
+      writeStamp(compileStamp, compileFingerprint);
+    }
+
+    List<String> testArguments = List.of("-ea", "-cp", BUILD_TESTS.toString(), "BuildTest");
+    Path testArgFile = writeArgFile("run-build-tool-tests", testArguments);
+    String testFingerprint = testResultFingerprint(compileFingerprint, testArguments);
+    Path testStamp = BUILD_TESTS.resolve(".test-fingerprint");
+    long testStarted = System.nanoTime();
+    if (cacheHit(BUILD_TESTS, testStamp, testFingerprint, requiredClasses)) {
+      printCached(javaExecutable(), testArgFile, testStarted);
+    } else {
+      runArgFile(javaExecutable(), testArgFile);
+      writeStamp(testStamp, testFingerprint);
+    }
   }
 
   private static void jlinkProd() throws Exception {
@@ -346,8 +433,7 @@ public final class Build {
     deleteTree(image);
     Files.createDirectories(RUNTIMES);
     runArgFile(jlinkExecutable(), argFile);
-    Files.writeString(
-        stamp, fingerprint, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    writeStamp(stamp, fingerprint);
     return image;
   }
 
@@ -594,6 +680,39 @@ public final class Build {
             .orElse(null);
     printCompletion(code == 0 ? "done" : "failed", System.nanoTime() - started, cpu);
     if (code != 0) fail("command failed with exit code " + code);
+  }
+
+  static boolean cacheHitForTest(
+      Path directory, Path stamp, String fingerprint, List<Path> requiredFiles) throws IOException {
+    return cacheHit(directory, stamp, fingerprint, requiredFiles);
+  }
+
+  private static boolean cacheHit(
+      Path directory, Path stamp, String fingerprint, List<Path> requiredFiles) throws IOException {
+    Objects.requireNonNull(directory, "directory");
+    Objects.requireNonNull(stamp, "stamp");
+    Objects.requireNonNull(fingerprint, "fingerprint");
+    Objects.requireNonNull(requiredFiles, "requiredFiles");
+    requireCollectionSize(requiredFiles, "required cache files");
+    if (!Files.isDirectory(directory) || !Files.isRegularFile(stamp)) return false;
+    for (Path requiredFile : requiredFiles) {
+      if (!requiredFile.normalize().startsWith(directory.normalize())) {
+        throw new IllegalArgumentException("required cache file escapes directory");
+      }
+      if (!Files.isRegularFile(requiredFile)) return false;
+    }
+    return readStamp(stamp).equals(fingerprint);
+  }
+
+  private static void writeStamp(Path stamp, String fingerprint) throws IOException {
+    Objects.requireNonNull(stamp, "stamp");
+    Objects.requireNonNull(fingerprint, "fingerprint");
+    if (fingerprint.getBytes(StandardCharsets.UTF_8).length > STAMP_BYTES_MAX) {
+      fail("fingerprint exceeds " + STAMP_BYTES_MAX + " UTF-8 bytes");
+    }
+    Files.writeString(
+        stamp, fingerprint, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    assert Files.size(stamp) <= STAMP_BYTES_MAX;
   }
 
   static String readStampForTest(Path path) throws IOException {
