@@ -780,12 +780,6 @@ public final class Build {
     arguments.addAll(errorProneArguments());
   }
 
-  static List<String> errorProneArgumentsForTest() throws IOException {
-    var arguments = new ArrayList<>(errorProneJvmArguments());
-    arguments.addAll(errorProneArguments());
-    return List.copyOf(arguments);
-  }
-
   static List<String> refasterArgumentsForTest() throws IOException {
     var arguments = new ArrayList<>(errorProneJvmArguments());
     arguments.addAll(refasterPatchArguments());

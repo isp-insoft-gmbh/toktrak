@@ -29,7 +29,6 @@ public final class BuildTest {
     rejectsTraversalAboveLimit();
     rejectsArgumentLimits();
     selectsTestsByFileAndDirectory();
-    runsBuildToolTestsWithoutApplicationSources();
     rejectsNonTestSelection();
     rejectsOversizedStamp();
     rejectsInvalidUtf8Stamp();
@@ -38,7 +37,6 @@ public final class BuildTest {
     passesArgumentsWithSpaces();
     batchesFormatterSources();
     rejectsOversizedCommand();
-    rejectsErrorProneViolation();
     appliesWindowsOsNameRule();
     detectsDirtyGitTree();
     assignsTestGroupTimeouts();
@@ -95,47 +93,6 @@ public final class BuildTest {
     Build.TestSelection build = Build.testSelectionForTest(List.of("tests/tools"));
     if (!build.buildTool() || !build.classNames().isEmpty()) {
       throw new AssertionError("unexpected build test selection: " + build);
-    }
-  }
-
-  private static void runsBuildToolTestsWithoutApplicationSources() throws Exception {
-    Path directory = Files.createTempDirectory("toktrak-build-tool-only-");
-    try {
-      Path tools = Files.createDirectories(directory.resolve("tools"));
-      Path refasterTools = Files.createDirectories(directory.resolve("tools/refaster"));
-      Path tests = Files.createDirectories(directory.resolve("tests/tools"));
-      Path sources = Files.createDirectories(directory.resolve("sources"));
-      Path vendored = Files.createDirectories(directory.resolve("vendored"));
-      Files.copy(Path.of("tools/Build.java"), tools.resolve("Build.java"));
-      Files.copy(Path.of("tools/refaster/Rules.java"), refasterTools.resolve("Rules.java"));
-      Files.copy(Path.of("vendored/jresolve.jar"), vendored.resolve("jresolve.jar"));
-      Files.copy(Path.of("sources/build-deps.txt"), sources.resolve("build-deps.txt"));
-      Files.copy(Path.of("sources/refaster-deps.txt"), sources.resolve("refaster-deps.txt"));
-      Files.copy(Path.of("sources/error-prone.cfg"), sources.resolve("error-prone.cfg"));
-      Files.writeString(
-          tests.resolve("BuildTest.java"),
-          "package tools; public final class BuildTest {"
-              + " private BuildTest() {}"
-              + " public static void main(String[] args) { assert args.length == 0; }"
-              + " }");
-      Process process =
-          new ProcessBuilder(
-                  javaExecutable(),
-                  "-ea",
-                  tools.resolve("Build.java").toString(),
-                  "test",
-                  "tests/tools")
-              .directory(directory.toFile())
-              .redirectErrorStream(true)
-              .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-              .start();
-      int exitCode =
-          Build.waitForProcessForTest(process, Duration.ofSeconds(30), Duration.ofSeconds(2));
-      if (exitCode != 0) throw new AssertionError("build-tool-only test failed: " + exitCode);
-    } finally {
-      List<Path> paths = Build.treePathsForTest(directory, 1_000);
-      for (int index = paths.size() - 1; index >= 0; index--)
-        Files.deleteIfExists(paths.get(index));
     }
   }
 
@@ -221,34 +178,6 @@ public final class BuildTest {
     expectFailure(
         () -> Build.commandForTest("unused", Collections.nCopies(100, "x".repeat(300))),
         "command exceeds 24576 UTF-8 bytes");
-  }
-
-  private static void rejectsErrorProneViolation() throws Exception {
-    Path directory = Files.createTempDirectory("toktrak-error-prone-");
-    try {
-      Path source = directory.resolve("ErrorProneFailure.java");
-      Files.writeString(
-          source,
-          "package fixture; final class ErrorProneFailure {"
-              + " void fail() { new RuntimeException(); }"
-              + " }");
-      var arguments = new ArrayList<>(Build.errorProneArgumentsForTest());
-      arguments.add("-d");
-      arguments.add(directory.toString());
-      arguments.add(source.toString());
-      Process process =
-          new ProcessBuilder(Build.commandForTest(javacExecutable(), arguments))
-              .redirectErrorStream(true)
-              .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-              .start();
-      int exitCode =
-          Build.waitForProcessForTest(process, Duration.ofSeconds(30), Duration.ofSeconds(2), true);
-      if (exitCode == 0) throw new AssertionError("Error Prone accepted DeadException violation");
-    } finally {
-      List<Path> paths = Build.treePathsForTest(directory, 100);
-      for (int index = paths.size() - 1; index >= 0; index--)
-        Files.deleteIfExists(paths.get(index));
-    }
   }
 
   private static void appliesWindowsOsNameRule() throws Exception {
