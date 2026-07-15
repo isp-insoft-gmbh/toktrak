@@ -27,6 +27,7 @@ public final class BuildTest {
     rejectsTraversalAboveLimit();
     rejectsArgumentLimits();
     selectsTestsByFileAndDirectory();
+    runsBuildToolTestsWithoutApplicationSources();
     rejectsNonTestSelection();
     rejectsOversizedStamp();
     rejectsInvalidUtf8Stamp();
@@ -87,6 +88,39 @@ public final class BuildTest {
     Build.TestSelection build = Build.testSelectionForTest(List.of("tests/tools"));
     if (!build.buildTool() || !build.classNames().isEmpty()) {
       throw new AssertionError("unexpected build test selection: " + build);
+    }
+  }
+
+  private static void runsBuildToolTestsWithoutApplicationSources() throws Exception {
+    Path directory = Files.createTempDirectory("toktrak-build-tool-only-");
+    try {
+      Path tools = Files.createDirectories(directory.resolve("tools"));
+      Path tests = Files.createDirectories(directory.resolve("tests/tools"));
+      Files.copy(Path.of("tools/Build.java"), tools.resolve("Build.java"));
+      Files.writeString(
+          tests.resolve("BuildTest.java"),
+          "public final class BuildTest {"
+              + " private BuildTest() {}"
+              + " public static void main(String[] args) { assert args.length == 0; }"
+              + " }");
+      Process process =
+          new ProcessBuilder(
+                  javaExecutable(),
+                  "-ea",
+                  tools.resolve("Build.java").toString(),
+                  "test",
+                  "tests/tools")
+              .directory(directory.toFile())
+              .redirectErrorStream(true)
+              .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+              .start();
+      int exitCode =
+          Build.waitForProcessForTest(process, Duration.ofSeconds(30), Duration.ofSeconds(2));
+      if (exitCode != 0) throw new AssertionError("build-tool-only test failed: " + exitCode);
+    } finally {
+      List<Path> paths = Build.treePathsForTest(directory, 1_000);
+      for (int index = paths.size() - 1; index >= 0; index--)
+        Files.deleteIfExists(paths.get(index));
     }
   }
 

@@ -65,8 +65,12 @@ public final class Build {
     try {
       requireAssertions();
       Objects.requireNonNull(args, "args");
-      if (args.length == 0) fail("command required: clean, fmt, check, test, verify, dev, or prod");
-      if (args.length > 256) fail("command arguments exceed 256 entries");
+      if (args.length == 0) {
+        throw new IllegalStateException(
+            "command required: clean, fmt, check, test, verify, dev, or prod");
+      }
+      if (args.length > 256)
+        throw new IllegalStateException("command arguments exceed 256 entries");
       deleteTree(ARGFILES);
       switch (args[0]) {
         case "clean" -> clean();
@@ -76,7 +80,7 @@ public final class Build {
         case "verify" -> verify();
         case "dev" -> dev(List.of(args).subList(1, args.length));
         case "prod" -> jlinkProd();
-        default -> fail("unknown command: " + args[0]);
+        default -> throw new IllegalStateException("unknown command: " + args[0]);
       }
     } finally {
       printTotal(System.nanoTime() - started);
@@ -225,7 +229,8 @@ public final class Build {
       }
       commandBytes = Math.addExact(commandBytes, Math.addExact(sourceBytes, 1));
       if (commandBytes > COMMAND_BYTES_MAX) {
-        fail("formatter source path exceeds command ceiling: " + sourcePath);
+        throw new IllegalStateException(
+            "formatter source path exceeds command ceiling: " + sourcePath);
       }
       batch.add(sourcePath);
       files = Math.addExact(files, 1);
@@ -289,7 +294,7 @@ public final class Build {
   private static void test(List<String> paths) throws Exception {
     Objects.requireNonNull(paths, "paths");
     TestSelection selection = testSelection(paths);
-    compile();
+    if (!selection.classNames().isEmpty()) compile();
     runTests(selection);
   }
 
@@ -482,7 +487,9 @@ public final class Build {
   }
 
   private static void verifyModules(Path directory) throws IOException {
-    if (!Files.isDirectory(directory)) fail("dependency directory missing: " + directory);
+    if (!Files.isDirectory(directory)) {
+      throw new IllegalStateException("dependency directory missing: " + directory);
+    }
     for (Path jar : jarPaths(List.of(directory))) moduleName(jar);
   }
 
@@ -493,12 +500,13 @@ public final class Build {
     var names = new ArrayList<String>();
     for (Path jar : jarPaths(directories)) {
       if (names.size() >= COLLECTION_ENTRIES_MAX) {
-        fail("module names exceed " + COLLECTION_ENTRIES_MAX + " entries");
+        throw new IllegalStateException(
+            "module names exceed " + COLLECTION_ENTRIES_MAX + " entries");
       }
       names.add(moduleName(jar));
     }
     if (additional.size() > COLLECTION_ENTRIES_MAX - names.size()) {
-      fail("module names exceed " + COLLECTION_ENTRIES_MAX + " entries");
+      throw new IllegalStateException("module names exceed " + COLLECTION_ENTRIES_MAX + " entries");
     }
     names.addAll(additional);
     return names.stream().distinct().sorted().toList();
@@ -510,22 +518,25 @@ public final class Build {
 
   private static String moduleName(Path jar) {
     var modules = ModuleFinder.of(jar).findAll();
-    if (modules.size() != 1) fail("module descriptor missing: " + jar);
+    if (modules.size() != 1) throw new IllegalStateException("module descriptor missing: " + jar);
     var descriptor = modules.iterator().next().descriptor();
-    if (descriptor.isAutomatic()) fail("automatic module rejected: " + jar);
+    if (descriptor.isAutomatic())
+      throw new IllegalStateException("automatic module rejected: " + jar);
     return descriptor.name();
   }
 
   private static List<Path> jarPaths(List<Path> directories) throws IOException {
     Objects.requireNonNull(directories, "directories");
-    if (directories.size() > TREE_ENTRIES_MAX)
-      fail("directories exceed " + TREE_ENTRIES_MAX + " entries");
+    if (directories.size() > TREE_ENTRIES_MAX) {
+      throw new IllegalStateException("directories exceed " + TREE_ENTRIES_MAX + " entries");
+    }
     var result = new ArrayList<Path>();
     for (Path directory : directories) {
       for (Path path : directoryEntries(directory, TREE_ENTRIES_MAX)) {
         if (!isJar(path)) continue;
-        if (result.size() >= TREE_ENTRIES_MAX)
-          fail("JAR paths exceed " + TREE_ENTRIES_MAX + " entries");
+        if (result.size() >= TREE_ENTRIES_MAX) {
+          throw new IllegalStateException("JAR paths exceed " + TREE_ENTRIES_MAX + " entries");
+        }
         result.add(path);
       }
     }
@@ -548,7 +559,8 @@ public final class Build {
       if (Files.isDirectory(entry) && !entry.equals(MODULES)) {
         List<String> jars = jarPaths(List.of(entry)).stream().map(Path::toString).toList();
         if (jars.size() > COLLECTION_ENTRIES_MAX - paths.size()) {
-          fail("module path exceeds " + COLLECTION_ENTRIES_MAX + " entries");
+          throw new IllegalStateException(
+              "module path exceeds " + COLLECTION_ENTRIES_MAX + " entries");
         }
         paths.addAll(jars);
       } else if (Files.isDirectory(entry)) {
@@ -557,7 +569,8 @@ public final class Build {
         paths.add(entry.toString());
       }
       if (paths.size() > COLLECTION_ENTRIES_MAX) {
-        fail("module path exceeds " + COLLECTION_ENTRIES_MAX + " entries");
+        throw new IllegalStateException(
+            "module path exceeds " + COLLECTION_ENTRIES_MAX + " entries");
       }
     }
     return String.join(java.io.File.pathSeparator, paths);
@@ -567,7 +580,7 @@ public final class Build {
     Objects.requireNonNull(values, name);
     assert name != null && !name.isBlank();
     if (values.size() > COLLECTION_ENTRIES_MAX) {
-      fail(name + " exceed " + COLLECTION_ENTRIES_MAX + " entries");
+      throw new IllegalStateException(name + " exceed " + COLLECTION_ENTRIES_MAX + " entries");
     }
   }
 
@@ -601,7 +614,9 @@ public final class Build {
     Objects.requireNonNull(name, "name");
     Files.createDirectories(ARGFILES);
     Path argFile = ARGFILES.resolve(name + ".args");
-    if (!argFile.normalize().startsWith(ARGFILES)) fail("argument file escapes output directory");
+    if (!argFile.normalize().startsWith(ARGFILES)) {
+      throw new IllegalStateException("argument file escapes output directory");
+    }
     String content = argumentFileContent(arguments);
     Files.writeString(
         argFile, content, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -632,7 +647,7 @@ public final class Build {
   private static List<String> command(String executable, List<String> arguments) {
     int bytes = commandBytes(executable, arguments);
     if (bytes > COMMAND_BYTES_MAX) {
-      fail("command exceeds " + COMMAND_BYTES_MAX + " UTF-8 bytes");
+      throw new IllegalStateException("command exceeds " + COMMAND_BYTES_MAX + " UTF-8 bytes");
     }
     var command = new ArrayList<String>(Math.addExact(arguments.size(), 1));
     command.add(executable);
@@ -643,7 +658,9 @@ public final class Build {
   private static int commandBytes(String executable, List<String> arguments) {
     Objects.requireNonNull(executable, "executable");
     Objects.requireNonNull(arguments, "arguments");
-    if (arguments.size() > ARGUMENTS_MAX) fail("arguments exceed " + ARGUMENTS_MAX + " entries");
+    if (arguments.size() > ARGUMENTS_MAX) {
+      throw new IllegalStateException("arguments exceed " + ARGUMENTS_MAX + " entries");
+    }
     int bytes = executable.getBytes(StandardCharsets.UTF_8).length;
     for (String argument : arguments) {
       bytes = Math.addExact(bytes, Math.addExact(argumentBytes(argument), 1));
@@ -655,7 +672,7 @@ public final class Build {
     Objects.requireNonNull(argument, "argument");
     int bytes = argument.getBytes(StandardCharsets.UTF_8).length;
     if (bytes > ARGUMENT_BYTES_MAX) {
-      fail("argument exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
+      throw new IllegalStateException("argument exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
     }
     return bytes;
   }
@@ -679,7 +696,7 @@ public final class Build {
             .map(duration -> formatDuration(duration.toNanos()))
             .orElse(null);
     printCompletion(code == 0 ? "done" : "failed", System.nanoTime() - started, cpu);
-    if (code != 0) fail("command failed with exit code " + code);
+    if (code != 0) throw new IllegalStateException("command failed with exit code " + code);
   }
 
   static boolean cacheHitForTest(
@@ -708,7 +725,7 @@ public final class Build {
     Objects.requireNonNull(stamp, "stamp");
     Objects.requireNonNull(fingerprint, "fingerprint");
     if (fingerprint.getBytes(StandardCharsets.UTF_8).length > STAMP_BYTES_MAX) {
-      fail("fingerprint exceeds " + STAMP_BYTES_MAX + " UTF-8 bytes");
+      throw new IllegalStateException("fingerprint exceeds " + STAMP_BYTES_MAX + " UTF-8 bytes");
     }
     Files.writeString(
         stamp, fingerprint, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -725,7 +742,7 @@ public final class Build {
     try (var input = Files.newInputStream(path)) {
       bytes = input.readNBytes(STAMP_BYTES_MAX + 1);
       if (bytes.length > STAMP_BYTES_MAX || input.read() >= 0) {
-        fail("stamp exceeds " + STAMP_BYTES_MAX + " UTF-8 bytes");
+        throw new IllegalStateException("stamp exceeds " + STAMP_BYTES_MAX + " UTF-8 bytes");
       }
     }
     try {
@@ -748,7 +765,9 @@ public final class Build {
     Objects.requireNonNull(digest, "digest");
     Objects.requireNonNull(path, "path");
     long fileBytes = Files.size(path);
-    if (fileBytes > FILE_BYTES_MAX) fail("file exceeds " + FILE_BYTES_MAX + " bytes: " + path);
+    if (fileBytes > FILE_BYTES_MAX) {
+      throw new IllegalStateException("file exceeds " + FILE_BYTES_MAX + " bytes: " + path);
+    }
     byte[] buffer = new byte[COPY_BUFFER_BYTES];
     long fileBytesRead = 0;
     long readOperations = 0;
@@ -758,13 +777,13 @@ public final class Build {
         int requestedBytes = (int) Math.min(buffer.length, fileBytes - fileBytesRead);
         int readBytes = input.read(buffer, 0, requestedBytes);
         readOperations = Math.addExact(readOperations, 1);
-        if (readBytes <= 0) fail("file changed while hashing: " + path);
+        if (readBytes <= 0) throw new IllegalStateException("file changed while hashing: " + path);
         digest.update(buffer, 0, readBytes);
         fileBytesRead = Math.addExact(fileBytesRead, readBytes);
       }
     }
     if (fileBytesRead != fileBytes || Files.size(path) != fileBytes) {
-      fail("file changed while hashing: " + path);
+      throw new IllegalStateException("file changed while hashing: " + path);
     }
     assert fileBytesRead <= FILE_BYTES_MAX;
   }
@@ -782,7 +801,9 @@ public final class Build {
     try (Stream<Path> paths = Files.walk(root)) {
       Iterator<Path> iterator = paths.iterator();
       while (iterator.hasNext()) {
-        if (result.size() >= entriesMax) fail("tree exceeds " + entriesMax + " entries: " + root);
+        if (result.size() >= entriesMax) {
+          throw new IllegalStateException("tree exceeds " + entriesMax + " entries: " + root);
+        }
         result.add(iterator.next());
       }
     }
@@ -813,7 +834,7 @@ public final class Build {
                 .replace('\\', '.')
                 .replace('/', '.'));
       } else {
-        fail("unknown test source: " + ROOT.relativize(path));
+        throw new IllegalStateException("unknown test source: " + ROOT.relativize(path));
       }
     }
     return new TestSelection(buildTool, List.copyOf(classNames));
@@ -837,7 +858,7 @@ public final class Build {
     Objects.requireNonNull(defaults, "defaults");
     Objects.requireNonNull(predicate, "predicate");
     Objects.requireNonNull(description, "description");
-    if (requestedPaths.size() > 256) fail("paths exceed 256 entries");
+    if (requestedPaths.size() > 256) throw new IllegalStateException("paths exceed 256 entries");
     var result = new TreeSet<Path>();
     List<Path> paths =
         requestedPaths.isEmpty()
@@ -845,39 +866,55 @@ public final class Build {
             : requestedPaths.stream().map(Build::resolveProjectPath).toList();
     int traversed = 0;
     for (Path path : paths) {
-      if (Files.isSymbolicLink(path)) fail("symbolic paths are not supported: " + path);
+      if (Files.isSymbolicLink(path)) {
+        throw new IllegalStateException("symbolic paths are not supported: " + path);
+      }
       if (Files.isRegularFile(path)) {
         traversed = Math.addExact(traversed, 1);
-        if (!predicate.test(path)) fail("not a " + description + ": " + path);
-        result.add(path);
-      } else if (Files.isDirectory(path)) {
-        int remaining = COLLECTION_ENTRIES_MAX - traversed;
-        if (remaining <= 0) fail("selected paths exceed " + COLLECTION_ENTRIES_MAX + " entries");
-        List<Path> children = treePaths(path, remaining);
-        traversed = Math.addExact(traversed, children.size());
-        for (Path child : children) {
-          if (Files.isSymbolicLink(child)) fail("symbolic paths are not supported: " + child);
-          if (Files.isRegularFile(child) && predicate.test(child)) result.add(child);
+        if (!predicate.test(path)) {
+          throw new IllegalStateException("not a " + description + ": " + path);
         }
-      } else {
-        fail("path does not exist: " + path);
+        result.add(path);
+        if (result.size() > COLLECTION_ENTRIES_MAX) {
+          throw new IllegalStateException(
+              "selected files exceed " + COLLECTION_ENTRIES_MAX + " entries");
+        }
+        continue;
+      }
+      if (!Files.isDirectory(path)) throw new IllegalStateException("path does not exist: " + path);
+
+      int remaining = COLLECTION_ENTRIES_MAX - traversed;
+      if (remaining <= 0) {
+        throw new IllegalStateException(
+            "selected paths exceed " + COLLECTION_ENTRIES_MAX + " entries");
+      }
+      List<Path> children = treePaths(path, remaining);
+      traversed = Math.addExact(traversed, children.size());
+      for (Path child : children) {
+        if (Files.isSymbolicLink(child)) {
+          throw new IllegalStateException("symbolic paths are not supported: " + child);
+        }
+        if (Files.isRegularFile(child) && predicate.test(child)) result.add(child);
       }
       if (result.size() > COLLECTION_ENTRIES_MAX) {
-        fail("selected files exceed " + COLLECTION_ENTRIES_MAX + " entries");
+        throw new IllegalStateException(
+            "selected files exceed " + COLLECTION_ENTRIES_MAX + " entries");
       }
     }
-    if (result.isEmpty()) fail("no " + description + " files selected");
+    if (result.isEmpty()) {
+      throw new IllegalStateException("no " + description + " files selected");
+    }
     return List.copyOf(result);
   }
 
   private static Path resolveProjectPath(String value) {
     Objects.requireNonNull(value, "path");
     if (value.getBytes(StandardCharsets.UTF_8).length > ARGUMENT_BYTES_MAX) {
-      fail("path exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
+      throw new IllegalStateException("path exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
     }
     Path path = Path.of(value);
     path = (path.isAbsolute() ? path : ROOT.resolve(path)).normalize();
-    if (!path.startsWith(ROOT)) fail("path escapes project: " + value);
+    if (!path.startsWith(ROOT)) throw new IllegalStateException("path escapes project: " + value);
     return path;
   }
 
@@ -897,7 +934,8 @@ public final class Build {
       Iterator<Path> iterator = paths.iterator();
       while (iterator.hasNext()) {
         if (result.size() >= entriesMax) {
-          fail("directory exceeds " + entriesMax + " entries: " + directory);
+          throw new IllegalStateException(
+              "directory exceeds " + entriesMax + " entries: " + directory);
         }
         result.add(iterator.next());
       }
@@ -912,7 +950,9 @@ public final class Build {
 
   private static String argumentFileContent(List<String> arguments) {
     Objects.requireNonNull(arguments, "arguments");
-    if (arguments.size() > ARGUMENTS_MAX) fail("arguments exceed " + ARGUMENTS_MAX + " entries");
+    if (arguments.size() > ARGUMENTS_MAX) {
+      throw new IllegalStateException("arguments exceed " + ARGUMENTS_MAX + " entries");
+    }
     var content =
         new StringBuilder(Math.min(ARGFILE_BYTES_MAX, Math.multiplyExact(arguments.size(), 32)));
     int contentBytes = 0;
@@ -920,12 +960,13 @@ public final class Build {
       Objects.requireNonNull(argument, "argument");
       int argumentBytes = argument.getBytes(StandardCharsets.UTF_8).length;
       if (argumentBytes > ARGUMENT_BYTES_MAX) {
-        fail("argument exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
+        throw new IllegalStateException("argument exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
       }
       String line = quoteArg(argument) + "\n";
       contentBytes = Math.addExact(contentBytes, line.getBytes(StandardCharsets.UTF_8).length);
       if (contentBytes > ARGFILE_BYTES_MAX) {
-        fail("argument file exceeds " + ARGFILE_BYTES_MAX + " UTF-8 bytes");
+        throw new IllegalStateException(
+            "argument file exceeds " + ARGFILE_BYTES_MAX + " UTF-8 bytes");
       }
       content.append(line);
     }
@@ -945,8 +986,7 @@ public final class Build {
     requirePositiveDuration(killTimeout, "killTimeout");
     if (process.waitFor(timeout.toNanos(), TimeUnit.NANOSECONDS)) return process.exitValue();
     terminate(process, killTimeout);
-    fail("process timed out after " + timeout);
-    throw new AssertionError("unreachable");
+    throw new IllegalStateException("process timed out after " + timeout);
   }
 
   private static void terminate(Process process, Duration killTimeout) throws InterruptedException {
@@ -956,7 +996,7 @@ public final class Build {
     if (process.waitFor(killTimeout.toNanos(), TimeUnit.NANOSECONDS)) return;
     process.destroyForcibly();
     if (!process.waitFor(killTimeout.toNanos(), TimeUnit.NANOSECONDS)) {
-      fail("process did not terminate");
+      throw new IllegalStateException("process did not terminate");
     }
     assert !process.isAlive();
   }
@@ -1058,9 +1098,5 @@ public final class Build {
 
   private static boolean isWindows() {
     return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
-  }
-
-  private static void fail(String message) {
-    throw new IllegalStateException(message);
   }
 }
