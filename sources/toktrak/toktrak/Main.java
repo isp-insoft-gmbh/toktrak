@@ -9,7 +9,7 @@ public final class Main {
     if (args == null) throw new IllegalArgumentException("args are required");
     requireAssertions();
     if (args.length == 1 && args[0].equals("--help")) {
-      System.out.println("TokTrak dev server");
+      System.out.println("TokTrak server");
       return;
     }
     var app = App.start(args, System.getenv());
