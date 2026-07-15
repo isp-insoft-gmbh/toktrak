@@ -1,10 +1,26 @@
 package toktrak.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.platform.engine.TestTag;
 
 final class TestLauncherTest {
+  @Test
+  void unitGroupIncludesOnlyUntaggedTests() {
+    assertTrue(TestLauncher.TestGroup.UNIT.includes(Set.of()));
+    assertFalse(TestLauncher.TestGroup.UNIT.includes(Set.of(TestTag.create("integration"))));
+  }
+
+  @Test
+  void taggedGroupIncludesOnlyTaggedTests() {
+    assertFalse(TestLauncher.TestGroup.TAGGED.includes(Set.of()));
+    assertTrue(TestLauncher.TestGroup.TAGGED.includes(Set.of(TestTag.create("integration"))));
+  }
+
   @Test
   void omitsZeroExceptionalCounts() {
     assertEquals(

@@ -36,6 +36,8 @@ public final class BuildTest {
     passesArgumentsWithSpaces();
     batchesFormatterSources();
     rejectsOversizedCommand();
+    assignsTestGroupTimeouts();
+    forceTerminatesHardTimedOutProcess();
     terminatesTimedOutProcess();
   }
 
@@ -206,6 +208,25 @@ public final class BuildTest {
     expectFailure(
         () -> Build.commandForTest("unused", Collections.nCopies(100, "x".repeat(300))),
         "command exceeds 24576 UTF-8 bytes");
+  }
+
+  private static void assignsTestGroupTimeouts() {
+    if (!Build.testTimeout("--unit").equals(Duration.ofSeconds(30))) {
+      throw new AssertionError("unit test timeout is not 30 seconds");
+    }
+    if (!Build.testTimeout("--tagged").equals(Duration.ofMinutes(10))) {
+      throw new AssertionError("tagged test timeout changed");
+    }
+  }
+
+  private static void forceTerminatesHardTimedOutProcess() throws Exception {
+    Process process = child("sleep");
+    expectFailure(
+        () ->
+            Build.waitForProcessForTest(
+                process, Duration.ofMillis(20), Duration.ofMillis(100), true),
+        "process timed out");
+    if (process.isAlive()) throw new AssertionError("hard-timed-out child remains alive");
   }
 
   private static void terminatesTimedOutProcess() throws Exception {

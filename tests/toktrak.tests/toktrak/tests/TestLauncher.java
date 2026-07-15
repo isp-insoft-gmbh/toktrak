@@ -2,11 +2,16 @@ package toktrak.tests;
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.platform.engine.DiscoverySelector;
+import org.junit.platform.engine.FilterResult;
+import org.junit.platform.engine.TestTag;
 import org.junit.platform.engine.discovery.DiscoverySelectors;
 import org.junit.platform.launcher.LauncherDiscoveryRequest;
+import org.junit.platform.launcher.PostDiscoveryFilter;
 import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.TestPlan;
@@ -23,18 +28,23 @@ public final class TestLauncher {
 
   public static void main(String[] args) {
     if (args == null) throw new IllegalArgumentException("args are required");
-    if (args.length > SELECTOR_COUNT_MAX) {
+    if (args.length > Math.addExact(SELECTOR_COUNT_MAX, 1)) {
       throw new IllegalArgumentException(
           "test selectors exceed " + SELECTOR_COUNT_MAX + " entries");
     }
     requireAssertions();
+    if (args.length == 0) throw new IllegalArgumentException("test group required");
+    TestGroup group = TestGroup.parse(args[0]);
     System.setProperty("toktrak.quiet", "true");
-    System.setProperty("junit.jupiter.execution.timeout.default", "10s");
+    if (group == TestGroup.UNIT) {
+      System.setProperty("junit.jupiter.execution.timeout.default", "10s");
+    }
     var selectors = new ArrayList<DiscoverySelector>();
-    if (args.length == 0) {
+    if (args.length == 1) {
       selectors.add(DiscoverySelectors.selectPackage("toktrak.tests"));
     } else {
-      for (String className : args) {
+      for (int index = 1; index < args.length; index++) {
+        String className = args[index];
         if (className == null
             || className.length() > SELECTOR_CHARACTERS_MAX
             || !className.startsWith("toktrak.tests.")) {
@@ -43,16 +53,20 @@ public final class TestLauncher {
         selectors.add(DiscoverySelectors.selectClass(className));
       }
     }
-    LauncherDiscoveryRequest request =
-        LauncherDiscoveryRequestBuilder.request().selectors(selectors).build();
-    assert request != null;
     var launcher = LauncherFactory.create();
-    TestPlan testPlan = launcher.discover(request);
-    long testsDiscovered = testPlan.countTestIdentifiers(TestIdentifier::isTest);
+    TestPlan allTests = launcher.discover(request(selectors));
+    long testsDiscovered = allTests.countTestIdentifiers(TestIdentifier::isTest);
     if (testsDiscovered == 0 || testsDiscovered > TEST_COUNT_MAX) {
       throw new IllegalStateException(
           "discovered tests must be 1.." + TEST_COUNT_MAX + ": " + testsDiscovered);
     }
+    TestPlan testPlan = launcher.discover(request(selectors, group.filter()));
+    long groupTestsDiscovered = testPlan.countTestIdentifiers(TestIdentifier::isTest);
+    if (groupTestsDiscovered > TEST_COUNT_MAX) {
+      throw new IllegalStateException(
+          "discovered group tests exceed " + TEST_COUNT_MAX + ": " + groupTestsDiscovered);
+    }
+    if (groupTestsDiscovered == 0) return;
     var summaryListener = new SummaryGeneratingListener();
     var boundedListener = new BoundedExecutionListener();
     launcher.registerTestExecutionListeners(summaryListener, boundedListener);
@@ -75,6 +89,37 @@ public final class TestLauncher {
             summary.getTestsFailedCount()));
     if (failed) System.exit(1);
     assert summary.getTestsSucceededCount() == testsFound;
+  }
+
+  private static LauncherDiscoveryRequest request(
+      List<DiscoverySelector> selectors, PostDiscoveryFilter... filters) {
+    LauncherDiscoveryRequest request =
+        LauncherDiscoveryRequestBuilder.request().selectors(selectors).filters(filters).build();
+    assert request != null;
+    return request;
+  }
+
+  enum TestGroup {
+    UNIT,
+    TAGGED;
+
+    boolean includes(Set<TestTag> tags) {
+      assert tags != null;
+      return this == UNIT ? tags.isEmpty() : !tags.isEmpty();
+    }
+
+    private PostDiscoveryFilter filter() {
+      return descriptor ->
+          FilterResult.includedIf(!descriptor.isTest() || includes(descriptor.getTags()));
+    }
+
+    private static TestGroup parse(String argument) {
+      return switch (argument) {
+        case "--unit" -> UNIT;
+        case "--tagged" -> TAGGED;
+        default -> throw new IllegalArgumentException("invalid test group: " + argument);
+      };
+    }
   }
 
   static String formatSummary(

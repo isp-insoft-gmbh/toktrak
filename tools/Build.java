@@ -47,6 +47,7 @@ public final class Build {
   private static final int COPY_BUFFER_BYTES = 64 * 1024;
   private static final int STAMP_BYTES_MAX = 128;
   private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(10);
+  private static final Duration UNIT_TEST_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration PROCESS_KILL_TIMEOUT = Duration.ofSeconds(5);
   private static final boolean ANSI = System.console() != null && System.getenv("NO_COLOR") == null;
   private static final List<String> APP_JDK_MODULES = List.of("java.logging", "jdk.httpserver");
@@ -317,8 +318,31 @@ public final class Build {
     addExports(arguments);
     arguments.add("-m");
     arguments.add("toktrak.tests/toktrak.tests.TestLauncher");
-    arguments.addAll(selection.classNames());
-    runArgFile(runtimeJava(runtime), "run-toktrak-test-suite", arguments);
+    runTestGroup(runtime, arguments, selection.classNames(), "--unit");
+    runTestGroup(runtime, arguments, selection.classNames(), "--tagged");
+  }
+
+  private static void runTestGroup(
+      Path runtime, List<String> baseArguments, List<String> classNames, String group)
+      throws Exception {
+    Duration timeout = testTimeout(group);
+    var arguments = new ArrayList<>(baseArguments);
+    arguments.add(group);
+    arguments.addAll(classNames);
+    runArgFile(
+        runtimeJava(runtime),
+        "run-toktrak-" + group.substring(2) + "-test-suite",
+        arguments,
+        timeout,
+        group.equals("--unit"));
+  }
+
+  static Duration testTimeout(String group) {
+    return switch (group) {
+      case "--unit" -> UNIT_TEST_TIMEOUT;
+      case "--tagged" -> PROCESS_TIMEOUT;
+      default -> throw new IllegalArgumentException("unknown test group: " + group);
+    };
   }
 
   private static void testBuildTool() throws Exception {
@@ -610,6 +634,16 @@ public final class Build {
     runArgFile(executable, writeArgFile(name, arguments));
   }
 
+  private static void runArgFile(
+      String executable,
+      String name,
+      List<String> arguments,
+      Duration timeout,
+      boolean forceAtTimeout)
+      throws Exception {
+    runArgFile(executable, writeArgFile(name, arguments), timeout, forceAtTimeout);
+  }
+
   private static Path writeArgFile(String name, List<String> arguments) throws IOException {
     Objects.requireNonNull(name, "name");
     Files.createDirectories(ARGFILES);
@@ -625,10 +659,15 @@ public final class Build {
   }
 
   private static void runArgFile(String executable, Path argFile) throws Exception {
+    runArgFile(executable, argFile, PROCESS_TIMEOUT, false);
+  }
+
+  private static void runArgFile(
+      String executable, Path argFile, Duration timeout, boolean forceAtTimeout) throws Exception {
     Objects.requireNonNull(executable, "executable");
     Objects.requireNonNull(argFile, "argFile");
     printInvocation(executable, argFile);
-    runProcess(new ProcessBuilder(executable, "@" + argFile));
+    runProcess(new ProcessBuilder(executable, "@" + argFile), timeout, forceAtTimeout);
   }
 
   static List<String> commandForTest(String executable, List<String> arguments) {
@@ -678,12 +717,18 @@ public final class Build {
   }
 
   private static void runProcess(ProcessBuilder builder) throws Exception {
+    runProcess(builder, PROCESS_TIMEOUT, false);
+  }
+
+  private static void runProcess(ProcessBuilder builder, Duration timeout, boolean forceAtTimeout)
+      throws Exception {
     Objects.requireNonNull(builder, "builder");
+    requirePositiveDuration(timeout, "timeout");
     long started = System.nanoTime();
     Process process = builder.inheritIO().start();
     int code;
     try {
-      code = waitForProcess(process, PROCESS_TIMEOUT, PROCESS_KILL_TIMEOUT);
+      code = waitForProcess(process, timeout, PROCESS_KILL_TIMEOUT, forceAtTimeout);
     } catch (InterruptedException ex) {
       terminate(process, PROCESS_KILL_TIMEOUT);
       Thread.currentThread().interrupt();
@@ -976,16 +1021,27 @@ public final class Build {
 
   static int waitForProcessForTest(Process process, Duration timeout, Duration killTimeout)
       throws InterruptedException {
-    return waitForProcess(process, timeout, killTimeout);
+    return waitForProcess(process, timeout, killTimeout, false);
   }
 
-  private static int waitForProcess(Process process, Duration timeout, Duration killTimeout)
+  static int waitForProcessForTest(
+      Process process, Duration timeout, Duration killTimeout, boolean forceAtTimeout)
+      throws InterruptedException {
+    return waitForProcess(process, timeout, killTimeout, forceAtTimeout);
+  }
+
+  private static int waitForProcess(
+      Process process, Duration timeout, Duration killTimeout, boolean forceAtTimeout)
       throws InterruptedException {
     Objects.requireNonNull(process, "process");
     requirePositiveDuration(timeout, "timeout");
     requirePositiveDuration(killTimeout, "killTimeout");
     if (process.waitFor(timeout.toNanos(), TimeUnit.NANOSECONDS)) return process.exitValue();
-    terminate(process, killTimeout);
+    if (forceAtTimeout) {
+      terminateForcibly(process, killTimeout);
+    } else {
+      terminate(process, killTimeout);
+    }
     throw new IllegalStateException("process timed out after " + timeout);
   }
 
@@ -994,6 +1050,13 @@ public final class Build {
     assert killTimeout != null && !killTimeout.isNegative() && !killTimeout.isZero();
     process.destroy();
     if (process.waitFor(killTimeout.toNanos(), TimeUnit.NANOSECONDS)) return;
+    terminateForcibly(process, killTimeout);
+  }
+
+  private static void terminateForcibly(Process process, Duration killTimeout)
+      throws InterruptedException {
+    assert process != null;
+    assert killTimeout != null && !killTimeout.isNegative() && !killTimeout.isZero();
     process.destroyForcibly();
     if (!process.waitFor(killTimeout.toNanos(), TimeUnit.NANOSECONDS)) {
       throw new IllegalStateException("process did not terminate");
