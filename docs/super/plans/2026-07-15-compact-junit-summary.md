@@ -1,10 +1,15 @@
 # Compact JUnit Summary Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use /skill:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use /skill:executing-plans to
+> implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
+> tracking.
 
-**Goal:** Replace JUnit's verbose stock summary with the approved compact metadata.
+**Goal:** Replace JUnit's verbose stock summary with the approved compact
+metadata.
 
-**Architecture:** Keep `SummaryGeneratingListener` as the data source. Add one package-private deterministic formatter to `TestLauncher`, test it directly, and retain JUnit's failure-detail printer.
+**Architecture:** Keep `SummaryGeneratingListener` as the data source. Add one
+package-private deterministic formatter to `TestLauncher`, test it directly, and
+retain JUnit's failure-detail printer.
 
 **Tech Stack:** Java, JUnit Platform, JUnit Jupiter
 
@@ -13,6 +18,8 @@
 **Phase:** Single-plan implementation
 
 ---
+
+## Tasks
 
 ### Task 1: Compact summary
 
@@ -23,7 +30,9 @@
 
 - [x] **Step 1: Write failing formatter tests**
 
-Create `TestLauncherTest.java`. Initially call the missing formatter through reflection so the test compiles and fails at runtime with `compact summary formatter missing`. Cover zero and nonzero exceptional counts:
+Create `TestLauncherTest.java`. Initially call the missing formatter through
+reflection so the test compiles and fails at runtime with
+`compact summary formatter missing`. Cover zero and nonzero exceptional counts:
 
 ```java
 package toktrak.tests;
@@ -99,31 +108,33 @@ final class TestLauncherTest {
 
 - [x] **Step 2: Verify RED**
 
-Run `java -ea tools/Build.java verify`. Expect both new tests to fail at runtime with `compact summary formatter missing`; compilation must succeed.
+Run `java -ea tools/Build.java verify`. Expect both new tests to fail at runtime
+with `compact summary formatter missing`; compilation must succeed.
 
 - [x] **Step 3: Implement minimal formatter and output routing**
 
-In `TestLauncher.java`, import `java.util.StringJoiner`. Replace the block beginning with `long testsFound` through the final `summary.printTo(...)` with:
+In `TestLauncher.java`, import `java.util.StringJoiner`. Replace the block
+beginning with `long testsFound` through the final `summary.printTo(...)` with:
 
 ```java
-    long testsFound = summary.getTestsFoundCount();
-    boolean failed =
-        testsFound == 0 || testsFound > TEST_COUNT_MAX || !summary.getFailures().isEmpty();
-    if (!summary.getFailures().isEmpty())
-      summary.printFailuresTo(new PrintWriter(System.err, true));
-    long durationMillis =
-        Math.subtractExact(summary.getTimeFinished(), summary.getTimeStarted());
-    System.out.println(
-        formatSummary(
-            durationMillis,
-            summary.getContainersFoundCount(),
-            testsFound,
-            summary.getTestsSucceededCount(),
-            summary.getTestsSkippedCount(),
-            summary.getTestsAbortedCount(),
-            summary.getTestsFailedCount()));
-    if (failed) System.exit(1);
-    assert summary.getTestsSucceededCount() == testsFound;
+long testsFound = summary.getTestsFoundCount();
+boolean failed =
+    testsFound == 0 || testsFound > TEST_COUNT_MAX || !summary.getFailures().isEmpty();
+if (!summary.getFailures().isEmpty())
+  summary.printFailuresTo(new PrintWriter(System.err, true));
+long durationMillis =
+    Math.subtractExact(summary.getTimeFinished(), summary.getTimeStarted());
+System.out.println(
+    formatSummary(
+        durationMillis,
+        summary.getContainersFoundCount(),
+        testsFound,
+        summary.getTestsSucceededCount(),
+        summary.getTestsSkippedCount(),
+        summary.getTestsAbortedCount(),
+        summary.getTestsFailedCount()));
+if (failed) System.exit(1);
+assert summary.getTestsSucceededCount() == testsFound;
 ```
 
 Add this package-private formatter:
@@ -158,16 +169,24 @@ static String formatSummary(
 
 - [x] **Step 4: Verify GREEN**
 
-Run `java -ea tools/Build.java verify`. Expect zero warnings, 57 successful tests, and compact summary output containing four lines when all tests pass. This full launcher run verifies the formatter is wired into `main`; failure-detail printing and status 1 remain on the existing failure branch rather than adding a recursive subprocess test of the test launcher.
+Run `java -ea tools/Build.java verify`. Expect zero warnings, 57 successful
+tests, and compact summary output containing four lines when all tests pass.
+This full launcher run verifies the formatter is wired into `main`;
+failure-detail printing and status 1 remain on the existing failure branch
+rather than adding a recursive subprocess test of the test launcher.
 
 - [x] **Step 5: Replace reflection with direct calls**
 
-Remove `java.lang.reflect.Method` and `invokeFormatter` from `TestLauncherTest.java`, then replace both `invokeFormatter(...)` calls with `TestLauncher.formatSummary(...)`.
+Remove `java.lang.reflect.Method` and `invokeFormatter` from
+`TestLauncherTest.java`, then replace both `invokeFormatter(...)` calls with
+`TestLauncher.formatSummary(...)`.
 
 - [x] **Step 6: Verify the refactor**
 
-Run `java -ea tools/Build.java verify` again. Expect the same zero-warning, 57-test successful result and compact four-line summary.
+Run `java -ea tools/Build.java verify` again. Expect the same zero-warning,
+57-test successful result and compact four-line summary.
 
 - [x] **Step 7: Commit**
 
-Commit `TestLauncher.java`, `TestLauncherTest.java`, and this plan with subject `test: compact JUnit summary`.
+Commit `TestLauncher.java`, `TestLauncherTest.java`, and this plan with subject
+`test: compact JUnit summary`.

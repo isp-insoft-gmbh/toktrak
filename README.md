@@ -33,11 +33,11 @@ The "tracker" is fairly primitive. It is one NodeJS script that installs a
 user-scoped OS scheduler entry and uploads usage data daily. It depends on
 NodeJS (for `npx ccusage ...`) and the native user scheduler on each OS.
 
-| OS  | scheduler        | install NodeJS               |
-|-----|------------------|------------------------------|
-| win | schtasks         | winget install OpenJS.NodeJS |
-| mac | LaunchAgent      | brew install node            |
-| lnx | systemd --user   | figure it out                |
+| OS  | scheduler      | install NodeJS               |
+| --- | -------------- | ---------------------------- |
+| win | schtasks       | winget install OpenJS.NodeJS |
+| mac | LaunchAgent    | brew install node            |
+| lnx | systemd --user | figure it out                |
 
 ### TokTrak server and dashboard UI
 
@@ -61,8 +61,8 @@ Features:
 
 ## How to build
 
-The only dependency after cloning this repo is: `mise`.
-It handles running commands and installing and pinning dev dependencies.
+The only dependency after cloning this repo is: `mise`. It handles running
+commands and installing and pinning dev dependencies.
 
 Install `mise`:
 
@@ -90,7 +90,8 @@ Start the seeded, auto-reloading dev server: `mise run dev`
 
 Build the production runtime: `mise run prod`
 
-Clean generated modules, dependencies, argument files, and runtimes: `mise run clean`
+Clean generated modules, dependencies, argument files, and runtimes:
+`mise run clean`
 
 We ship an anonymized corpus of test usage data for easy manual testing.
 
@@ -105,9 +106,8 @@ Install flow:
 3. Download the generated installer script shown after token creation.
 4. Run the shown command for your OS.
 
-The installer contains your token.
-Do not share it.
-If you miss the one-time download, revoke the token and create a new one.
+The installer contains your token. Do not share it. If you miss the one-time
+download, revoke the token and create a new one.
 
 The installer sets up a user-scoped daily job and immediately uploads existing
 local usage data once.
@@ -145,9 +145,8 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 `TOKTRAK_SESSION_SECRET` signs login cookies. `TOKTRAK_TOKEN_PEPPER` hashes
 tracker tokens and must stay stable; changing it invalidates all tracker tokens.
 
-Deploy behind a reverse proxy for TLS/compression.
-Back up the mounted `TOKTRAK_DATA_DIR` volume.
-Rootless Podman is recommended.
+Deploy behind a reverse proxy for TLS/compression. Back up the mounted
+`TOKTRAK_DATA_DIR` volume. Rootless Podman is recommended.
 
 ## How to use
 
@@ -160,7 +159,9 @@ top level command runner and dev dependencies: `mise`
 
 vendored java dependencies: `vendored`
 
-java dependency resolver: `jresolve` downloads modular dependencies into `output/deps/{main,test}`, compiler plugins into `output/deps/build`, and the isolated shaded Refaster compiler into `output/deps/refaster`
+java dependency resolver: `jresolve` downloads modular dependencies into
+`output/deps/{main,test}`, compiler plugins into `output/deps/build`, and the
+isolated shaded Refaster compiler into `output/deps/refaster`
 
 source code: `sources`
 
@@ -172,9 +173,11 @@ java modules: `output/modules`
 
 generated Java tool argument files: `output/args`
 
-Refaster rule source: `tools/refaster/Rules.java`; generated rules/classes: `output/refaster`
+Refaster rule source: `tools/refaster/Rules.java`; generated rules/classes:
+`output/refaster`
 
-runtimes via `jlink`: `output/runtimes/{test,dev,prod}`; test/dev runtimes exclude `toktrak` and are reused until dependency/JDK inputs change
+runtimes via `jlink`: `output/runtimes/{test,dev,prod}`; test/dev runtimes
+exclude `toktrak` and are reused until dependency/JDK inputs change
 
 compiling: `javac` via collection of java @arg files
 

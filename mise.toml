@@ -1,7 +1,9 @@
 [tools]
 coursier = "latest"
+dprint = "latest"
 google-java-format = "latest"
 java = "latest"
+markdownlint-cli2 = "latest"
 watchexec = "latest"
 
 [tasks.clean]
@@ -9,12 +11,17 @@ description = "Remove generated modules, dependencies, argument files, and runti
 run = "java -ea tools/Build.java clean"
 
 [tasks.fmt]
-description = "Format Java sources, optionally limited to paths"
+description = "Format Markdown and Java sources, optionally limiting Java paths"
 raw_args = true
-run = "java -ea tools/Build.java fmt"
+run = ["dprint fmt", "java -ea tools/Build.java fmt"]
+
+[tasks.markdown-check]
+hide = true
+run = ["dprint check", "markdownlint-cli2"]
 
 [tasks.check]
-description = "Check formatting and compile/lint all modules"
+description = "Check Markdown, formatting, and compile/lint all Java modules"
+depends = ["markdown-check"]
 run = "java -ea tools/Build.java check"
 
 [tasks.test]
@@ -27,11 +34,13 @@ description = "Apply Refaster rules and format Java sources"
 run = "java -ea tools/Build.java refactor"
 
 [tasks.verify]
-description = "Check formatting, compile/lint all modules, and run the full test suite"
+description = "Check Markdown, compile/lint Java, and run the full test suite"
+depends = ["markdown-check"]
 run = "java -ea tools/Build.java verify"
 
 [tasks.ci]
-description = "Apply Refaster rules, require a clean tree, and verify"
+description = "Check Markdown, apply Refaster, require a clean tree, and verify"
+depends = ["markdown-check"]
 run = "java -ea tools/Build.java ci"
 
 [tasks.dev]

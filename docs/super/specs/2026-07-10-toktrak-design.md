@@ -1,7 +1,6 @@
 # TokTrak design
 
-Date: 2026-07-10
-Status: approved
+Date: 2026-07-10 Status: approved
 
 ## Goal
 
@@ -16,7 +15,8 @@ prompt/code surveillance.
 - All logged-in company users can see all user usage data.
 - Data scope is `ccusage` output only: no prompts, no code, no file contents.
 - The footer links to a subtle data-scope page explaining this.
-- The dashboard supports many visualizations so users can find their own use cases.
+- The dashboard supports many visualizations so users can find their own use
+  cases.
 - The UI is fixed, not customizable.
 
 ## High-level architecture
@@ -28,7 +28,10 @@ TokTrak has two parts:
    - JDK `HttpServer`, HTTP/1.1.
    - Server-side rendered HTML.
    - Datastar JS for reactive dashboard updates.
-   - Datastar SSE events sent through the Java SDK only if jlink-safe; current decision is to hand-write the tiny patch-elements/signals SSE subset because `datastar-java-sdk-core` is an automatic module and jlink rejects it.
+   - Datastar SSE events sent through the Java SDK only if jlink-safe; current
+     decision is to hand-write the tiny patch-elements/signals SSE subset
+     because `datastar-java-sdk-core` is an automatic module and jlink rejects
+     it.
    - Jackson is an explicit dependency for JSON.
    - Nimbus JOSE JWT is used for JWT/JWK validation because it is jlink-safe.
    - No framework, no DB, no classpath runtime.
@@ -117,7 +120,8 @@ Degraded mode:
 - Login may still work if projections exist.
 - Token creation/revocation is disabled.
 
-Projection corruption at runtime hard-stops because displayed data cannot be trusted.
+Projection corruption at runtime hard-stops because displayed data cannot be
+trusted.
 
 `/health` returns `ok` only when service is writable and healthy. In
 degraded/failure states it returns failure with a terse reason category and no
@@ -145,7 +149,8 @@ Do not log emails, token plaintext, or token hashes.
 - One opaque session cookie plus one short-lived OIDC transaction cookie during
   login.
 - Both cookies are signed, `HttpOnly`, and `SameSite=Lax`.
-- Cookie `Secure` is derived from `TOKTRAK_BASE_URL`: HTTPS means secure, HTTP means non-secure.
+- Cookie `Secure` is derived from `TOKTRAK_BASE_URL`: HTTPS means secure, HTTP
+  means non-secure.
 - Non-localhost HTTP is rejected unless dev auth is explicitly enabled.
 - CSRF token required for mutating browser POST forms.
 - CSP is strict.
@@ -240,7 +245,8 @@ Self-deactivation:
 
 - Appends a user deactivation event.
 - Revokes tracker tokens immediately.
-- Projections tombstone identity as “Deleted user” while preserving historical aggregate usage.
+- Projections tombstone identity as “Deleted user” while preserving historical
+  aggregate usage.
 - Re-login with the same provider subject reactivates the account.
 
 ## Avatar and color
@@ -253,9 +259,11 @@ Profile avatars:
 User color:
 
 - Assigned on first login and stored as an event.
-- Derived from provider subject hash by walking a generated pastel OKLCH palette.
+- Derived from provider subject hash by walking a generated pastel OKLCH
+  palette.
 - Palette has about 256 candidates.
-- Assignment avoids reserved theme/semantic colors and already-used user colors by distance.
+- Assignment avoids reserved theme/semantic colors and already-used user colors
+  by distance.
 - If users exceed palette capacity, reuse least-conflicting color.
 - Colors aid scanning; they are not identity guarantees.
 
@@ -271,7 +279,8 @@ Token model:
 - Only `HMAC-SHA-256(TOKTRAK_TOKEN_PEPPER, token)` is stored.
 - Direct digest comparisons use `MessageDigest.isEqual`.
 - Pepper is required and stable; changing it invalidates all tracker tokens.
-- No pepper rotation in v1. Pepper can be rotated manually. That will invalidate all tokens, which is fine.
+- No pepper rotation in v1. Pepper can be rotated manually. That will invalidate
+  all tokens, which is fine.
 
 Token list shows:
 
@@ -365,8 +374,8 @@ Future file I/O optimization:
 Request flow:
 
 1. Request enters virtual-thread handler.
-2. Credential parsing, body parsing, and stateless validation happen outside
-   the writer.
+2. Credential parsing, body parsing, and stateless validation happen outside the
+   writer.
 3. A parsed command is submitted to the bounded writer queue.
 4. The writer performs all state-dependent authorization, normalization, and
    dedupe against the current projection.
@@ -381,8 +390,8 @@ Writer queue:
 - Bounded to 1024 commands.
 - Full queue returns 503.
 - Tracker retries later.
-- Mutation success is returned only after append, required fsync, and
-  projection apply complete.
+- Mutation success is returned only after append, required fsync, and projection
+  apply complete.
 - Token mutations and uploads fsync every event.
 - Snapshot writes may batch.
 - Snapshot commands use the same queue.
@@ -402,8 +411,7 @@ POST /api/usage
 Authorization header carries the tracker bearer token.
 ```
 
-Upload max body size: 5 MiB hard limit.
-No config and no splitting in v1.
+Upload max body size: 5 MiB hard limit. No config and no splitting in v1.
 Oversized upload returns 413 with a clear message.
 
 Server derives user from token and ignores any claimed user.
@@ -429,7 +437,8 @@ ccusage version:
 
 - Tracker pins ccusage version.
 - Tracker sends ccusage version.
-- Server stores raw data for all supported versions starting from current latest, 20.0.17.
+- Server stores raw data for all supported versions starting from current
+  latest, 20.0.17.
 - In 20.0.17 JSON, report array roots are `daily`, singular `session`, and
   `blocks`.
 - New schema support must be additive.
@@ -442,8 +451,8 @@ Dedupe/idempotency:
 - Report rows are snapshots, never additive deltas.
 - `generatedAt` must be a valid instant no more than 24 hours after server
   receipt time.
-- The newest `generatedAt` upserts daily rows by `(userId, period)`, session rows
-  by `(userId, agent, period)`, and blocks by `(userId, id)`.
+- The newest `generatedAt` upserts daily rows by `(userId, period)`, session
+  rows by `(userId, agent, period)`, and blocks by `(userId, id)`.
 - Older uploads may fill absent keys but never replace newer rows.
 - Equal `generatedAt` values resolve by event-log order.
 - Missing rows never delete prior projected rows.
@@ -453,7 +462,8 @@ Dedupe/idempotency:
 
 Partial reports:
 
-- If one ccusage command fails, tracker uploads successful reports plus per-report error metadata.
+- If one ccusage command fails, tracker uploads successful reports plus
+  per-report error metadata.
 - Server stores partial payloads.
 - Dashboard shows subtle ingestion health.
 
@@ -490,7 +500,8 @@ The only supported installation path:
 2. User creates a tracker token with optional label.
 3. Server shows plaintext token once.
 4. Server offers a one-time personalized `.mjs` installer download.
-5. Installer embeds base URL, token, tracker version, and pinned ccusage version.
+5. Installer embeds base URL, token, tracker version, and pinned ccusage
+   version.
 6. Dashboard shows OS-specific run instructions.
 
 UX:
@@ -517,7 +528,8 @@ No marker/state file is needed for full-history tracking.
 
 Modes:
 
-- Installer mode installs/updates scheduled job and immediately runs full upload.
+- Installer mode installs/updates scheduled job and immediately runs full
+  upload.
 - `--once --full` sends full history.
 - Scheduled `--daily` sends recent window.
 - `--uninstall` removes scheduled job and installed script.
@@ -627,7 +639,8 @@ Visual style:
 - Other colors derive from base variables.
 - Respect reduced motion.
 - Maintain contrast despite pastels.
-- Responsive/mobile-ready: stacked cards and charts; tables may scroll horizontally.
+- Responsive/mobile-ready: stacked cards and charts; tables may scroll
+  horizontally.
 - Modern Chromium/Firefox/Safari only.
 
 ## Currency conversion
@@ -647,7 +660,8 @@ FX behavior:
 - Failures are logged, not stored as events.
 - If no rate exists, EUR toggle is absent.
 - If last-good exists and refresh fails, keep last-good.
-- Lazy refresh on dashboard request when in-memory projection says rate is older than 24h.
+- Lazy refresh on dashboard request when in-memory projection says rate is older
+  than 24h.
 - Use one atomic in-flight guard to avoid duplicate fetches.
 - Fetch result appends rate event through writer queue.
 
@@ -682,8 +696,8 @@ Corpus creation:
   report fields, sanitizes identifiers, partitions data, and writes the event
   log.
 - Scan the result for local usernames, emails, home/workspace paths, original
-  project/session identifiers, and unexpected fields before copying it into
-  the repository.
+  project/session identifiers, and unexpected fields before copying it into the
+  repository.
 - Delete all temporary raw reports and transformer files.
 - Commit only `tests/corpus/dev.jsonl`; future additions directly edit it.
 
@@ -717,20 +731,23 @@ Runtime images:
 - Dev jlink runtime excludes the app module for fast recompiles.
 - Prod jlink runtime includes the app module in the image.
 - No classpath runtime.
-- Smart layer caching: build/link runtime separately from frequently changing app code.
+- Smart layer caching: build/link runtime separately from frequently changing
+  app code.
 
 Container:
 
 - Minimal jlink runtime plus app.
 - Image may run as root.
-- Docs recommend rootless Podman deployment; root in rootless Podman maps to current user.
+- Docs recommend rootless Podman deployment; root in rootless Podman maps to
+  current user.
 - Docker users are on their own.
 - Data dir is mounted as volume.
 
 Release:
 
 - Version numbers monotonically increase from `0`.
-- `mise run release` checks changelog, tags, builds, tests, builds container, pushes registry image.
+- `mise run release` checks changelog, tags, builds, tests, builds container,
+  pushes registry image.
 
 ## README updates required
 
@@ -774,8 +791,8 @@ Test layers:
 - Snapshot version invalidation/recompute by append.
 - HMAC token lookup, constant-time digest comparison, and revocation.
 - Production jlink build rejects automatic modules.
-- Upload dedupe/idempotency, including concurrent duplicates, stale uploads,
-  and future `generatedAt` rejection.
+- Upload dedupe/idempotency, including concurrent duplicates, stale uploads, and
+  future `generatedAt` rejection.
 - Mutation responses wait for append, required fsync, and projection apply.
 - Unknown ccusage schema fields are preserved.
 - Daily/session/blocks authority prevents double counting.

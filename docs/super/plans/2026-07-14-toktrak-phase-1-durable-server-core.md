@@ -1,12 +1,22 @@
 # TokTrak Phase 1: Java HTTP Persistence Core
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use /skill:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use /skill:executing-plans to
+> implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
+> tracking.
 
-**Goal:** Add the Java 26 build/runtime foundation and a headless dev server that persists event envelopes, rebuilds one projection, and reports write failures through `/health`.
+**Goal:** Add the Java 26 build/runtime foundation and a headless dev server
+that persists event envelopes, rebuilds one projection, and reports write
+failures through `/health`.
 
-**Architecture:** A single explicit JPMS module (`toktrak`) uses JDK `HttpServer` with virtual-thread request handling. A dedicated platform-thread writer serializes append/fsync/apply operations to an NDJSON event log; startup exclusively locks the data directory, repairs only a torn final line, replays compatible state, then binds HTTP.
+**Architecture:** A single explicit JPMS module (`toktrak`) uses JDK
+`HttpServer` with virtual-thread request handling. A dedicated platform-thread
+writer serializes append/fsync/apply operations to an NDJSON event log; startup
+exclusively locks the data directory, repairs only a torn final line, replays
+compatible state, then binds HTTP.
 
-**Tech Stack:** Java 26, JPMS, JDK `HttpServer`, virtual threads, scoped values, Jackson core/databind/annotations, Nimbus JOSE JWT, JUnit Platform Console, `mise`, and vendored `jresolve.jar`.
+**Tech Stack:** Java 26, JPMS, JDK `HttpServer`, virtual threads, scoped values,
+Jackson core/databind/annotations, Nimbus JOSE JWT, JUnit Platform Console,
+`mise`, and vendored `jresolve.jar`.
 
 **Roadmap:** `docs/super/roadmaps/2026-07-13-toktrak-roadmap.md`
 
@@ -16,37 +26,60 @@
 
 ## Phase boundary
 
-This plan intentionally covers only Phase 1. It must not add OIDC, users, tracker tokens, usage ingestion, SSE, dashboard UI, workstation tracker, container release, or production OIDC env validation.
+This plan intentionally covers only Phase 1. It must not add OIDC, users,
+tracker tokens, usage ingestion, SSE, dashboard UI, workstation tracker,
+container release, or production OIDC env validation.
 
 ## Dependency version note
 
-The approved spec says `jackson-annotations 2.22.1`, but Maven metadata currently exposes `jackson-annotations 2.22` while `jackson-core` and `jackson-databind` expose `2.22.1`. Pin `jackson-annotations@2.22` and keep this note until the spec is corrected or that artifact is published.
+The approved spec says `jackson-annotations 2.22.1`, but Maven metadata
+currently exposes `jackson-annotations 2.22` while `jackson-core` and
+`jackson-databind` expose `2.22.1`. Pin `jackson-annotations@2.22` and keep this
+note until the spec is corrected or that artifact is published.
 
 ## File structure
 
-- Modify `mise.toml`: map `mise run install/build/verify/dev/link-prod` to the Java build script.
-- Create `tools/Build.java`: cross-platform build/test/link/dev helper; no Bash scripts in the repo.
-- Create `sources/main-deps.txt`: production dependency coordinates for `jresolve`.
+- Modify `mise.toml`: map `mise run install/build/verify/dev/link-prod` to the
+  Java build script.
+- Create `tools/Build.java`: cross-platform build/test/link/dev helper; no Bash
+  scripts in the repo.
+- Create `sources/main-deps.txt`: production dependency coordinates for
+  `jresolve`.
 - Create `sources/test-deps.txt`: JUnit console dependency coordinate.
 - Create `sources/toktrak/module-info.java`: explicit app module.
 - Create `sources/toktrak/toktrak/Main.java`: CLI entrypoint.
-- Create `sources/toktrak/toktrak/App.java`: lifecycle orchestration: config, lock, event store, writer, HTTP server.
+- Create `sources/toktrak/toktrak/App.java`: lifecycle orchestration: config,
+  lock, event store, writer, HTTP server.
 - Create `sources/toktrak/toktrak/Config.java`: env/CLI/dev validation.
 - Create `sources/toktrak/toktrak/ClockSource.java`: system or pinned dev clock.
-- Create `sources/toktrak/toktrak/json/Json.java`: one Jackson mapper and compact JSON helpers.
-- Create `sources/toktrak/toktrak/log/JsonLogFormatter.java`: compact stdout JSON logs.
-- Create `sources/toktrak/toktrak/http/RequestContext.java`: scoped request metadata.
-- Create `sources/toktrak/toktrak/http/Router.java`: brutal route dispatch and shared error path.
-- Create `sources/toktrak/toktrak/http/ApiError.java`: `{"error":{"code","message","requestId"}}` envelope.
-- Create `sources/toktrak/toktrak/http/HttpSupport.java`: body limits, security headers, JSON/HTML responses.
-- Create `sources/toktrak/toktrak/health/HealthState.java`: healthy/degraded reason state.
-- Create `sources/toktrak/toktrak/store/DataLock.java`: exclusive `toktrak.lock` lifetime lock.
-- Create `sources/toktrak/toktrak/store/EventEnvelope.java`: event envelope model and validation.
-- Create `sources/toktrak/toktrak/store/EventLog.java`: append/fsync/read/recover NDJSON.
-- Create `sources/toktrak/toktrak/store/Writer.java`: bounded single-consumer writer queue.
-- Create `sources/toktrak/toktrak/store/WriteCommand.java`: command result and event factory.
-- Create `sources/toktrak/toktrak/projection/Projection.java`: event-count projection and snapshot support for Phase 1.
-- Create `sources/toktrak/toktrak/dev/DevData.java`: disposable dev data copy and `--fail-writes` injection.
+- Create `sources/toktrak/toktrak/json/Json.java`: one Jackson mapper and
+  compact JSON helpers.
+- Create `sources/toktrak/toktrak/log/JsonLogFormatter.java`: compact stdout
+  JSON logs.
+- Create `sources/toktrak/toktrak/http/RequestContext.java`: scoped request
+  metadata.
+- Create `sources/toktrak/toktrak/http/Router.java`: brutal route dispatch and
+  shared error path.
+- Create `sources/toktrak/toktrak/http/ApiError.java`:
+  `{"error":{"code","message","requestId"}}` envelope.
+- Create `sources/toktrak/toktrak/http/HttpSupport.java`: body limits, security
+  headers, JSON/HTML responses.
+- Create `sources/toktrak/toktrak/health/HealthState.java`: healthy/degraded
+  reason state.
+- Create `sources/toktrak/toktrak/store/DataLock.java`: exclusive `toktrak.lock`
+  lifetime lock.
+- Create `sources/toktrak/toktrak/store/EventEnvelope.java`: event envelope
+  model and validation.
+- Create `sources/toktrak/toktrak/store/EventLog.java`:
+  append/fsync/read/recover NDJSON.
+- Create `sources/toktrak/toktrak/store/Writer.java`: bounded single-consumer
+  writer queue.
+- Create `sources/toktrak/toktrak/store/WriteCommand.java`: command result and
+  event factory.
+- Create `sources/toktrak/toktrak/projection/Projection.java`: event-count
+  projection and snapshot support for Phase 1.
+- Create `sources/toktrak/toktrak/dev/DevData.java`: disposable dev data copy
+  and `--fail-writes` injection.
 - Create tests under `tests/toktrak/*.java` matching the tasks below.
 
 ## Task 1: Build skeleton and JPMS dependency gate
@@ -117,7 +150,8 @@ public final class Main {
 
 - [ ] **Step 4: Add cross-platform build driver**
 
-`tools/Build.java` must implement these commands with `ProcessBuilder`, `Files.walk`, and no shell-specific commands:
+`tools/Build.java` must implement these commands with `ProcessBuilder`,
+`Files.walk`, and no shell-specific commands:
 
 ```text
 java tools/Build.java deps        # resolve prod + test deps into output/deps/{main,test}
@@ -127,7 +161,9 @@ java tools/Build.java jlink-prod  # link output/runtimes/prod and reject automat
 java tools/Build.java dev -- ...  # compile then run toktrak.Main with forwarded args
 ```
 
-Use `jar --describe-module --file <jar> --release 9`; fail if output contains `automatic` or no module name line. Build script exits non-zero on first failed child process and prints the exact command.
+Use `jar --describe-module --file <jar> --release 9`; fail if output contains
+`automatic` or no module name line. Build script exits non-zero on first failed
+child process and prints the exact command.
 
 - [ ] **Step 5: Wire mise tasks**
 
@@ -159,7 +195,8 @@ run = "java tools/Build.java dev --"
 
 Run: `mise run install`
 
-Expected: prod jars copied under `output/deps/main`, test jar under `output/deps/test`, and no automatic-module rejection.
+Expected: prod jars copied under `output/deps/main`, test jar under
+`output/deps/test`, and no automatic-module rejection.
 
 - [ ] **Step 7: Run build and observe expected missing `App` failure**
 
@@ -273,7 +310,8 @@ final class JsonLogFormatterTest {
 
 Run: `mise run verify`
 
-Expected: FAIL with missing `Config`, `ClockSource`, `JsonLogFormatter`, and `App` classes.
+Expected: FAIL with missing `Config`, `ClockSource`, `JsonLogFormatter`, and
+`App` classes.
 
 - [ ] **Step 4: Implement config and clock**
 
@@ -293,11 +331,17 @@ Use `ClockSource.system()` and `ClockSource.fixed(Instant)`; expose `instant()`.
 
 - [ ] **Step 5: Implement JSON and logging**
 
-`Json` owns one `ObjectMapper` configured to write compact JSON. Serialize/parse `Instant` explicitly as `Instant.toString()`/`Instant.parse(...)` through small helpers or Jackson serializers in this class; do not add `jackson-datatype-jsr310`. `JsonLogFormatter` writes `timestamp`, `level`, and `message`. Task 3 extends it to add request fields from `RequestContext.currentOrNull()`.
+`Json` owns one `ObjectMapper` configured to write compact JSON. Serialize/parse
+`Instant` explicitly as `Instant.toString()`/`Instant.parse(...)` through small
+helpers or Jackson serializers in this class; do not add
+`jackson-datatype-jsr310`. `JsonLogFormatter` writes `timestamp`, `level`, and
+`message`. Task 3 extends it to add request fields from
+`RequestContext.currentOrNull()`.
 
 - [ ] **Step 6: Add temporary App stub so build passes**
 
-`App.start` may construct config and return an `App` whose `close()` does nothing. This is replaced by Task 3.
+`App.start` may construct config and return an `App` whose `close()` does
+nothing. This is replaced by Task 3.
 
 - [ ] **Step 7: Run tests**
 
@@ -389,7 +433,9 @@ Expected: FAIL because HTTP classes do not exist.
 
 - [ ] **Step 3: Implement request context**
 
-`RequestContext` uses `ScopedValue<RequestContext>` and contains `requestId`, `method`, `path`, `userId`, `tokenId`, and `mode`. `with(ctx, Callable<T>)` binds the scoped value. Generate request ids with `UUID.randomUUID()`.
+`RequestContext` uses `ScopedValue<RequestContext>` and contains `requestId`,
+`method`, `path`, `userId`, `tokenId`, and `mode`. `with(ctx, Callable<T>)`
+binds the scoped value. Generate request ids with `UUID.randomUUID()`.
 
 - [ ] **Step 4: Implement support responses**
 
@@ -402,11 +448,15 @@ Referrer-Policy: no-referrer
 Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'none'
 ```
 
-`ApiError` serializes exactly `{"error":{"code":"...","message":"...","requestId":"..."}}`.
+`ApiError` serializes exactly
+`{"error":{"code":"...","message":"...","requestId":"..."}}`.
 
 - [ ] **Step 5: Implement Router and App server lifecycle**
 
-`App.start` creates `HttpServer` on configured host port, sets executor to `Executors.newVirtualThreadPerTaskExecutor()`, registers one root context with `Router`, starts, and exposes `port()`. `close()` stops the server and closes the executor.
+`App.start` creates `HttpServer` on configured host port, sets executor to
+`Executors.newVirtualThreadPerTaskExecutor()`, registers one root context with
+`Router`, starts, and exposes `port()`. `close()` stops the server and closes
+the executor.
 
 Routes for this task:
 
@@ -535,11 +585,15 @@ Expected: FAIL because store classes do not exist.
 
 - [ ] **Step 4: Implement DataLock**
 
-Create `${dataDir}/toktrak.lock`, acquire `FileChannel.tryLock()`, keep channel and lock open until `close()`. Treat overlapping same-JVM lock and `null` lock as `IllegalStateException("TokTrak data directory is already locked")`.
+Create `${dataDir}/toktrak.lock`, acquire `FileChannel.tryLock()`, keep channel
+and lock open until `close()`. Treat overlapping same-JVM lock and `null` lock
+as `IllegalStateException("TokTrak data directory is already locked")`.
 
 - [ ] **Step 5: Implement EventEnvelope**
 
-Record fields: `UUID id`, `Instant at`, `String type`, `int schemaVersion`, `String actor`, `Map<String,Object> data`. `create` uses UUID v4 and schema version `1`. Validation rejects blank type and non-positive schema version.
+Record fields: `UUID id`, `Instant at`, `String type`, `int schemaVersion`,
+`String actor`, `Map<String,Object> data`. `create` uses UUID v4 and schema
+version `1`. Validation rejects blank type and non-positive schema version.
 
 - [ ] **Step 6: Implement EventLog**
 
@@ -554,11 +608,13 @@ fsync: FileChannel.force(true) after token/upload/snapshot command successes in 
 recover: truncate only bytes after last complete newline; malformed newline-terminated line fails
 ```
 
-Use `RandomAccessFile` or `FileChannel` opened with `CREATE`, `READ`, `WRITE`, `APPEND` for append/fsync. Reading must preserve event-log order.
+Use `RandomAccessFile` or `FileChannel` opened with `CREATE`, `READ`, `WRITE`,
+`APPEND` for append/fsync. Reading must preserve event-log order.
 
 - [ ] **Step 7: App startup uses lock and recovery before binding**
 
-`App.start` must acquire `DataLock`, call `EventLog.recoverTornTail`, read events, then bind HTTP. If read fails, close the lock and do not bind.
+`App.start` must acquire `DataLock`, call `EventLog.recoverTornTail`, read
+events, then bind HTTP. If read fails, close the lock and do not bind.
 
 - [ ] **Step 8: Run tests**
 
@@ -701,15 +757,20 @@ apply(event): projection-snapshot restores state only during rebuild; normal wri
 snapshotData(): {"projectionVersion":1,"eventCount":<count>}
 ```
 
-Projection corruption means invalid snapshot payload types; throw `IllegalStateException("projection snapshot is corrupt")` during rebuild.
+Projection corruption means invalid snapshot payload types; throw
+`IllegalStateException("projection snapshot is corrupt")` during rebuild.
 
 - [ ] **Step 5: Implement WriteCommand**
 
-`WriteCommand.devTest(actor)` creates one event with type `dev-test`. `WriteCommand.snapshot(actor)` creates `projection-snapshot` using `Projection.snapshotData()`. Keep command surface tiny; Phase 1 needs only these two write commands.
+`WriteCommand.devTest(actor)` creates one event with type `dev-test`.
+`WriteCommand.snapshot(actor)` creates `projection-snapshot` using
+`Projection.snapshotData()`. Keep command surface tiny; Phase 1 needs only these
+two write commands.
 
 - [ ] **Step 6: Implement Writer**
 
-Use `ArrayBlockingQueue` capacity `1024` by default and one platform thread named `toktrak-writer`. Command success path:
+Use `ArrayBlockingQueue` capacity `1024` by default and one platform thread
+named `toktrak-writer`. Command success path:
 
 ```text
 build event using current projection and clock
@@ -719,7 +780,9 @@ apply event to projection
 complete future with event id
 ```
 
-Queue full returns a rejected result without blocking. Any append exception marks health degraded with reason `writes_failed`; startup corruption still fails hard before writer starts.
+Queue full returns a rejected result without blocking. Any append exception
+marks health degraded with reason `writes_failed`; startup corruption still
+fails hard before writer starts.
 
 - [ ] **Step 7: App starts writer after projection rebuild**
 
@@ -744,7 +807,7 @@ git add sources/toktrak/toktrak/App.java sources/toktrak/toktrak/store/Writer.ja
 git commit -m "feat: add writer queue and projection rebuild"
 ```
 
-## Task 6: Runtime degraded health, body limits, dev auth strip, disposable corpus, and `--fail-writes`
+## Task 6: Runtime health, request limits, and dev controls
 
 **Files:**
 
@@ -871,7 +934,10 @@ Expected: FAIL because dev handling/body helpers are incomplete.
 
 - [ ] **Step 5: Implement `HealthState` degraded transitions**
 
-`HealthState` exposes `healthy()`, `reason()`, `degrade(reason)`, and `requireWritable()`; mutations call `requireWritable()` and return HTTP 503 code `degraded` when false. `--fail-writes` marks degraded immediately after server binding.
+`HealthState` exposes `healthy()`, `reason()`, `degrade(reason)`, and
+`requireWritable()`; mutations call `requireWritable()` and return HTTP 503 code
+`degraded` when false. `--fail-writes` marks degraded immediately after server
+binding.
 
 - [ ] **Step 6: Implement root dev page**
 
@@ -885,11 +951,19 @@ Show the strip only when `TOKTRAK_DEV_AUTH=true`.
 
 - [ ] **Step 7: Implement body limit helper**
 
-`HttpSupport.readLimited(InputStream, int)` reads at most `limit + 1` bytes and throws `IllegalArgumentException("request body exceeds <limit> bytes")` before allocating unbounded memory. Phase 1 uses it for shared route plumbing; Phase 3 applies the 5 MiB upload limit.
+`HttpSupport.readLimited(InputStream, int)` reads at most `limit + 1` bytes and
+throws `IllegalArgumentException("request body exceeds <limit> bytes")` before
+allocating unbounded memory. Phase 1 uses it for shared route plumbing; Phase 3
+applies the 5 MiB upload limit.
 
 - [ ] **Step 8: Implement disposable corpus copy**
 
-`DevData.prepareDisposableCorpus(corpus, dataDir)` deletes only `dataDir/events.ndjson` if it exists, creates directories, copies corpus to `events.ndjson`, and never appends to the committed corpus path. `App.start` must call it after `Config.from(...)` and before `DataLock.acquire(...)`/`EventLog.recoverTornTail(...)` when `--corpus` is present. Reject corpus usage when dev auth is false in `Config`.
+`DevData.prepareDisposableCorpus(corpus, dataDir)` deletes only
+`dataDir/events.ndjson` if it exists, creates directories, copies corpus to
+`events.ndjson`, and never appends to the committed corpus path. `App.start`
+must call it after `Config.from(...)` and before
+`DataLock.acquire(...)`/`EventLog.recoverTornTail(...)` when `--corpus` is
+present. Reject corpus usage when dev auth is false in `Config`.
 
 - [ ] **Step 9: Run tests**
 
@@ -982,7 +1056,8 @@ final class JlinkSmokeTest {
 
 Run: `mise run verify`
 
-Expected: FAIL until `App` exposes `writer()` and `projection()` for tests and restart rebuild is wired.
+Expected: FAIL until `App` exposes `writer()` and `projection()` for tests and
+restart rebuild is wired.
 
 - [ ] **Step 4: Finish lifecycle test hooks**
 
@@ -1048,7 +1123,8 @@ TOKTRAK_DEV_AUTH=true mise run dev -- --fail-writes
 curl -i http://127.0.0.1:8080/health
 ```
 
-Expected: HTTP 503 and body contains `{"status":"degraded","reason":"writes_failed"}`.
+Expected: HTTP 503 and body contains
+`{"status":"degraded","reason":"writes_failed"}`.
 
 - [ ] **Step 10: Commit**
 
@@ -1083,9 +1159,12 @@ Covered in this phase plan:
 - Exclusive data lock and append-only event log.
 - Event envelopes, line limits, torn-tail recovery, malformed-line failure.
 - Writer queue, fsync acknowledgement, projection rebuild, compatible snapshots.
-- Healthy/degraded state, `/health`, disposable dev corpus, pinned dev clock, `--fail-writes`.
-- Tests for persistence, concurrency/queue saturation, restart, lock, corruption, body limits, and jlink.
+- Healthy/degraded state, `/health`, disposable dev corpus, pinned dev clock,
+  `--fail-writes`.
+- Tests for persistence, concurrency/queue saturation, restart, lock,
+  corruption, body limits, and jlink.
 
 Intentionally excluded:
 
-- OIDC, users, tracker tokens, usage ingestion, FX, SSE, dashboard UI, workstation tracker, release container.
+- OIDC, users, tracker tokens, usage ingestion, FX, SSE, dashboard UI,
+  workstation tracker, release container.
