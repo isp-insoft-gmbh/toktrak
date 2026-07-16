@@ -4,13 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpServer;
+import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse.BodyHandlers;
-import java.time.Duration;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -24,7 +21,8 @@ final class HttpAdmissionTest {
   private static final int QUEUE_CAPACITY = 256;
 
   @Test
-  void saturatedProductionSizedExecutorReturnsServiceUnavailable() throws Exception {
+  void given_saturatedProductionExecutor_when_requestingHealth_then_returnsServiceUnavailable()
+      throws Exception {
     var releaseWorkers = new CountDownLatch(1);
     var workersStarted = new CountDownLatch(WORKER_COUNT);
     var workers =
@@ -58,15 +56,23 @@ final class HttpAdmissionTest {
       assertEquals(QUEUE_CAPACITY, workers.getQueue().size());
       server.start();
 
-      var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
-      var request =
-          HttpRequest.newBuilder(
-                  URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/health"))
-              .timeout(Duration.ofSeconds(2))
-              .GET()
-              .build();
-      var response = client.send(request, BodyHandlers.ofString());
-      assertEquals(503, response.statusCode());
+      var connection =
+          (HttpURLConnection)
+              URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/health")
+                  .toURL()
+                  .openConnection();
+      connection.setConnectTimeout(2_000);
+      connection.setReadTimeout(2_000);
+      connection.setRequestMethod("GET");
+      connection.setRequestProperty("Connection", "close");
+      try {
+        assertEquals(503, connection.getResponseCode());
+        try (var input = connection.getErrorStream()) {
+          assertTrue(input.readAllBytes().length > 0);
+        }
+      } finally {
+        connection.disconnect();
+      }
     } finally {
       releaseWorkers.countDown();
       server.stop(0);

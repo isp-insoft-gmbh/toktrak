@@ -19,11 +19,15 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Element;
 
 public final class Build {
   private static final Path ROOT = Path.of("").toAbsolutePath().normalize();
@@ -35,6 +39,9 @@ public final class Build {
   private static final Path TEST_DEPS = OUTPUT.resolve("deps/test");
   private static final Path BUILD_DEPS = OUTPUT.resolve("deps/build");
   private static final Path REFASTER_DEPS = OUTPUT.resolve("deps/refaster");
+  private static final Path PIT_DEPS = OUTPUT.resolve("deps/pit");
+  private static final Path MUTATIONS = OUTPUT.resolve("mutations");
+  private static final Path PIT_HISTORY = OUTPUT.resolve("pit.history");
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
   private static final Path IDE = OUTPUT.resolve("ide");
   private static final Path ECLIPSE_IDE = IDE.resolve("eclipse");
@@ -47,6 +54,7 @@ public final class Build {
   private static final Path REFASTER_APPLY_BUILD = REFASTER_OUTPUT.resolve("apply-build");
   private static final Path REFASTER_RULE = REFASTER_OUTPUT.resolve("toktrak.refaster");
   private static final Path REFASTER_SOURCE = ROOT.resolve("tools/refaster/Rules.java");
+  private static final Path APP_SOURCES = ROOT.resolve("sources/toktrak");
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
   private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
@@ -67,6 +75,28 @@ public final class Build {
   private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(10);
   private static final Duration UNIT_TEST_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration PROCESS_KILL_TIMEOUT = Duration.ofSeconds(5);
+  private static final int PIT_THREADS = 4;
+  private static final int PIT_TIMEOUT_MILLIS = 10_000;
+  private static final String PIT_JVM_ARGS = "-ea,-Djunit.jupiter.execution.timeout.default=5s";
+  private static final String PIT_MAIN =
+      "org.pitest." + "mutation" + "test.commandline." + "Mutation" + "CoverageReport";
+  private static final Set<String> BUILD_OWNED_PIT_OPTIONS =
+      Set.of(
+          "--classPath",
+          "--includeLaunchClasspath",
+          "--targetClasses",
+          "--targetTests",
+          "--mutableCodePaths",
+          "--sourceDirs",
+          "--reportDir",
+          "--outputFormats",
+          "--timestampedReports",
+          "--threads",
+          "--timeoutConst",
+          "--jvmArgs",
+          "--failWhenNoMutations",
+          "--historyInputLocation",
+          "--historyOutputLocation");
   private static final boolean ANSI =
       Optional.ofNullable(System.console()).filter(Console::isTerminal).isPresent()
           && System.getenv("NO_COLOR") == null;
@@ -88,21 +118,27 @@ public final class Build {
       assert args != null;
       if (args.length == 0) {
         throw new IllegalStateException(
-            "command required: clean, fmt, check, test, refactor, ci, verify, ide, dev, or prod");
+            "command required: clean, fmt, check, test, pit, refactor, ci, verify, ide, dev, or"
+                + " prod");
       }
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
+      List<String> commandArguments = List.of(args).subList(1, args.length);
+      if (args[0].equals("pit")) {
+        pitCommand(commandArguments);
+        return;
+      }
       deleteTree(ARGFILES);
       switch (args[0]) {
         case "clean" -> clean();
-        case "fmt" -> formatCommand(List.of(args).subList(1, args.length));
+        case "fmt" -> formatCommand(commandArguments);
         case "check" -> check();
-        case "test" -> testCommand(List.of(args).subList(1, args.length));
+        case "test" -> testCommand(commandArguments);
         case "refactor" -> refactor();
         case "ci" -> ci();
         case "verify" -> verify();
-        case "ide" -> ideCommand(List.of(args).subList(1, args.length));
-        case "dev" -> dev(List.of(args).subList(1, args.length));
+        case "ide" -> ideCommand(commandArguments);
+        case "dev" -> dev(commandArguments);
         case "prod" -> jlinkProd();
         default -> throw new IllegalStateException("unknown command: " + args[0]);
       }
@@ -117,6 +153,9 @@ public final class Build {
     deleteTree(TEST_DEPS);
     deleteTree(BUILD_DEPS);
     deleteTree(REFASTER_DEPS);
+    deleteTree(PIT_DEPS);
+    deleteTree(MUTATIONS);
+    Files.deleteIfExists(PIT_HISTORY);
     deleteTree(RUNTIMES);
     deleteTree(IDE);
     cleanIntellijMetadata(INTELLIJ_IDEA);
@@ -161,7 +200,9 @@ public final class Build {
     Path argFile = writeArgFile(argFileName, arguments);
     String fingerprint = dependencyFingerprint(source);
     Path stamp = output.resolve(".fingerprint");
-    if (Files.isDirectory(output) && Files.exists(stamp) && readStamp(stamp).equals(fingerprint)) {
+    if (Files.isDirectory(output)
+        && Files.isRegularFile(stamp)
+        && readStamp(stamp).equals(fingerprint)) {
       printCached(javaExecutable(), argFile, started);
       return;
     }
@@ -170,6 +211,308 @@ public final class Build {
     Files.createDirectories(output);
     runArgFile(javaExecutable(), argFile);
     writeStamp(stamp, fingerprint);
+  }
+
+  private static void pitCommand(List<String> arguments) throws Exception {
+    assert arguments != null;
+    if (arguments.equals(List.of("--help"))) {
+      System.out.println(
+          "usage: mise run pit [PIT options...] [-- production source files/directories...]");
+      return;
+    }
+    PitSelection selection = pitSelection(arguments);
+    deleteTree(ARGFILES);
+    compile();
+    ensurePitDependencies();
+    if (!selection.pitHelp()) deleteTree(MUTATIONS);
+    String classpath = pitClasspath();
+    List<String> launchArguments =
+        new ArrayList<>(
+            List.of(
+                "-ea", "-Djunit.jupiter.execution.timeout.default=5s", "-cp", classpath, PIT_MAIN));
+    launchArguments.addAll(pitArguments(selection, MUTATIONS));
+    runArgFile(javaExecutable(), "pit", launchArguments, PROCESS_TIMEOUT, false);
+    if (!selection.pitHelp()) validatePitReport(MUTATIONS, selection.dryRun());
+  }
+
+  private static void ensurePitDependencies() throws Exception {
+    Path stamp = PIT_DEPS.resolve(".fingerprint");
+    if (Files.isRegularFile(stamp) && !pitArtifactsValid(PIT_DEPS)) Files.delete(stamp);
+    ensureDependency("sources/pit-deps.txt", PIT_DEPS, "resolve-pit-dependencies", false);
+    if (!pitArtifactsValid(PIT_DEPS)) {
+      throw new IllegalStateException("PIT dependency artifacts are missing or empty");
+    }
+  }
+
+  static boolean pitArtifactsValidForTest(Path directory) throws IOException {
+    return pitArtifactsValid(directory);
+  }
+
+  private static boolean pitArtifactsValid(Path directory) throws IOException {
+    assert directory != null;
+    if (!Files.isDirectory(directory)) return false;
+    List<Path> entries = directoryEntries(directory, TREE_ENTRIES_MAX);
+    List<Path> commandLine =
+        entries.stream()
+            .filter(path -> path.getFileName().toString().startsWith("pitest-command-line-"))
+            .filter(Files::isRegularFile)
+            .filter(Build::isJar)
+            .toList();
+    List<Path> junitPlugin =
+        entries.stream()
+            .filter(path -> path.getFileName().toString().startsWith("pitest-junit5-plugin-"))
+            .filter(Files::isRegularFile)
+            .filter(Build::isJar)
+            .toList();
+    List<Path> historyPlugin =
+        entries.stream()
+            .filter(path -> path.getFileName().toString().startsWith("pitest-history-plugin-"))
+            .filter(Files::isRegularFile)
+            .filter(Build::isJar)
+            .toList();
+    return commandLine.size() == 1
+        && junitPlugin.size() == 1
+        && historyPlugin.size() == 1
+        && Files.size(commandLine.getFirst()) > 0
+        && Files.size(junitPlugin.getFirst()) > 0
+        && Files.size(historyPlugin.getFirst()) > 0;
+  }
+
+  private static String pitClasspath() throws IOException {
+    var paths = new ArrayList<Path>();
+    paths.addAll(jarPaths(List.of(PIT_DEPS)));
+    paths.add(APP_MODULE);
+    paths.add(TEST_MODULE);
+    paths.addAll(jarPaths(List.of(MAIN_DEPS)));
+    paths.addAll(jarPaths(List.of(TEST_DEPS)));
+    if (paths.size() > COLLECTION_ENTRIES_MAX) {
+      throw new IllegalStateException(
+          "PIT classpath exceeds " + COLLECTION_ENTRIES_MAX + " entries");
+    }
+    return paths.stream()
+        .map(Path::toString)
+        .collect(java.util.stream.Collectors.joining(System.getProperty("path.separator")));
+  }
+
+  static PitSelection pitSelectionForTest(List<String> arguments) throws IOException {
+    return pitSelection(arguments);
+  }
+
+  private static PitSelection pitSelection(List<String> arguments) throws IOException {
+    assert arguments != null;
+    if (arguments.size() > 256) throw new IllegalStateException("PIT arguments exceed 256 entries");
+    var forwarded = new ArrayList<String>();
+    var sources = new ArrayList<String>();
+    boolean sourceSection = false;
+    boolean history = false;
+    for (String argument : arguments) {
+      if (argument.equals("--")) {
+        if (sourceSection) throw new IllegalStateException("duplicate PIT source separator");
+        sourceSection = true;
+      } else if (sourceSection) {
+        Path path = resolveProjectPath(argument);
+        if (!path.startsWith(APP_SOURCES)) {
+          throw new IllegalStateException("path is outside production sources: " + argument);
+        }
+        sources.add(argument);
+      } else if (argument.equals("--history")) {
+        if (history) throw new IllegalStateException("duplicate --history");
+        history = true;
+      } else {
+        String option =
+            argument.contains("=") ? argument.substring(0, argument.indexOf('=')) : argument;
+        if (BUILD_OWNED_PIT_OPTIONS.contains(option)) {
+          throw new IllegalStateException("Build owns PIT option: " + option);
+        }
+        forwarded.add(argument);
+      }
+    }
+    if (sourceSection && sources.isEmpty()) {
+      throw new IllegalStateException("no mutable production source files selected");
+    }
+    boolean dryRun = dryRun(forwarded);
+    boolean pitHelp = forwarded.contains("-h") || forwarded.contains("-?");
+    List<String> targets = sources.isEmpty() ? List.of("toktrak.*") : pitTargets(sources);
+    return new PitSelection(List.copyOf(forwarded), targets, dryRun, history, pitHelp);
+  }
+
+  private static boolean dryRun(List<String> arguments) {
+    assert arguments != null;
+    int matches = 0;
+    boolean enabled = false;
+    for (int index = 0; index < arguments.size(); index++) {
+      String argument = arguments.get(index);
+      if (argument.equals("--dryRun")) {
+        matches = Math.addExact(matches, 1);
+        enabled =
+            index + 1 >= arguments.size()
+                || (!arguments.get(index + 1).equalsIgnoreCase("false")
+                    && !arguments.get(index + 1).equalsIgnoreCase("true"))
+                || Boolean.parseBoolean(arguments.get(index + 1));
+      } else if (argument.startsWith("--dryRun=")) {
+        matches = Math.addExact(matches, 1);
+        enabled = Boolean.parseBoolean(argument.substring("--dryRun=".length()));
+      }
+    }
+    if (matches > 1) throw new IllegalStateException("duplicate --dryRun");
+    return enabled;
+  }
+
+  private static List<String> pitTargets(List<String> sources) throws IOException {
+    assert sources != null && !sources.isEmpty();
+    List<Path> files =
+        selectedFiles(
+            sources,
+            List.of(),
+            candidate -> {
+              String name = candidate.getFileName().toString();
+              return name.endsWith(".java")
+                  && !name.equals("module-info.java")
+                  && !name.equals("package-info.java");
+            },
+            "mutable production source");
+    var targets = new TreeSet<String>();
+    for (Path file : files) {
+      if (!file.startsWith(APP_SOURCES)) {
+        throw new IllegalStateException("path is outside production sources: " + file);
+      }
+      String relative = APP_SOURCES.relativize(file).toString();
+      String className =
+          relative
+              .substring(0, relative.length() - ".java".length())
+              .replace('\\', '.')
+              .replace('/', '.');
+      targets.add(className);
+      targets.add(className + "$*");
+    }
+    return List.copyOf(targets);
+  }
+
+  static List<String> pitArgumentsForTest(PitSelection selection, Path reportDirectory) {
+    return pitArguments(selection, reportDirectory);
+  }
+
+  private static List<String> pitArguments(PitSelection selection, Path reportDirectory) {
+    assert selection != null;
+    assert reportDirectory != null;
+    var arguments =
+        new ArrayList<>(
+            List.of(
+                "--targetClasses",
+                String.join(",", selection.targetClasses()),
+                "--targetTests",
+                "toktrak.tests.*",
+                "--mutableCodePaths",
+                APP_MODULE.toString(),
+                "--sourceDirs",
+                APP_SOURCES.toString(),
+                "--reportDir",
+                reportDirectory.toAbsolutePath().normalize().toString(),
+                "--outputFormats",
+                "HTML,XML",
+                "--timestampedReports",
+                "false",
+                "--threads",
+                Integer.toString(PIT_THREADS),
+                "--timeoutConst",
+                Integer.toString(PIT_TIMEOUT_MILLIS),
+                "--jvmArgs",
+                PIT_JVM_ARGS,
+                "--failWhenNoMutations",
+                "true"));
+    if (selection.history()) {
+      arguments.add("--historyInputLocation");
+      arguments.add(PIT_HISTORY.toString());
+      arguments.add("--historyOutputLocation");
+      arguments.add(PIT_HISTORY.toString());
+    }
+    if (!hasExplicitVerbosity(selection.forwardedArguments())) {
+      arguments.add("--verbosity");
+      arguments.add("NO_SPINNER");
+    }
+    arguments.addAll(selection.forwardedArguments());
+    return List.copyOf(arguments);
+  }
+
+  private static boolean hasExplicitVerbosity(List<String> arguments) {
+    assert arguments != null;
+    return arguments.stream()
+        .anyMatch(
+            argument ->
+                argument.equals("--verbosity")
+                    || argument.startsWith("--verbosity=")
+                    || argument.equals("--verbose")
+                    || argument.startsWith("--verbose="));
+  }
+
+  static void validatePitReportForTest(Path reportDirectory) throws Exception {
+    validatePitReport(reportDirectory, false);
+  }
+
+  static void validatePitReportForTest(Path reportDirectory, boolean dryRun) throws Exception {
+    validatePitReport(reportDirectory, dryRun);
+  }
+
+  private static void validatePitReport(Path reportDirectory, boolean dryRun) throws Exception {
+    assert reportDirectory != null;
+    if (!Files.isDirectory(reportDirectory)) {
+      throw new IllegalStateException("PIT report directory is missing: " + reportDirectory);
+    }
+    for (Path path : treePaths(reportDirectory, TREE_ENTRIES_MAX)) {
+      if (Files.isSymbolicLink(path)) {
+        throw new IllegalStateException("PIT report contains symbolic path: " + path);
+      }
+      if (Files.isRegularFile(path) && Files.size(path) > FILE_BYTES_MAX) {
+        throw new IllegalStateException(
+            "PIT report file exceeds " + FILE_BYTES_MAX + " bytes: " + path);
+      }
+    }
+    Path html = reportDirectory.resolve("index.html");
+    Path xml = reportDirectory.resolve("mutations.xml");
+    if (!Files.isRegularFile(html) || Files.size(html) == 0) {
+      throw new IllegalStateException("PIT HTML report is missing or empty");
+    }
+    if (!Files.isRegularFile(xml) || Files.size(xml) == 0) {
+      throw new IllegalStateException("PIT XML report is missing or empty");
+    }
+    var factory = DocumentBuilderFactory.newInstance();
+    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+    factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+    factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+    factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+    factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+    factory.setXIncludeAware(false);
+    factory.setExpandEntityReferences(false);
+    var document = factory.newDocumentBuilder().parse(xml.toFile());
+    var mutations = document.getElementsByTagName("mutation");
+    if (mutations.getLength() == 0) throw new IllegalStateException("PIT reported no mutations");
+    for (int index = 0; index < mutations.getLength(); index++) {
+      var mutation = (Element) mutations.item(index);
+      String status = mutation.getAttribute("status");
+      if (dryRun) {
+        if (!status.equals("NOT_STARTED")) {
+          throw new IllegalStateException("PIT dry-run mutation failed: " + status);
+        }
+      } else if (!status.equals("KILLED")
+          && !status.equals("SURVIVED")
+          && !status.equals("NO_COVERAGE")) {
+        throw new IllegalStateException("PIT mutation failed: " + status);
+      }
+    }
+  }
+
+  static record PitSelection(
+      List<String> forwardedArguments,
+      List<String> targetClasses,
+      boolean dryRun,
+      boolean history,
+      boolean pitHelp) {
+    PitSelection {
+      assert forwardedArguments != null;
+      assert targetClasses != null && !targetClasses.isEmpty();
+      assert forwardedArguments.size() <= ARGUMENTS_MAX;
+      assert targetClasses.size() <= COLLECTION_ENTRIES_MAX;
+    }
   }
 
   private static void ideCommand(List<String> arguments) throws Exception {
@@ -939,10 +1282,12 @@ public final class Build {
                   try {
                     byte[] bytes = process.getInputStream().readNBytes(GIT_STATUS_BYTES_MAX + 1);
                     output.set(bytes);
-                    if (bytes.length > GIT_STATUS_BYTES_MAX) process.destroyForcibly();
+                    if (bytes.length > GIT_STATUS_BYTES_MAX) {
+                      terminateFromReader(process, readFailure);
+                    }
                   } catch (IOException exception) {
                     readFailure.set(exception);
-                    process.destroyForcibly();
+                    terminateFromReader(process, readFailure);
                   }
                 });
     int exitCode;
@@ -955,7 +1300,7 @@ public final class Build {
       throw exception;
     }
     if (!reader.join(PROCESS_KILL_TIMEOUT)) {
-      process.destroyForcibly();
+      terminateForcibly(process, PROCESS_KILL_TIMEOUT);
       throw new IllegalStateException("Git status reader did not terminate");
     }
     if (readFailure.get() != null) {
@@ -979,6 +1324,21 @@ public final class Build {
       return !status.isEmpty();
     } catch (CharacterCodingException exception) {
       throw new IllegalStateException("Git status is not valid UTF-8", exception);
+    }
+  }
+
+  private static void terminateFromReader(
+      Process process, AtomicReference<IOException> readFailure) {
+    assert process != null;
+    assert readFailure != null;
+    try {
+      terminateForcibly(process, PROCESS_KILL_TIMEOUT);
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      readFailure.compareAndSet(
+          null, new IOException("interrupted while terminating Git status", exception));
+    } catch (RuntimeException exception) {
+      readFailure.compareAndSet(null, new IOException("cannot terminate Git status", exception));
     }
   }
 
@@ -1729,6 +2089,17 @@ public final class Build {
     Path path = Path.of(value);
     path = (path.isAbsolute() ? path : ROOT.resolve(path)).normalize();
     if (!path.startsWith(ROOT)) throw new IllegalStateException("path escapes project: " + value);
+    Path component = ROOT;
+    if (Files.isSymbolicLink(component)) {
+      throw new IllegalStateException("symbolic paths are not supported: " + component);
+    }
+    for (Path name : ROOT.relativize(path)) {
+      component = component.resolve(name);
+      if (Files.isSymbolicLink(component)) {
+        throw new IllegalStateException("symbolic paths are not supported: " + component);
+      }
+      if (!Files.exists(component)) break;
+    }
     return path;
   }
 
@@ -1772,6 +2143,9 @@ public final class Build {
     int contentBytes = 0;
     for (String argument : arguments) {
       assert argument != null;
+      if (argument.indexOf('\r') >= 0 || argument.indexOf('\n') >= 0) {
+        throw new IllegalStateException("argument contains a line break");
+      }
       int argumentBytes = argument.getBytes(StandardCharsets.UTF_8).length;
       if (argumentBytes > ARGUMENT_BYTES_MAX) {
         throw new IllegalStateException("argument exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
@@ -1817,20 +2191,82 @@ public final class Build {
   private static void terminate(Process process, Duration killTimeout) throws InterruptedException {
     assert process != null;
     assert killTimeout != null && !killTimeout.isNegative() && !killTimeout.isZero();
+    List<ProcessHandle> descendants = processDescendants(process);
+    destroy(descendants, false);
     process.destroy();
-    if (process.waitFor(killTimeout.toNanos(), TimeUnit.NANOSECONDS)) return;
-    terminateForcibly(process, killTimeout);
+    if (waitForProcessTree(process, descendants, killTimeout)) return;
+    destroy(descendants, true);
+    process.destroyForcibly();
+    if (!waitForProcessTree(process, descendants, killTimeout)) {
+      throw new IllegalStateException("process tree did not terminate");
+    }
   }
 
   private static void terminateForcibly(Process process, Duration killTimeout)
       throws InterruptedException {
     assert process != null;
     assert killTimeout != null && !killTimeout.isNegative() && !killTimeout.isZero();
+    List<ProcessHandle> descendants = processDescendants(process);
+    destroy(descendants, true);
     process.destroyForcibly();
-    if (!process.waitFor(killTimeout.toNanos(), TimeUnit.NANOSECONDS)) {
-      throw new IllegalStateException("process did not terminate");
+    if (!waitForProcessTree(process, descendants, killTimeout)) {
+      throw new IllegalStateException("process tree did not terminate");
     }
     assert !process.isAlive();
+    assert descendants.stream().noneMatch(ProcessHandle::isAlive);
+  }
+
+  private static List<ProcessHandle> processDescendants(Process process) {
+    assert process != null;
+    var descendants =
+        new ArrayList<>(
+            process.toHandle().descendants().limit(COLLECTION_ENTRIES_MAX + 1L).toList());
+    descendants.sort(Comparator.comparingInt(Build::processDepth).reversed());
+    if (descendants.size() > COLLECTION_ENTRIES_MAX) {
+      destroy(descendants, true);
+      process.destroyForcibly();
+      throw new IllegalStateException(
+          "process descendants exceed " + COLLECTION_ENTRIES_MAX + " entries");
+    }
+    return List.copyOf(descendants);
+  }
+
+  private static int processDepth(ProcessHandle process) {
+    assert process != null;
+    int depth = 0;
+    Optional<ProcessHandle> parent = process.parent();
+    while (parent.isPresent() && depth < COLLECTION_ENTRIES_MAX) {
+      depth = Math.addExact(depth, 1);
+      parent = parent.orElseThrow().parent();
+    }
+    return depth;
+  }
+
+  private static void destroy(List<ProcessHandle> descendants, boolean forcibly) {
+    assert descendants != null;
+    for (ProcessHandle descendant : descendants) {
+      if (!descendant.isAlive()) continue;
+      if (forcibly) descendant.destroyForcibly();
+      else descendant.destroy();
+    }
+  }
+
+  private static boolean waitForProcessTree(
+      Process process, List<ProcessHandle> descendants, Duration timeout)
+      throws InterruptedException {
+    assert process != null;
+    assert descendants != null;
+    assert timeout != null && !timeout.isNegative() && !timeout.isZero();
+    long deadline = Math.addExact(System.nanoTime(), timeout.toNanos());
+    while (process.isAlive() || descendants.stream().anyMatch(ProcessHandle::isAlive)) {
+      long remaining = deadline - System.nanoTime();
+      if (remaining <= 0) return false;
+      process.waitFor(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(10)), TimeUnit.NANOSECONDS);
+      if (!process.isAlive() && descendants.stream().anyMatch(ProcessHandle::isAlive)) {
+        Thread.sleep(1);
+      }
+    }
+    return true;
   }
 
   private static void requirePositiveDuration(Duration duration, String name) {

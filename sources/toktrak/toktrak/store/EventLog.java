@@ -175,6 +175,7 @@ public final class EventLog implements AutoCloseable {
         while (position > 0 && scannedBytes < MAX_LINE_BYTES) {
           int blockBytes =
               (int) Math.min(bytes.length, Math.min(position, MAX_LINE_BYTES - scannedBytes));
+          assert blockBytes > 0;
           position -= blockBytes;
           ByteBuffer buffer = ByteBuffer.wrap(bytes, 0, blockBytes);
           readFully(channel, buffer, position);

@@ -7,10 +7,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
 import org.junit.platform.engine.DiscoverySelector;
 import org.junit.platform.engine.FilterResult;
 import org.junit.platform.engine.TestTag;
 import org.junit.platform.engine.discovery.DiscoverySelectors;
+import org.junit.platform.engine.support.descriptor.MethodSource;
 import org.junit.platform.launcher.LauncherDiscoveryRequest;
 import org.junit.platform.launcher.PostDiscoveryFilter;
 import org.junit.platform.launcher.TestExecutionListener;
@@ -24,6 +26,9 @@ public final class TestLauncher {
   private static final int SELECTOR_COUNT_MAX = 1_000;
   private static final int SELECTOR_CHARACTERS_MAX = 1_024;
   private static final long TEST_COUNT_MAX = 10_000;
+  private static final long TEST_DESCRIPTOR_COUNT_MAX = 20_000;
+  private static final Pattern TEST_NAME =
+      Pattern.compile("given_[a-z][A-Za-z0-9]*_when_[a-z][A-Za-z0-9]*_then_[a-z][A-Za-z0-9]*");
 
   private TestLauncher() {}
 
@@ -56,12 +61,16 @@ public final class TestLauncher {
     }
     var launcher = LauncherFactory.create();
     TestPlan allTests = launcher.discover(request(selectors));
+    requireDescriptorCount(allTests.countTestIdentifiers(_ -> true));
     long testsDiscovered = allTests.countTestIdentifiers(TestIdentifier::isTest);
     if (testsDiscovered == 0 || testsDiscovered > TEST_COUNT_MAX) {
       throw new IllegalStateException(
           "discovered tests must be 1.." + TEST_COUNT_MAX + ": " + testsDiscovered);
     }
+    requireTestNames(allTests);
     TestPlan testPlan = launcher.discover(request(selectors, group.filter()));
+    requireDescriptorCount(testPlan.countTestIdentifiers(_ -> true));
+    requireTestNames(testPlan);
     long groupTestsDiscovered = testPlan.countTestIdentifiers(TestIdentifier::isTest);
     if (groupTestsDiscovered > TEST_COUNT_MAX) {
       throw new IllegalStateException(
@@ -121,6 +130,42 @@ public final class TestLauncher {
         default -> throw new IllegalArgumentException("invalid test group: " + argument);
       };
     }
+  }
+
+  static void requireDescriptorCount(long descriptorCount) {
+    if (descriptorCount < 0 || descriptorCount > TEST_DESCRIPTOR_COUNT_MAX) {
+      throw new IllegalStateException(
+          "test descriptors must be 0.." + TEST_DESCRIPTOR_COUNT_MAX + ": " + descriptorCount);
+    }
+  }
+
+  private static void requireTestNames(TestPlan testPlan) {
+    assert testPlan != null;
+    for (var root : testPlan.getRoots()) {
+      for (var test : testPlan.getDescendants(root)) {
+        if (!test.isTest()) continue;
+        var source =
+            test.getSource()
+                .orElseThrow(
+                    () ->
+                        new IllegalStateException("test has no source: " + test.getDisplayName()));
+        if (!(source instanceof MethodSource methodSource)) {
+          throw new IllegalStateException("test has no method source: " + test.getDisplayName());
+        }
+        if (!validTestName(methodSource.getMethodName())) {
+          throw new IllegalStateException(
+              "invalid test name: "
+                  + methodSource.getClassName()
+                  + "."
+                  + methodSource.getMethodName());
+        }
+      }
+    }
+  }
+
+  static boolean validTestName(String name) {
+    assert name != null;
+    return TEST_NAME.matcher(name).matches();
   }
 
   static String formatSummary(

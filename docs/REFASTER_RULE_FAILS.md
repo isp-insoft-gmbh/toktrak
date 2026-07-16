@@ -1,5 +1,45 @@
 # Refaster Rule Failures
 
+## 2026-07-16 — Test method naming convention
+
+**Pattern:** Rename every JUnit test method and manually invoked `BuildTest`
+case to
+`given_<camelCaseContext>_when_<camelCaseBehavior>_then_<camelCaseExpectation>`.
+
+**Attempt:** Checked current Refaster 2.50.0 template capabilities against the
+repeated method-declaration rename. JUnit methods require declaration-symbol
+renames; `BuildTest` additionally requires matching direct call-site renames.
+
+**Failure:** Refaster templates rewrite matched expressions, statements, and
+method bodies. They cannot rename a declared method symbol or update every
+reference to that symbol, so no safe Refaster rule can express this change.
+
+**Outcome:** Rule rejected as impossible. Apply explicit symbol renames and let
+javac verify every `BuildTest` call site.
+
+**Upgrade trigger:** Refaster adds declaration-symbol rename support with
+compiler-resolved call-site updates.
+
+## 2026-07-16 — Close `HttpClient` test resources
+
+**Pattern:** Convert four local `HttpClient` creations into try-with-resources
+scopes that close each client after its final use.
+
+**Attempt:** Checked current Refaster 2.50.0 template constraints and modeled
+the common client-construction expression.
+
+**Failure:** The safe replacement must capture and reparent an arbitrary tail of
+statements into a new try-with-resources block. Refaster expression and block
+templates cannot bind an open-ended enclosing statement tail, and replacing only
+the construction expression cannot introduce the required lexical scope.
+
+**Outcome:** Rule rejected as impossible. The four `HttpClient` sites are
+manually replaced with bounded `HttpURLConnection` requests that own no selector
+threads.
+
+**Upgrade trigger:** Refaster adds statement-sequence captures that can safely
+reparent the remainder of an enclosing block.
+
 ## 2026-07-15 — `Objects.requireNonNull(...)` to `assert`
 
 **Pattern:** Replace standalone `Objects.requireNonNull(value, message)` calls

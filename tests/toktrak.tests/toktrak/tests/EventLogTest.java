@@ -22,7 +22,8 @@ final class EventLogTest {
   @TempDir Path dir;
 
   @Test
-  void appendsNewlineTerminatedEnvelopeAndReadsIt() throws Exception {
+  void given_newEnvelope_when_appendingAndReplaying_then_returnsNewlineTerminatedEvent()
+      throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var event =
         EventEnvelope.create(
@@ -38,7 +39,7 @@ final class EventLogTest {
   }
 
   @Test
-  void streamsEventsInOrder() {
+  void given_twoLoggedEvents_when_replayingLog_then_returnsEventsInOrder() {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var at = Instant.parse("2026-07-10T00:00:00Z");
     var first = EventEnvelope.create("first", at, "system", Map.of());
@@ -52,7 +53,7 @@ final class EventLogTest {
   }
 
   @Test
-  void rejectsEventAboveReplayLimit() {
+  void given_eventCountAboveReplayLimit_when_replayingLog_then_rejectsReplay() {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var at = Instant.parse("2026-07-10T00:00:00Z");
     for (int index = 0; index < 4; index++) {
@@ -64,7 +65,7 @@ final class EventLogTest {
   }
 
   @Test
-  void rejectsOversizedLogBeforeRecovery() throws Exception {
+  void given_logAboveFileLimit_when_recoveringTornTail_then_rejectsLog() throws Exception {
     var path = dir.resolve("events.ndjson");
     try (var channel =
         FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
@@ -78,7 +79,7 @@ final class EventLogTest {
   }
 
   @Test
-  void writeFullyHandlesPartialChannelWrites() throws Exception {
+  void given_partialWriteChannel_when_writingFully_then_writesAllBytes() throws Exception {
     var channel = new ThrottledChannel(3);
     var expected = "partial writes must complete".getBytes(java.nio.charset.StandardCharsets.UTF_8);
     EventLog.writeFullyForTest(channel, ByteBuffer.wrap(expected));
@@ -87,7 +88,7 @@ final class EventLogTest {
   }
 
   @Test
-  void truncatesOnlyFinalTornTail() throws Exception {
+  void given_finalTornTail_when_recoveringLog_then_truncatesFragment() throws Exception {
     var path = dir.resolve("events.ndjson");
     Files.writeString(path, "{\"id\":\"bad-fragment");
     var recovered = EventLog.recoverTornTail(path);
@@ -96,7 +97,18 @@ final class EventLogTest {
   }
 
   @Test
-  void malformedCompleteLineFailsLoudly() throws Exception {
+  void given_tornTailAtLineLimit_when_recoveringLog_then_truncatesFragment() throws Exception {
+    var path = dir.resolve("events.ndjson");
+    Files.writeString(path, "x".repeat(EventLog.MAX_LINE_BYTES));
+
+    var recovered = EventLog.recoverTornTail(path);
+
+    assertEquals(1, recovered.truncatedFragments());
+    assertEquals(0, Files.size(path));
+  }
+
+  @Test
+  void given_malformedCompleteLine_when_replayingLog_then_rejectsLine() throws Exception {
     var path = dir.resolve("events.ndjson");
     Files.writeString(path, "{not-json}\n");
     var log = EventLog.open(path);
@@ -105,7 +117,7 @@ final class EventLogTest {
   }
 
   @Test
-  void rejectsInvalidUtf8InCompleteLine() throws Exception {
+  void given_invalidUtf8CompleteLine_when_replayingLog_then_rejectsLine() throws Exception {
     var path = dir.resolve("events.ndjson");
     var bytes = new ByteArrayOutputStream();
     bytes.writeBytes(
@@ -125,7 +137,7 @@ final class EventLogTest {
   }
 
   @Test
-  void rejectsJsonAboveNestingLimit() throws Exception {
+  void given_jsonAboveNestingLimit_when_replayingLog_then_rejectsLine() throws Exception {
     var path = dir.resolve("events.ndjson");
     String nested = "[".repeat(33) + "0" + "]".repeat(33);
     Files.writeString(path, envelopeJson("{\"nested\":" + nested + "}") + "\n");
@@ -135,7 +147,7 @@ final class EventLogTest {
   }
 
   @Test
-  void rejectsJsonNumberAboveLengthLimit() throws Exception {
+  void given_jsonNumberAboveLengthLimit_when_replayingLog_then_rejectsLine() throws Exception {
     var path = dir.resolve("events.ndjson");
     Files.writeString(path, envelopeJson("{\"number\":" + "1".repeat(257) + "}") + "\n");
     var log = EventLog.open(path);
@@ -144,7 +156,7 @@ final class EventLogTest {
   }
 
   @Test
-  void rejectsLineAboveTenMiB() throws Exception {
+  void given_lineAboveLengthLimit_when_replayingLog_then_rejectsLine() throws Exception {
     var path = dir.resolve("events.ndjson");
     Files.writeString(path, "{\"x\":\"" + "a".repeat(10 * 1024 * 1024) + "\"}\n");
     var log = EventLog.open(path);

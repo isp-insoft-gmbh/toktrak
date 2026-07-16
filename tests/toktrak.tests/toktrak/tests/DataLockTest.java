@@ -11,7 +11,8 @@ final class DataLockTest {
   @TempDir Path directory;
 
   @Test
-  void rejectsSecondLockInSameJvm() throws Exception {
+  void given_directoryLockedInJvm_when_acquiringSecondLock_then_rejectsAcquisition()
+      throws Exception {
     try (var first = DataLock.acquire(directory)) {
       assertNotNull(first);
       var exception = assertThrows(IllegalStateException.class, () -> DataLock.acquire(directory));

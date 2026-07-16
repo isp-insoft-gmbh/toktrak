@@ -18,7 +18,7 @@ final class ShutdownTest {
   @TempDir Path dir;
 
   @Test
-  void appCloseIsIdempotent() {
+  void given_runningApp_when_closingTwice_then_completesWithoutError() {
     var app =
         App.start(
             new String[] {},
@@ -34,7 +34,8 @@ final class ShutdownTest {
   }
 
   @Test
-  void writerCloseDrainsAcceptedCommands() throws Exception {
+  void given_pausedWriterWithAcceptedCommand_when_closingWriter_then_drainsCommand()
+      throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var writer =
         Writer.startForTest(

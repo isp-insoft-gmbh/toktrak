@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 
 final class AssertionsTest {
   @Test
-  void assertionsAreEnabled() {
+  void given_testJvm_when_checkingAssertionStatus_then_assertionsAreEnabled() {
     assertTrue(AssertionsTest.class.desiredAssertionStatus());
   }
 }

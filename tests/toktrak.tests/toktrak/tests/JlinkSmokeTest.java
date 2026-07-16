@@ -7,10 +7,12 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+// TODO: this is just demo shit to test junit tags in build system. replace this with real
+// integration tests later! and no more "smoke" crap...
 @Tag("smoke")
 final class JlinkSmokeTest {
   @Test
-  void prodRuntimeImageExistsAfterJlinkTaskWhenRequested() {
+  void given_optionalProductionImage_when_checkingImage_then_existingImageHasJavaExecutable() {
     var image = Path.of("output", "runtimes", "prod");
     if (Files.exists(image)) {
       assertTrue(

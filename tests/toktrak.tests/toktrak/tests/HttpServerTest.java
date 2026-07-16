@@ -2,32 +2,29 @@ package toktrak.tests;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.http.HttpResponse.BodyHandlers;
-import java.time.Duration;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import toktrak.*;
 
 final class HttpServerTest {
   @Test
-  void healthReturnsOkJsonAndSecurityHeaders() throws Exception {
+  void given_healthyApp_when_requestingHealth_then_returnsJsonAndSecurityHeaders()
+      throws Exception {
     try (var app =
         App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
       var response = get(app, "/health");
       assertEquals(200, response.statusCode());
-      assertEquals(
-          "nosniff", response.headers().firstValue("x-content-type-options").orElseThrow());
-      assertEquals("DENY", response.headers().firstValue("x-frame-options").orElseThrow());
+      assertEquals("nosniff", response.header("x-content-type-options"));
+      assertEquals("DENY", response.header("x-frame-options"));
       assertTrue(response.body().contains("\"status\":\"ok\""));
     }
   }
 
   @Test
-  void oversizedPathReturnsUriTooLong() throws Exception {
+  void given_pathAboveLengthLimit_when_requestingRoute_then_returnsUriTooLong() throws Exception {
     try (var app =
         App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
       var response = get(app, "/" + "a".repeat(2_049));
@@ -36,7 +33,7 @@ final class HttpServerTest {
   }
 
   @Test
-  void unknownApiRouteReturnsEnvelope() throws Exception {
+  void given_unknownApiRoute_when_requestingRoute_then_returnsNotFoundEnvelope() throws Exception {
     try (var app =
         App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
       var response = get(app, "/api/nope");
@@ -48,7 +45,8 @@ final class HttpServerTest {
   }
 
   @Test
-  void unknownBrowserRouteReturnsBrutalHtml() throws Exception {
+  void given_unknownBrowserRoute_when_requestingRoute_then_returnsBrutalNotFoundHtml()
+      throws Exception {
     try (var app =
         App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
       var response = get(app, "/nope");
@@ -58,13 +56,43 @@ final class HttpServerTest {
     }
   }
 
-  private static HttpResponse<String> get(App app, String path) throws Exception {
-    var request =
-        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + app.port() + path))
-            .timeout(Duration.ofSeconds(2))
-            .GET()
-            .build();
-    var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
-    return client.send(request, BodyHandlers.ofString());
+  private static Response get(App app, String path) throws Exception {
+    var connection =
+        (HttpURLConnection)
+            URI.create("http://127.0.0.1:" + app.port() + path).toURL().openConnection();
+    connection.setConnectTimeout(2_000);
+    connection.setReadTimeout(2_000);
+    connection.setRequestMethod("GET");
+    connection.setRequestProperty("Connection", "close");
+    try {
+      int statusCode = connection.getResponseCode();
+      try (var input =
+          statusCode >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
+        assertNotNull(input);
+        return new Response(
+            statusCode,
+            connection.getHeaderFields(),
+            new String(input.readAllBytes(), StandardCharsets.UTF_8));
+      }
+    } finally {
+      connection.disconnect();
+    }
+  }
+
+  private record Response(
+      int statusCode, Map<String, java.util.List<String>> headers, String body) {
+    private Response {
+      assert statusCode >= 100 && statusCode <= 599;
+      assert headers != null;
+      assert body != null;
+    }
+
+    private String header(String name) {
+      return headers.entrySet().stream()
+          .filter(entry -> entry.getKey() != null && entry.getKey().equalsIgnoreCase(name))
+          .flatMap(entry -> entry.getValue().stream())
+          .findFirst()
+          .orElseThrow();
+    }
   }
 }

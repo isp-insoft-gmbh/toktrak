@@ -21,7 +21,8 @@ final class WriterTest {
   @TempDir Path dir;
 
   @Test
-  void successReturnsOnlyAfterAppendAndProjectionApply() throws Exception {
+  void given_acceptedCommand_when_awaitingSuccess_then_appendsAndAppliesProjection()
+      throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var projection = Projection.empty();
     var writer =
@@ -40,7 +41,7 @@ final class WriterTest {
   }
 
   @Test
-  void projectionOverflowDoesNotAppendEvent() throws Exception {
+  void given_maximumProjection_when_submittingCommand_then_doesNotAppendEvent() throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var projection = Projection.empty();
     projection.apply(
@@ -62,7 +63,7 @@ final class WriterTest {
   }
 
   @Test
-  void fullQueueReturnsRejectedFuture() throws Exception {
+  void given_fullWriterQueue_when_tryingCommand_then_reportsNotAccepted() throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var writer =
         Writer.startForTest(
@@ -75,7 +76,7 @@ final class WriterTest {
   }
 
   @Test
-  void closedWriterReportsClosedInsteadOfFull() throws Exception {
+  void given_closedWriter_when_submittingCommand_then_reportsClosed() throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var writer =
         Writer.start(log, Projection.empty(), new HealthState(), ClockSource.system(), false);
@@ -87,7 +88,8 @@ final class WriterTest {
   }
 
   @Test
-  void forcedAbortFailsInFlightWithoutApplyingProjection() throws Exception {
+  void given_inFlightCommandBlockedOnClock_when_forcingClose_then_failsWithoutProjection()
+      throws Exception {
     var enteredClock = new CountDownLatch(1);
     var releaseClock = new CountDownLatch(1);
     var at = Instant.parse("2026-07-10T00:00:00Z");
@@ -133,7 +135,7 @@ final class WriterTest {
   }
 
   @Test
-  void forcedCloseFindsClaimedRequest() throws Exception {
+  void given_claimedRequest_when_forcingClose_then_failsWithoutProjection() throws Exception {
     var claimEntered = new CountDownLatch(1);
     var releaseClaim = new CountDownLatch(1);
     var log = EventLog.open(dir.resolve("events.ndjson"));
@@ -164,7 +166,8 @@ final class WriterTest {
   }
 
   @Test
-  void forcedAbortAfterFsyncDoesNotCommitProjectionOrSuccess() throws Exception {
+  void given_fsyncedCommandNotApplied_when_forcingClose_then_commitsNeitherProjectionNorSuccess()
+      throws Exception {
     var fsyncCompleted = new CountDownLatch(1);
     var releaseFsync = new CountDownLatch(1);
     var log = EventLog.open(dir.resolve("events.ndjson"));
@@ -195,7 +198,8 @@ final class WriterTest {
   }
 
   @Test
-  void injectedFailureMarksHealthDegraded() throws Exception {
+  void given_injectedWriteFailure_when_submittingCommand_then_marksHealthDegraded()
+      throws Exception {
     var health = new HealthState();
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var writer = Writer.start(log, Projection.empty(), health, ClockSource.system(), true);

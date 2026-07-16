@@ -9,7 +9,7 @@ import toktrak.log.JsonLogFormatter;
 
 final class JsonLogFormatterTest {
   @Test
-  void formatsOneCompactJsonLine() {
+  void given_infoLogRecord_when_formattingRecord_then_returnsLineWithExpectedFieldsAndNoEmail() {
     var record = new LogRecord(Level.INFO, "hello");
     var line = new JsonLogFormatter().format(record);
     assertTrue(line.endsWith("\n"));

@@ -10,7 +10,7 @@ import toktrak.Main;
 
 final class MainTest {
   @Test
-  void helpUsesEnvironmentNeutralName() throws Exception {
+  void given_helpOption_when_runningMain_then_printsEnvironmentNeutralName() throws Exception {
     var output = new ByteArrayOutputStream();
     PrintStream original = System.out;
     try (var replacement = new PrintStream(output, true, StandardCharsets.UTF_8)) {

@@ -21,7 +21,7 @@ final class DevDataTest {
   @TempDir Path directory;
 
   @Test
-  void copiesCorpusToDisposableDataDirectory() throws Exception {
+  void given_developmentCorpus_when_preparingData_then_copiesCorpus() throws Exception {
     var corpus = directory.resolve("corpus.ndjson");
     Files.writeString(corpus, EVENT);
     var dataDirectory = directory.resolve("data");
@@ -31,7 +31,8 @@ final class DevDataTest {
   }
 
   @Test
-  void failedBoundedCopyPreservesExistingData() throws Exception {
+  void given_oversizedCorpusAndExistingData_when_copyFails_then_preservesExistingData()
+      throws Exception {
     var corpus = directory.resolve("oversized.ndjson");
     Files.writeString(corpus, "x".repeat(17));
     var dataDirectory = directory.resolve("preserved-data");
@@ -48,7 +49,7 @@ final class DevDataTest {
   }
 
   @Test
-  void appStartupCopiesCorpusBeforeOpeningEventLog() throws Exception {
+  void given_developmentCorpus_when_startingApp_then_eventLogMatchesCorpus() throws Exception {
     var corpus = directory.resolve("corpus.ndjson");
     Files.writeString(corpus, EVENT);
     var dataDirectory = directory.resolve("app-data");

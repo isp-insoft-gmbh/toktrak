@@ -3,9 +3,13 @@
 - Zero warnings: fix every compiler, lint, and static-analysis warning.
   Disabling or suppressing warnings is forbidden without explicit human
   approval.
-- When editing unit tests, run
-  `mise run pit --xml [production source paths...]`; inspect survivors and
-  improve tests.
+- Name every test case
+  `given_<camelCaseContext>_when_<camelCaseBehavior>_then_<camelCaseExpectation>`;
+  helper methods are exempt.
+- When editing unit tests, iterate with
+  `mise run pit --history -- [production source paths...]`; inspect survivors
+  and improve tests. If PIT history errors or results appear inconsistent,
+  delete `output/pit.history` and rerun without `--history`.
 
 ## Safety and Style
 

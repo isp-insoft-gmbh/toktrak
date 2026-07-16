@@ -151,16 +151,31 @@ public final class App implements AutoCloseable {
     try {
       server.stop(5);
     } finally {
+      closeExecutorAndStorage();
+    }
+  }
+
+  private void closeExecutorAndStorage() {
+    try {
       shutdownExecutor();
-      try {
-        writer.close();
-      } finally {
-        try {
-          eventLog.close();
-        } finally {
-          dataLock.close();
-        }
-      }
+    } finally {
+      closeWriterAndStorage();
+    }
+  }
+
+  private void closeWriterAndStorage() {
+    try {
+      writer.close();
+    } finally {
+      closeStorage();
+    }
+  }
+
+  private void closeStorage() {
+    try {
+      eventLog.close();
+    } finally {
+      dataLock.close();
     }
   }
 

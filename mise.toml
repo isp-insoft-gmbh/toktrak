@@ -1,5 +1,4 @@
 [tools]
-coursier = "latest"
 dprint = "latest"
 google-java-format = "latest"
 java = "latest"
@@ -24,10 +23,23 @@ description = "Check Markdown, formatting, and compile/lint all Java modules"
 depends = ["markdown-check"]
 run = "java -ea tools/Build.java check"
 
+[tasks.watch-check]
+description = "Rerun checks when project files change"
+run = "mise watch --restart --watch . -- check"
+
 [tasks.test]
 description = "Run tests, optionally limited to test files or directories"
 raw_args = true
 run = "java -ea tools/Build.java test"
+
+[tasks.watch-test]
+description = "Rerun the full cached test suite when Java inputs change"
+run = "mise watch --restart --watch sources --watch tests --watch tools --watch vendored --watch mise.toml -- test"
+
+[tasks.pit]
+description = "Run PIT options directly; use --history while iterating; source filters follow --"
+raw_args = true
+run = "java -ea tools/Build.java pit"
 
 [tasks.refactor]
 description = "Apply Refaster rules and format Java sources"

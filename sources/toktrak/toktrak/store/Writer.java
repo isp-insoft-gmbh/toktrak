@@ -177,7 +177,6 @@ public final class Writer implements AutoCloseable {
       }
       stateMonitor.notifyAll();
     }
-    assert !future.isDone();
     return new Submission(true, future);
   }
 
@@ -218,26 +217,34 @@ public final class Writer implements AutoCloseable {
   }
 
   private Request claimNext() throws InterruptedException {
-    synchronized (stateMonitor) {
-      while (queue.isEmpty()) {
-        if (closed.get()) return null;
-        stateMonitor.wait(POLL_MILLIS);
+    while (true) {
+      synchronized (stateMonitor) {
+        if (queue.isEmpty()) {
+          if (closed.get()) return null;
+          stateMonitor.wait(POLL_MILLIS);
+          continue;
+        }
+        Request request = queue.remove();
+        if (!inFlight.compareAndSet(null, request)) {
+          throw new IllegalStateException("writer already has an in-flight request");
+        }
+        return request;
       }
-      Request request = queue.remove();
-      if (!inFlight.compareAndSet(null, request)) {
-        throw new IllegalStateException("writer already has an in-flight request");
-      }
-      return request;
     }
   }
 
   private void awaitResume() throws InterruptedException {
     if (!pauseRequested) return;
-    synchronized (pauseMonitor) {
-      paused = true;
-      pauseMonitor.notifyAll();
-      while (pauseRequested && !closed.get()) pauseMonitor.wait();
-      paused = false;
+    while (true) {
+      synchronized (pauseMonitor) {
+        paused = true;
+        pauseMonitor.notifyAll();
+        if (!pauseRequested || closed.get()) {
+          paused = false;
+          return;
+        }
+        pauseMonitor.wait();
+      }
     }
   }
 
@@ -363,7 +370,7 @@ public final class Writer implements AutoCloseable {
   public record Submission(boolean accepted, CompletableFuture<WriteResult> future) {
     public Submission {
       Objects.requireNonNull(future, "future");
-      assert accepted != future.isDone();
+      assert accepted || future.isDone();
     }
   }
 

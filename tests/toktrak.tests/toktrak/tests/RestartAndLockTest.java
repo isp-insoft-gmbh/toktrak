@@ -15,7 +15,7 @@ final class RestartAndLockTest {
   @TempDir Path dir;
 
   @Test
-  void restartRebuildsProjectionFromEventLog() throws Exception {
+  void given_existingEventLog_when_restartingApp_then_rebuildsProjection() throws Exception {
     var env =
         Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0", "TOKTRAK_DATA_DIR", dir.toString());
     try (var app = App.start(new String[] {}, env)) {
@@ -28,7 +28,7 @@ final class RestartAndLockTest {
   }
 
   @Test
-  void failedCorpusStartupCannotReplaceLiveEventLog() throws Exception {
+  void given_liveEventLog_when_corpusStartupFails_then_preservesEventLog() throws Exception {
     var environment =
         Map.of(
             "TOKTRAK_DEV_AUTH", "true",
@@ -52,7 +52,7 @@ final class RestartAndLockTest {
   }
 
   @Test
-  void secondAppCannotOpenSameDataDir() throws Exception {
+  void given_lockedDataDirectory_when_startingSecondApp_then_rejectsStartup() throws Exception {
     var env =
         Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0", "TOKTRAK_DATA_DIR", dir.toString());
     try (var first = App.start(new String[] {}, env)) {

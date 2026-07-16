@@ -16,7 +16,7 @@ final class EventEnvelopeTest {
   private static final Instant AT = Instant.parse("2026-07-10T00:00:00Z");
 
   @Test
-  void rejectsTypeAboveUtf8Limit() {
+  void given_typeAboveUtf8Limit_when_creatingEnvelope_then_rejectsType() {
     var ex =
         assertThrows(
             IllegalArgumentException.class,
@@ -25,7 +25,7 @@ final class EventEnvelopeTest {
   }
 
   @Test
-  void rejectsActorAboveUtf8Limit() {
+  void given_actorAboveUtf8Limit_when_creatingEnvelope_then_rejectsActor() {
     var ex =
         assertThrows(
             IllegalArgumentException.class,
@@ -34,7 +34,7 @@ final class EventEnvelopeTest {
   }
 
   @Test
-  void rejectsTooManyNestedValues() {
+  void given_nestedValuesAboveCountLimit_when_creatingEnvelope_then_rejectsData() {
     var data = Map.<String, Object>of("values", Collections.nCopies(100_001, 0));
     var exception =
         assertThrows(
@@ -44,7 +44,27 @@ final class EventEnvelopeTest {
   }
 
   @Test
-  void rejectsNestedDataAboveDepthLimit() {
+  void given_dataAtValueAndDepthLimits_when_creatingEnvelope_then_preservesData() {
+    var values = Collections.nCopies(99_998, 0);
+    var valueLimited = EventEnvelope.create("event", AT, "system", Map.of("values", values));
+    assertEquals(values, valueLimited.data().get("values"));
+
+    Object nested = 0;
+    for (int depth = 0; depth < 31; depth++) nested = new ArrayList<>(java.util.List.of(nested));
+    var depthLimited = EventEnvelope.create("event", AT, "system", Map.of("nested", nested));
+    assertEquals(nested, depthLimited.data().get("nested"));
+  }
+
+  @Test
+  void given_topLevelDataAtEntryLimit_when_creatingEnvelope_then_acceptsData() {
+    var data = new LinkedHashMap<String, Object>();
+    for (int index = 0; index < 1_024; index++) data.put(Integer.toString(index), index);
+    var event = new EventEnvelope(UUID.randomUUID(), AT, "event", 1, "system", data);
+    assertEquals(1_024, event.data().size());
+  }
+
+  @Test
+  void given_nestedDataAboveDepthLimit_when_creatingEnvelope_then_rejectsData() {
     Object value = 0;
     for (int depth = 0; depth < 33; depth++) value = new ArrayList<>(java.util.List.of(value));
     var data = Map.<String, Object>of("nested", value);
@@ -56,7 +76,7 @@ final class EventEnvelopeTest {
   }
 
   @Test
-  void rejectsTooManyTopLevelDataEntries() {
+  void given_topLevelDataAboveEntryLimit_when_creatingEnvelope_then_rejectsData() {
     var data = new LinkedHashMap<String, Object>();
     for (int index = 0; index < 1_025; index++) data.put(Integer.toString(index), index);
 
