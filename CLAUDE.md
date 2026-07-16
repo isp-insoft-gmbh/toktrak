@@ -36,6 +36,3 @@
 - If a rule is impossible or unsafe, log the date, pattern, and reason in
   `docs/REFASTER_RULE_FAILS.md`; abandon only the rule attempt and continue the
   original task.
-
-Adapted from
-[TigerStyle](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md).

@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import toktrak.*;
 import toktrak.projection.Projection;
 import toktrak.store.EventEnvelope;
 

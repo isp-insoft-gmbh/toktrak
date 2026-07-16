@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import toktrak.*;
 import toktrak.store.EventEnvelope;
 import toktrak.store.EventLog;
 
