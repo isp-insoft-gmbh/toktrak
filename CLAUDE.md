@@ -3,6 +3,9 @@
 - Zero warnings: fix every compiler, lint, and static-analysis warning.
   Disabling or suppressing warnings is forbidden without explicit human
   approval.
+- When editing unit tests, run
+  `mise run pit --xml [production source paths...]`; inspect survivors and
+  improve tests.
 
 ## Safety and Style
 
