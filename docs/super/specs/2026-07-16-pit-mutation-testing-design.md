@@ -5,7 +5,7 @@
 Add a fast local mutation-testing loop for code while it is still being edited:
 
 ```text
-mise run pit [--xml] [production source files or directories...]
+mise run pit [PIT options...] [-- production source files or directories...]
 ```
 
 No source selector means all TokTrak production code. Selected source paths
@@ -20,7 +20,7 @@ it.
 The intended loop follows PIT's “Don't let your code dry” guidance:
 
 1. edit production code and unit tests;
-2. run `mise run pit --xml` against the affected production source paths;
+2. run `mise run pit --` against the affected production source paths;
 3. inspect surviving mutations;
 4. simplify code or strengthen tests when the survivors reveal a real gap;
 5. repeat before the change becomes expensive to revisit.
@@ -36,32 +36,88 @@ Supported forms are:
 
 ```text
 mise run pit
-mise run pit --xml
-mise run pit sources/toktrak/toktrak/store/EventEnvelope.java
-mise run pit --xml sources/toktrak/toktrak/store
+mise run pit --verbose true
+mise run pit --dryRun true
+mise run pit --history -- sources/toktrak/toktrak/store
+mise run pit --fullMutationMatrix true -- sources/toktrak/toktrak/store
+mise run pit --verbosity VERBOSE_NO_SPINNER -- sources/toktrak/toktrak/App.java
 mise run pit --help
 ```
 
-`--xml` is an optional leading flag. It adds the XML report to the default HTML
-report. Remaining arguments use the same repository-path conventions as the
-existing `fmt` and `test` commands: each argument may name a file or directory,
-relative or absolute, but must remain inside the repository. Directories are
-expanded recursively in deterministic order.
+Every token before the optional `--` separator is forwarded to PIT unchanged,
+except Build's `--history` shorthand. PIT owns forwarded option names, value
+arity, duplicate handling, and error messages, so PIT upgrades do not require a
+Build.java allowlist update.
 
-Reject:
+Source filters are accepted only after `--`; without the separator, mutate all
+production code. Filter paths use the same repository conventions as `fmt` and
+`test`: relative or absolute files/directories inside `sources/toktrak`,
+expanded recursively in deterministic order. This separator is mandatory because
+PIT option values and source paths are both ordinary non-option tokens and
+cannot be distinguished heuristically.
 
-- unknown or misplaced options;
-- duplicate `--xml`;
-- paths outside the repository;
-- symbolic paths or paths below a symbolic ancestor;
-- nonexistent paths;
-- files outside `sources/toktrak`;
-- files other than production `.java` sources;
-- `module-info.java` and `package-info.java`;
-- selections containing no mutable production source.
+Build-owned PIT options cannot be forwarded because report validation, bounded
+execution, and source mapping depend on them:
 
-`--help` must print the command syntax and exit without resolving dependencies,
-compiling, deleting reports, or running PIT.
+- `--classPath`;
+- `--includeLaunchClasspath`;
+- `--targetClasses`;
+- `--targetTests`;
+- `--mutableCodePaths`;
+- `--sourceDirs`;
+- `--reportDir`;
+- `--outputFormats`;
+- `--timestampedReports`;
+- `--threads`;
+- `--timeoutConst`;
+- `--jvmArgs`;
+- `--failWhenNoMutations`;
+- `--historyInputLocation`;
+- `--historyOutputLocation`.
+
+Reject multiple separators, Build-owned options, and invalid source filters.
+Reserved-name checks cover both split `--option value` and `--option=value`
+spellings. Reject CR or LF in every forwarded token through the shared
+argument-file encoder so one token cannot inject another argument. PIT rejects
+every other malformed forwarded option.
+
+Raw options are an explicit per-run escape hatch and may alter mutation sets,
+filters, thresholds, history, verbosity, or failure policy. They do not alter
+Build-owned paths, reports, concurrency, JVM safety, or source/test targeting.
+No raw option becomes a project default.
+
+During repeated unit-test edits, agents use Build's concise history shorthand:
+
+```text
+mise run pit --history -- [production source paths...]
+```
+
+`--history` expands to PIT's input and output options with the same
+project-local `output/pit.history` path. Reject duplicate `--history`; native
+history-location options are Build-owned so callers cannot conflict with the
+shorthand or bypass clean ownership.
+
+PIT tracks changed production classes, killing tests, and covering tests, so
+history can avoid rerunning logically unchanged mutants after test edits. The
+feature is experimental and can infer stale results after dependency changes. Do
+not require a routine no-history pass; only delete `output/pit.history` and
+rerun without history when PIT reports a history error or results appear
+inconsistent.
+
+`--dryRun true`, `--dryRun=true`, or bare `--dryRun` intentionally produces only
+`NOT_STARTED` mutations. `--dryRun false` and `--dryRun=false` retain normal
+status validation. Reject repeated `--dryRun` because Build and PIT must agree
+on one effective validation mode.
+
+Other forwarded flags do not weaken report presence, size, or status validation.
+Omit the default `--verbosity NO_SPINNER` whenever raw arguments contain split
+or `=value` forms of `--verbosity` or `--verbose`; PIT then owns the explicit
+verbosity value.
+
+`--help` must print the forwarding/filter syntax and exit without resolving
+dependencies, compiling, deleting reports, or running PIT. Forwarded `-h` or
+`-?` runs PIT's own help after normal compilation/dependency setup, but does not
+replace or validate the existing report directory.
 
 ## Source-to-class mapping
 
@@ -100,12 +156,18 @@ test selectors receive the same trust-boundary fix.
 
 ## Dependencies
 
-Add `sources/pit-deps.txt` containing only the two direct tool dependencies:
+Add `sources/pit-deps.txt` containing three direct tool dependencies:
 
 ```text
 pkg:maven/org.pitest/pitest-command-line@1.25.7
 pkg:maven/org.pitest/pitest-junit5-plugin@1.2.3
+pkg:maven/org.pitest/pitest-history-plugin@0.0.1
 ```
+
+PIT 1.25.7 no longer bundles a history implementation; without the separate
+open-source history plugin, history flags fail with “no history plugin has been
+installed/activated.” A local compatibility probe confirmed plugin 0.0.1 creates
+and reuses history with PIT 1.25.7.
 
 Resolve them and their transitives with the vendored `jresolve.jar` into:
 
@@ -120,11 +182,12 @@ metadata, or runtime containers.
 
 Dependency fingerprints use the existing `ensureDependency` mechanism, so PIT
 artifacts are downloaded only when `sources/pit-deps.txt` or `jresolve.jar`
-changes. A cache hit additionally requires nonempty `pitest-command-line-*.jar`
-and `pitest-junit5-plugin-*.jar` files; otherwise re-resolve instead of trusting
-the stamp.
+changes. A cache hit additionally requires nonempty `pitest-command-line-*.jar`,
+`pitest-junit5-plugin-*.jar`, and `pitest-history-plugin-*.jar` files; otherwise
+re-resolve instead of trusting the stamp.
 
-`mise run clean` must remove `output/deps/pit` and `output/mutations`.
+`mise run clean` must remove `output/deps/pit`, `output/mutations`, and
+`output/pit.history`.
 
 ## Build integration
 
@@ -150,7 +213,9 @@ The PIT launch classpath contains, in deterministic order:
 
 PIT runs the compiled JPMS outputs as ordinary classpath entries only for
 mutation analysis. Authoritative compilation, tests, development, and production
-remain module-path based.
+remain module-path based. Do not also pass `--classPath`: PIT already includes
+the Java launch classpath, and that option expects comma-separated entries
+rather than the platform path-separated launch string.
 
 Configure PIT with:
 
@@ -159,14 +224,17 @@ Configure PIT with:
 - target tests: `toktrak.tests.*`;
 - source directory: `sources/toktrak`;
 - report directory: `output/mutations`;
-- output format: HTML, plus XML when `--xml` is present;
+- output formats: HTML and XML;
 - timestamped reports: disabled;
 - workers: exactly four;
 - assertions: enabled in the parent and PIT child JVMs;
 - JUnit default timeout: 5 seconds in PIT child JVMs;
 - PIT timeout constant: 10,000 milliseconds;
 - mutation, coverage, and test-strength thresholds: zero/default;
-- no excluded classes, methods, mutators, tests, or annotations.
+- no excluded classes, methods, mutators, tests, or annotations;
+- default verbosity: `NO_SPINNER`, preserving diagnostics while removing
+  terminal backspace noise; forwarded `--verbosity` or `--verbose` overrides
+  that default.
 
 The enclosing build process retains its existing ten-minute maximum. PIT child
 processes remain bounded by JUnit and PIT. Harden the shared process termination
@@ -232,37 +300,39 @@ arbitrary remainder of each test method in a new try-with-resources scope, which
 is outside expression/template replacement. Record the dated failed-rule reason
 in `docs/REFASTER_RULE_FAILS.md` before applying the manual edits.
 
-Close every test client with try-with-resources in:
+Remove every test `HttpClient` site from:
 
 - `HealthModeTest`;
 - `HttpServerTest`;
 - `HttpAdmissionTest`.
 
-This changes no production behavior. A verbose full PIT run must report no “More
-threads at end of test” warnings.
+Use bounded `HttpURLConnection` requests with `Connection: close`, closed
+response streams, and unconditional `disconnect()`. Unlike `HttpClient`, this
+does not retain selector-manager threads between PIT tests.
+
+Verbose coverage still reports process-lifetime JUnit timeout-watcher and Java
+virtual-thread carrier initialization as thread-count increases. These are lazy
+runtime infrastructure, not per-test leaks; attempts to hide them with timeout
+thread-mode changes or eager carrier warmups introduced native-thread exhaustion
+under four concurrent PIT workers and were rejected. Normal four-worker mutation
+runs must remain warning-free. Verbose diagnostics must contain no
+inlined-finally, `HttpClient`, PIT-timeout, or application-thread warning.
 
 ## Reports
 
 Every run replaces `output/mutations`; stale reports must never survive a new
 selection.
 
-Default output:
-
-```text
-output/mutations/index.html
-```
-
-With `--xml`:
+Every successful run retains both reports:
 
 ```text
 output/mutations/index.html
 output/mutations/mutations.xml
 ```
 
-PIT always generates XML internally so `Build.java` can validate statuses. A run
-fails if XML contains `TIMED_OUT`, `RUN_ERROR`, `MEMORY_ERROR`, `NON_VIABLE`,
-`STARTED`, or `NOT_STARTED`. When `--xml` is absent, delete the validated XML
-before success; when present, retain it for agents.
+`Build.java` validates XML statuses before success. A normal run fails if XML
+contains `TIMED_OUT`, `RUN_ERROR`, `MEMORY_ERROR`, `NON_VIABLE`, `STARTED`, or
+`NOT_STARTED`.
 
 PIT process failure, a missing requested report, no mutable source, no
 mutations, a non-green baseline suite, or an exceptional mutation status fails
@@ -274,8 +344,8 @@ Validate the completed report tree using the existing 100,000-entry and
 outer process timeout, finite compiled bytecode, and report validation bound the
 work without reducing PIT's mutation set.
 
-Agent runs use `--xml` so mutation statuses are machine-readable. Human runs may
-omit it when only the HTML report is useful.
+Agents consume XML; humans may open HTML. Keeping both removes a command mode
+and costs no additional PIT work because XML is required for validation anyway.
 
 ## Testing
 
@@ -285,7 +355,7 @@ Extend `tests/tools/BuildTest.java` before implementation to cover:
 2. a source file maps to its exact and `$*` target globs;
 3. a directory expands recursively, sorted and deduplicated;
 4. invalid, external, symbolic, descriptor, and empty selections fail;
-5. `--xml` adds XML while preserving HTML;
+5. every successful run retains HTML and XML;
 6. PIT arguments contain the fixed classpath, paths, workers, assertion,
    JUnit-timeout, and PIT-timeout settings;
 7. report replacement and required-report validation are bounded to
@@ -305,10 +375,11 @@ Integration verification:
    `TIMED_OUT`, and both report formats;
 3. place a sentinel in `output/mutations`, run a different focused selection,
    and confirm the sentinel is removed;
-4. run full `mise run pit --xml` and parse `mutations.xml` to require only
-   `KILLED`, `SURVIVED`, and `NO_COVERAGE` statuses;
-5. run the full PIT command once with verbose diagnostics and require zero
-   warning lines, including inlined-finally and leaked-thread warnings;
+4. run full `mise run pit` and parse `mutations.xml` to require only `KILLED`,
+   `SURVIVED`, and `NO_COVERAGE` statuses;
+5. run the full PIT command once with verbose diagnostics and require no
+   inlined-finally, `HttpClient`, PIT-timeout, or application-thread warning;
+   document PIT's false-positive JUnit watcher/carrier thread-count warnings;
 6. run `mise run verify` and require pristine output.
 
 Mutation counts and scores are observations, not fixed assertions; PIT upgrades,
@@ -326,7 +397,6 @@ Do not add:
 - test-class or test-method selectors;
 - score thresholds;
 - CI/`verify` integration;
-- mutation history/incremental analysis;
 - mutation exclusions or warning suppression;
 - a generic build-tool abstraction.
 
@@ -334,6 +404,9 @@ Do not add:
 
 - PIT command-line guide: <https://pitest.org/quickstart/commandline/>
 - PIT FAQ and troubleshooting: <https://pitest.org/faq/>
+- PIT incremental analysis:
+  <https://pitest.org/quickstart/incremental_analysis/>
+- Open-source history plugin: <https://github.com/pitest/pitest-history-plugin>
 - Local workflow guidance: <https://blog.pitest.org/dont-let-your-code-dry/>
 - JUnit Platform plugin: <https://github.com/pitest/pitest-junit5-plugin>
 - PIT 1.25.7 inlined-finally filter:
