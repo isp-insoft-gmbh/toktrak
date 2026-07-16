@@ -12,7 +12,6 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.Objects;
 
 public final class Json {
   private static final int NESTING_DEPTH_MAX = 32;
@@ -65,7 +64,7 @@ public final class Json {
   }
 
   public static String write(Object value) {
-    Objects.requireNonNull(value, "value");
+    assert value != null;
     try {
       String json = MAPPER.writeValueAsString(value);
       assert json != null;
@@ -76,8 +75,8 @@ public final class Json {
   }
 
   public static <T> T read(String value, Class<T> type) {
-    Objects.requireNonNull(value, "value");
-    Objects.requireNonNull(type, "type");
+    assert value != null;
+    assert type != null;
     try {
       T result = MAPPER.readValue(value, type);
       assert result != null;
@@ -88,8 +87,8 @@ public final class Json {
   }
 
   public static <T> T read(byte[] value, Class<T> type) {
-    Objects.requireNonNull(value, "value");
-    Objects.requireNonNull(type, "type");
+    assert value != null;
+    assert type != null;
     if (value.length > DOCUMENT_BYTES_MAX) {
       throw new IllegalArgumentException("JSON document exceeds " + DOCUMENT_BYTES_MAX + " bytes");
     }

@@ -259,8 +259,8 @@ public final class EventLog implements AutoCloseable {
 
   public static void writeFullyForTest(WritableByteChannel channel, ByteBuffer buffer)
       throws IOException {
-    Objects.requireNonNull(channel, "channel");
-    Objects.requireNonNull(buffer, "buffer");
+    assert channel != null;
+    assert buffer != null;
     writeFully(channel, buffer);
   }
 

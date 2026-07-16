@@ -51,17 +51,23 @@ public final class Writer implements AutoCloseable {
       Duration abortTimeout,
       Runnable afterClaim,
       Runnable afterFsync) {
-    this.log = Objects.requireNonNull(log, "log");
-    this.projection = Objects.requireNonNull(projection, "projection");
-    this.health = Objects.requireNonNull(health, "health");
-    this.clock = Objects.requireNonNull(clock, "clock");
+    assert log != null;
+    assert projection != null;
+    assert health != null;
+    assert clock != null;
+    this.log = log;
+    this.projection = projection;
+    this.health = health;
+    this.clock = clock;
     if (capacity <= 0 || capacity > QUEUE_CAPACITY) {
       throw new IllegalArgumentException("capacity must be 1.." + QUEUE_CAPACITY);
     }
     this.drainTimeout = requireTimeout(drainTimeout, "drainTimeout");
     this.abortTimeout = requireTimeout(abortTimeout, "abortTimeout");
-    this.afterClaim = Objects.requireNonNull(afterClaim, "afterClaim");
-    this.afterFsync = Objects.requireNonNull(afterFsync, "afterFsync");
+    assert afterClaim != null;
+    assert afterFsync != null;
+    this.afterClaim = afterClaim;
+    this.afterFsync = afterFsync;
     this.failWrites = failWrites;
     this.queue = new ArrayBlockingQueue<>(capacity);
     this.thread = Thread.ofPlatform().daemon(true).name("toktrak-writer").start(this::run);

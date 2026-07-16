@@ -35,8 +35,8 @@ public record RequestContext(
   }
 
   public static <T> T with(RequestContext context, Callable<T> action) throws Exception {
-    Objects.requireNonNull(context, "context");
-    Objects.requireNonNull(action, "action");
+    assert context != null;
+    assert action != null;
     assert !CURRENT.isBound();
     return ScopedValue.where(CURRENT, context).call(action::call);
   }

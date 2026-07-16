@@ -2,7 +2,6 @@ package toktrak.store;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.Objects;
 import toktrak.projection.Projection;
 
 public final class WriteCommand {
@@ -15,8 +14,9 @@ public final class WriteCommand {
   private final String actor;
 
   private WriteCommand(Kind kind, String actor) {
-    this.kind = Objects.requireNonNull(kind, "kind");
+    assert kind != null;
     if (actor == null || actor.isBlank()) throw new IllegalArgumentException("actor is required");
+    this.kind = kind;
     this.actor = actor;
   }
 
@@ -33,8 +33,8 @@ public final class WriteCommand {
   }
 
   EventEnvelope event(Instant at, Projection projection) {
-    Objects.requireNonNull(at, "at");
-    Objects.requireNonNull(projection, "projection");
+    assert at != null;
+    assert projection != null;
     EventEnvelope event =
         switch (kind) {
           case DEV_TEST -> EventEnvelope.create("dev-test", at, actor, Map.of());

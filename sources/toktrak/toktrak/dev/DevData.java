@@ -5,7 +5,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.util.Objects;
 import toktrak.store.EventLog;
 
 public final class DevData {
@@ -26,8 +25,8 @@ public final class DevData {
   }
 
   private static void prepareDisposableCorpus(Path corpus, Path dataDirectory, long fileBytesMax) {
-    Objects.requireNonNull(corpus, "corpus");
-    Objects.requireNonNull(dataDirectory, "dataDirectory");
+    assert corpus != null;
+    assert dataDirectory != null;
     assert fileBytesMax > 0 && fileBytesMax <= EventLog.MAX_FILE_BYTES;
     Path temporary = dataDirectory.resolve("events.ndjson.tmp");
     Path destination = dataDirectory.resolve("events.ndjson");

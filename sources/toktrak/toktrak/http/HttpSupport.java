@@ -5,7 +5,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Objects;
 
 public final class HttpSupport {
   public static final int MAX_REQUEST_BODY_BYTES = 5 * 1024 * 1024;
@@ -15,7 +14,7 @@ public final class HttpSupport {
   private HttpSupport() {}
 
   public static byte[] readLimited(InputStream input, int limit) throws IOException {
-    Objects.requireNonNull(input, "input");
+    assert input != null;
     if (limit < 0 || limit > MAX_REQUEST_BODY_BYTES) {
       throw new IllegalArgumentException("limit must be 0.." + MAX_REQUEST_BODY_BYTES + " bytes");
     }
@@ -41,19 +40,19 @@ public final class HttpSupport {
   }
 
   public static void json(HttpExchange exchange, int status, String body) throws IOException {
-    Objects.requireNonNull(body, "body");
+    assert body != null;
     send(
         exchange, status, "application/json; charset=utf-8", body.getBytes(StandardCharsets.UTF_8));
   }
 
   public static void html(HttpExchange exchange, int status, String body) throws IOException {
-    Objects.requireNonNull(body, "body");
+    assert body != null;
     send(exchange, status, "text/html; charset=utf-8", body.getBytes(StandardCharsets.UTF_8));
   }
 
   private static void send(HttpExchange exchange, int status, String contentType, byte[] body)
       throws IOException {
-    Objects.requireNonNull(exchange, "exchange");
+    assert exchange != null;
     assert status >= 100 && status <= 599;
     assert contentType != null && !contentType.isBlank();
     assert body != null;

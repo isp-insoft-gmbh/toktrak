@@ -4,7 +4,6 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -20,14 +19,16 @@ public final class Router implements HttpHandler {
   private final Executor requestExecutor;
 
   public Router(HealthState health, boolean devAuth, Executor requestExecutor) {
-    this.health = Objects.requireNonNull(health, "health");
+    assert health != null;
+    assert requestExecutor != null;
+    this.health = health;
     this.devAuth = devAuth;
-    this.requestExecutor = Objects.requireNonNull(requestExecutor, "requestExecutor");
+    this.requestExecutor = requestExecutor;
   }
 
   @Override
   public void handle(HttpExchange exchange) throws IOException {
-    Objects.requireNonNull(exchange, "exchange");
+    assert exchange != null;
     String method = exchange.getRequestMethod();
     if (method == null || method.isBlank() || method.length() > METHOD_CHARACTERS_MAX) {
       try {

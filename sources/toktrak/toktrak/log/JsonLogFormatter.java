@@ -2,7 +2,6 @@ package toktrak.log;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
-import java.util.Objects;
 import java.util.logging.Formatter;
 import java.util.logging.LogRecord;
 import toktrak.http.RequestContext;
@@ -13,7 +12,7 @@ public final class JsonLogFormatter extends Formatter {
 
   @Override
   public String format(LogRecord record) {
-    Objects.requireNonNull(record, "record");
+    assert record != null;
     var fields = new LinkedHashMap<String, Object>();
     fields.put("timestamp", Instant.ofEpochMilli(record.getMillis()).toString());
     fields.put("level", record.getLevel().getName());
