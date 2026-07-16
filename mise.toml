@@ -33,6 +33,11 @@ run = "java -ea tools/Build.java test"
 description = "Apply Refaster rules and format Java sources"
 run = "java -ea tools/Build.java refactor"
 
+[tasks.ide]
+description = "Generate IDE metadata; choose eclipse or intellij, or omit for both"
+raw_args = true
+run = "java -ea tools/Build.java ide"
+
 [tasks.verify]
 description = "Check Markdown, compile/lint Java, and run the full test suite"
 depends = ["markdown-check"]

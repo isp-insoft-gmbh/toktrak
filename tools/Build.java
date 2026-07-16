@@ -18,7 +18,6 @@ import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
@@ -37,6 +36,8 @@ public final class Build {
   private static final Path BUILD_DEPS = OUTPUT.resolve("deps/build");
   private static final Path REFASTER_DEPS = OUTPUT.resolve("deps/refaster");
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
+  private static final Path IDE = OUTPUT.resolve("ide");
+  private static final Path ECLIPSE_IDE = IDE.resolve("eclipse");
   private static final Path ARGFILES = OUTPUT.resolve("args");
   private static final Path BUILD_TESTS = OUTPUT.resolve("build-tests");
   private static final Path REFASTER_OUTPUT = OUTPUT.resolve("refaster");
@@ -60,6 +61,7 @@ public final class Build {
   private static final int FORMAT_BATCH_FILES_MAX = 128;
   private static final int COPY_BUFFER_BYTES = 64 * 1024;
   private static final int STAMP_BYTES_MAX = 128;
+  private static final int IDE_FILE_BYTES_MAX = 1024 * 1024;
   private static final int GIT_STATUS_BYTES_MAX = 1024 * 1024;
   private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(10);
   private static final Duration UNIT_TEST_TIMEOUT = Duration.ofSeconds(30);
@@ -82,10 +84,10 @@ public final class Build {
     long started = System.nanoTime();
     try {
       requireAssertions();
-      Objects.requireNonNull(args, "args");
+      assert args != null;
       if (args.length == 0) {
         throw new IllegalStateException(
-            "command required: clean, fmt, check, test, refactor, ci, verify, dev, or prod");
+            "command required: clean, fmt, check, test, refactor, ci, verify, ide, dev, or prod");
       }
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
@@ -98,6 +100,7 @@ public final class Build {
         case "refactor" -> refactor();
         case "ci" -> ci();
         case "verify" -> verify();
+        case "ide" -> ideCommand(List.of(args).subList(1, args.length));
         case "dev" -> dev(List.of(args).subList(1, args.length));
         case "prod" -> jlinkProd();
         default -> throw new IllegalStateException("unknown command: " + args[0]);
@@ -114,6 +117,7 @@ public final class Build {
     deleteTree(BUILD_DEPS);
     deleteTree(REFASTER_DEPS);
     deleteTree(RUNTIMES);
+    deleteTree(IDE);
     deleteTree(ARGFILES);
     deleteTree(BUILD_TESTS);
     deleteTree(REFASTER_OUTPUT);
@@ -166,6 +170,295 @@ public final class Build {
     writeStamp(stamp, fingerprint);
   }
 
+  private static void ideCommand(List<String> arguments) throws Exception {
+    assert arguments != null;
+    if (arguments.isEmpty()) {
+      throw new IllegalStateException(
+          "IntelliJ IDE generation is not implemented; use 'ide eclipse'");
+    }
+    if (arguments.size() != 1) {
+      throw new IllegalArgumentException("ide requires zero or one target");
+    }
+    switch (arguments.getFirst()) {
+      case "--help" -> System.out.println("usage: mise run ide [eclipse|intellij]");
+      case "eclipse" -> generateEclipseProjects();
+      case "intellij" ->
+          throw new IllegalStateException("IntelliJ IDE generation is not implemented");
+      default -> throw new IllegalArgumentException("unknown IDE target: " + arguments.getFirst());
+    }
+  }
+
+  private static void generateEclipseProjects() throws Exception {
+    ensureDependency(
+        "sources/main-deps.txt", MAIN_DEPS, "resolve-toktrak-production-dependencies", true);
+    ensureDependency("sources/test-deps.txt", TEST_DEPS, "resolve-toktrak-test-dependencies", true);
+    ensureRefasterDependencies();
+    verifyModules(MAIN_DEPS);
+    verifyModules(TEST_DEPS);
+    generateEclipseProjects(
+        ROOT,
+        ECLIPSE_IDE,
+        jarPaths(List.of(MAIN_DEPS)),
+        jarPaths(List.of(TEST_DEPS)),
+        refasterJar());
+  }
+
+  static void generateEclipseProjectsForTest(
+      Path root, Path output, List<Path> mainJars, List<Path> testJars, Path refasterJar)
+      throws IOException {
+    generateEclipseProjects(root, output, mainJars, testJars, refasterJar);
+  }
+
+  private static void generateEclipseProjects(
+      Path root, Path output, List<Path> mainJars, List<Path> testJars, Path refasterJar)
+      throws IOException {
+    assert root != null;
+    assert output != null;
+    assert mainJars != null;
+    assert testJars != null;
+    assert refasterJar != null;
+    root = root.toAbsolutePath().normalize();
+    output = output.toAbsolutePath().normalize();
+    if (!output.equals(root.resolve("output/ide/eclipse"))) {
+      throw new IllegalArgumentException("Eclipse output must be output/ide/eclipse");
+    }
+    requireDirectory(root.resolve("sources/toktrak"));
+    requireDirectory(root.resolve("tests/toktrak.tests"));
+    requireDirectory(root.resolve("tools"));
+    requireDirectory(root.resolve("tests/tools"));
+    requireCollectionSize(mainJars, "Eclipse main JARs");
+    requireCollectionSize(testJars, "Eclipse test JARs");
+    requireFile(refasterJar);
+    for (Path jar : mainJars) requireFile(jar);
+    for (Path jar : testJars) requireFile(jar);
+
+    deleteTree(output);
+    Path app = output.resolve("toktrak");
+    Path tests = output.resolve("toktrak.tests");
+    Path build = output.resolve("toktrak.build");
+    writeEclipseProject(
+        output,
+        app,
+        eclipseProject("toktrak", "", eclipseLink("src", "sources/toktrak")),
+        eclipseAppClasspath(mainJars));
+    writeEclipseProject(
+        output,
+        tests,
+        eclipseProject(
+            "toktrak.tests",
+            "    <project>toktrak</project>\n",
+            eclipseLink("test", "tests/toktrak.tests")),
+        eclipseTestClasspath(mainJars, testJars));
+    Files.createDirectories(build.resolve("src"));
+    Files.createDirectories(build.resolve("test"));
+    writeEclipseProject(
+        output,
+        build,
+        eclipseProject(
+            "toktrak.build",
+            "",
+            eclipseLink("src/tools", "tools") + eclipseLink("test/tools", "tests/tools")),
+        eclipseBuildClasspath(refasterJar));
+    assert Files.isRegularFile(app.resolve(".project"));
+    assert Files.isRegularFile(tests.resolve(".project"));
+    assert Files.isRegularFile(build.resolve(".project"));
+  }
+
+  private static void requireDirectory(Path directory) {
+    assert directory != null;
+    if (!Files.isDirectory(directory)) {
+      throw new IllegalStateException("required IDE source directory missing: " + directory);
+    }
+  }
+
+  private static void requireFile(Path file) {
+    assert file != null;
+    if (!Files.isRegularFile(file)) {
+      throw new IllegalStateException("required IDE file missing: " + file);
+    }
+  }
+
+  private static String eclipseProject(String name, String projects, String links) {
+    assert name != null && !name.isBlank();
+    assert projects != null;
+    assert links != null;
+    return """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <projectDescription>
+      <name>%s</name>
+      <comment></comment>
+      <projects>
+    %s  </projects>
+      <buildSpec>
+        <buildCommand>
+          <name>org.eclipse.jdt.core.javabuilder</name>
+          <arguments></arguments>
+        </buildCommand>
+      </buildSpec>
+      <natures>
+        <nature>org.eclipse.jdt.core.javanature</nature>
+      </natures>
+      <linkedResources>
+    %s  </linkedResources>
+    </projectDescription>
+    """
+        .formatted(xml(name), projects, links);
+  }
+
+  private static String eclipseLink(String name, String target) {
+    assert name != null && !name.isBlank();
+    assert target != null && !target.isBlank();
+    return """
+        <link>
+          <name>%s</name>
+          <type>2</type>
+          <locationURI>PARENT-4-PROJECT_LOC/%s</locationURI>
+        </link>
+    """
+        .formatted(xml(name), xml(target));
+  }
+
+  private static String eclipseAppClasspath(List<Path> jars) {
+    var entries = new StringBuilder();
+    entries.append("  <classpathentry kind=\"src\" path=\"src\" output=\"bin/main\"/>\n");
+    entries.append(eclipseJre(true));
+    for (Path jar : jars) entries.append(eclipseLibrary(jar, true, false));
+    return eclipseClasspath(entries);
+  }
+
+  private static String eclipseTestClasspath(List<Path> mainJars, List<Path> testJars) {
+    var entries = new StringBuilder();
+    entries.append(eclipseSource("test", "bin/test", null, true));
+    entries.append(eclipseJre(true));
+    entries.append(
+        eclipseEntry(
+            "  <classpathentry combineaccessrules=\"false\" kind=\"src\" path=\"/toktrak\">\n",
+            true,
+            true,
+            String.join(":", TEST_EXPORTS)));
+    for (Path jar : mainJars) entries.append(eclipseLibrary(jar, true, true));
+    for (Path jar : testJars) entries.append(eclipseLibrary(jar, true, true));
+    return eclipseClasspath(entries);
+  }
+
+  private static String eclipseBuildClasspath(Path refasterJar) {
+    var entries = new StringBuilder();
+    entries.append(eclipseSource("src", "bin/main", "tools/**", false));
+    entries.append(eclipseSource("test", "bin/test", "tools/**", true));
+    entries.append(eclipseJre(false));
+    entries.append(eclipseLibrary(refasterJar, false, false));
+    return eclipseClasspath(entries);
+  }
+
+  private static String eclipseClasspath(StringBuilder entries) {
+    assert entries != null;
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<classpath>\n"
+        + entries
+        + "  <classpathentry kind=\"output\" path=\"bin\"/>\n</classpath>\n";
+  }
+
+  private static String eclipseSource(String path, String output, String including, boolean test) {
+    assert path != null && !path.isBlank();
+    assert output != null && !output.isBlank();
+    String inclusion = including == null ? "" : " including=\"" + xml(including) + "\"";
+    String start =
+        "  <classpathentry"
+            + inclusion
+            + " kind=\"src\" path=\""
+            + xml(path)
+            + "\" output=\""
+            + xml(output)
+            + "\">\n";
+    return eclipseEntry(start, false, test, null);
+  }
+
+  private static String eclipseJre(boolean module) {
+    String start =
+        "  <classpathentry kind=\"con\" path=\"org.eclipse.jdt.launching.JRE_CONTAINER/"
+            + "org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-26\">\n";
+    return eclipseEntry(start, module, false, null);
+  }
+
+  private static String eclipseLibrary(Path jar, boolean module, boolean test) {
+    assert jar != null;
+    String path = jar.toAbsolutePath().normalize().toString().replace('\\', '/');
+    return eclipseEntry(
+        "  <classpathentry kind=\"lib\" path=\"" + xml(path) + "\">\n", module, test, null);
+  }
+
+  private static String eclipseEntry(
+      String start, boolean module, boolean test, String addExports) {
+    assert start != null && !start.isBlank();
+    if (!module && !test && addExports == null) {
+      return start.stripTrailing().replace(">", "/>") + "\n";
+    }
+    var entry = new StringBuilder(start).append("    <attributes>\n");
+    if (module) entry.append("      <attribute name=\"module\" value=\"true\"/>\n");
+    if (test) entry.append("      <attribute name=\"test\" value=\"true\"/>\n");
+    if (addExports != null) {
+      entry
+          .append("      <attribute name=\"add-exports\" value=\"")
+          .append(xml(addExports))
+          .append("\"/>\n");
+    }
+    return entry.append("    </attributes>\n  </classpathentry>\n").toString();
+  }
+
+  private static void writeEclipseProject(
+      Path owner, Path project, String projectXml, String classpathXml) throws IOException {
+    assert owner != null;
+    assert project != null;
+    assert projectXml != null;
+    assert classpathXml != null;
+    writeIdeFile(owner, project.resolve(".project"), projectXml);
+    writeIdeFile(owner, project.resolve(".classpath"), classpathXml);
+    writeIdeFile(
+        owner,
+        project.resolve(".settings/org.eclipse.core.resources.prefs"),
+        "eclipse.preferences.version=1\nencoding/<project>=UTF-8\n");
+    writeIdeFile(
+        owner,
+        project.resolve(".settings/org.eclipse.jdt.core.prefs"),
+        """
+        eclipse.preferences.version=1
+        org.eclipse.jdt.core.compiler.codegen.targetPlatform=26
+        org.eclipse.jdt.core.compiler.compliance=26
+        org.eclipse.jdt.core.compiler.problem.enablePreviewFeatures=disabled
+        org.eclipse.jdt.core.compiler.problem.forbiddenReference=warning
+        org.eclipse.jdt.core.compiler.problem.reportPreviewFeatures=ignore
+        org.eclipse.jdt.core.compiler.release=disabled
+        org.eclipse.jdt.core.compiler.source=26
+        """);
+  }
+
+  private static void writeIdeFile(Path owner, Path file, String content) throws IOException {
+    assert owner != null;
+    assert file != null;
+    assert content != null;
+    Path normalizedOwner = owner.toAbsolutePath().normalize();
+    Path normalizedFile = file.toAbsolutePath().normalize();
+    if (!normalizedFile.startsWith(normalizedOwner)) {
+      throw new IllegalArgumentException("IDE file escapes output directory");
+    }
+    int contentBytes = content.getBytes(StandardCharsets.UTF_8).length;
+    if (contentBytes > IDE_FILE_BYTES_MAX) {
+      throw new IllegalStateException("IDE file exceeds " + IDE_FILE_BYTES_MAX + " bytes");
+    }
+    Files.createDirectories(normalizedFile.getParent());
+    Files.writeString(
+        normalizedFile, content, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    assert Files.size(normalizedFile) == contentBytes;
+  }
+
+  private static String xml(String value) {
+    assert value != null;
+    return value
+        .replace("&", "&amp;")
+        .replace("\"", "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;");
+  }
+
   private static String dependencyFingerprint(Path dependencyFile) throws Exception {
     var digest = MessageDigest.getInstance("SHA-256");
     updateDigestFromFile(digest, dependencyFile);
@@ -176,10 +469,10 @@ public final class Build {
   private static String compilationFingerprint(
       String name, List<Path> sources, List<Path> dependencyDirectories, List<String> arguments)
       throws Exception {
-    Objects.requireNonNull(name, "name");
-    Objects.requireNonNull(sources, "sources");
-    Objects.requireNonNull(dependencyDirectories, "dependencyDirectories");
-    Objects.requireNonNull(arguments, "arguments");
+    assert name != null;
+    assert sources != null;
+    assert dependencyDirectories != null;
+    assert arguments != null;
     requireCollectionSize(sources, "compilation sources");
     requireCollectionSize(dependencyDirectories, "compilation dependency directories");
     var digest = MessageDigest.getInstance("SHA-256");
@@ -202,8 +495,8 @@ public final class Build {
 
   private static String testResultFingerprint(String compileFingerprint, List<String> arguments)
       throws Exception {
-    Objects.requireNonNull(compileFingerprint, "compileFingerprint");
-    Objects.requireNonNull(arguments, "arguments");
+    assert compileFingerprint != null;
+    assert arguments != null;
     var digest = MessageDigest.getInstance("SHA-256");
     update(digest, "test\n" + platformFingerprint() + "\n" + compileFingerprint + "\n");
     update(digest, argumentFileContent(arguments));
@@ -229,7 +522,7 @@ public final class Build {
   }
 
   private static void format(boolean replace, List<String> paths) throws Exception {
-    Objects.requireNonNull(paths, "paths");
+    assert paths != null;
     List<String> sourcePaths = javaSourcePaths(paths).stream().map(Path::toString).toList();
     for (List<String> arguments : formatterArguments(replace, sourcePaths)) {
       runArguments(
@@ -244,7 +537,7 @@ public final class Build {
   }
 
   private static List<List<String>> formatterArguments(boolean replace, List<String> sourcePaths) {
-    Objects.requireNonNull(sourcePaths, "sourcePaths");
+    assert sourcePaths != null;
     if (sourcePaths.isEmpty()) throw new IllegalArgumentException("sourcePaths are empty");
     List<String> options =
         replace ? List.of("--replace") : List.of("--dry-run", "--set-exit-if-changed");
@@ -381,7 +674,7 @@ public final class Build {
   }
 
   private static void test(List<String> paths) throws Exception {
-    Objects.requireNonNull(paths, "paths");
+    assert paths != null;
     TestSelection selection = testSelection(paths);
     if (!selection.classNames().isEmpty()) compile();
     runTests(selection);
@@ -436,7 +729,7 @@ public final class Build {
   }
 
   private static boolean isGitDirty(Path repository) throws Exception {
-    Objects.requireNonNull(repository, "repository");
+    assert repository != null;
     Process process =
         new ProcessBuilder("git", "status", "--porcelain=v1", "--untracked-files=all")
             .directory(repository.toFile())
@@ -474,7 +767,8 @@ public final class Build {
     if (readFailure.get() != null) {
       throw new IllegalStateException("cannot read Git status", readFailure.get());
     }
-    byte[] bytes = Objects.requireNonNull(output.get(), "Git status output");
+    byte[] bytes = output.get();
+    assert bytes != null;
     if (bytes.length > GIT_STATUS_BYTES_MAX) {
       throw new IllegalStateException(
           "Git status exceeds " + GIT_STATUS_BYTES_MAX + " UTF-8 bytes");
@@ -634,9 +928,9 @@ public final class Build {
   private static Path ensureRuntime(
       String name, List<Path> dependencyDirectories, List<String> roots, boolean includeApp)
       throws Exception {
-    Objects.requireNonNull(name, "name");
-    Objects.requireNonNull(dependencyDirectories, "dependencyDirectories");
-    Objects.requireNonNull(roots, "roots");
+    assert name != null;
+    assert dependencyDirectories != null;
+    assert roots != null;
     requireCollectionSize(dependencyDirectories, "dependency directories");
     requireCollectionSize(roots, "runtime roots");
     long started = System.nanoTime();
@@ -709,7 +1003,7 @@ public final class Build {
   }
 
   private static void addExports(List<String> command) {
-    Objects.requireNonNull(command, "command");
+    assert command != null;
     requireCollectionSize(TEST_EXPORTS, "test exports");
     for (String export : TEST_EXPORTS) {
       command.add("--add-exports");
@@ -726,7 +1020,7 @@ public final class Build {
 
   private static List<String> moduleNames(List<Path> directories, List<String> additional)
       throws IOException {
-    Objects.requireNonNull(additional, "additional");
+    assert additional != null;
     requireCollectionSize(additional, "additional modules");
     var names = new ArrayList<String>();
     for (Path jar : jarPaths(directories)) {
@@ -757,7 +1051,7 @@ public final class Build {
   }
 
   private static List<Path> jarPaths(List<Path> directories) throws IOException {
-    Objects.requireNonNull(directories, "directories");
+    assert directories != null;
     if (directories.size() > TREE_ENTRIES_MAX) {
       throw new IllegalStateException("directories exceed " + TREE_ENTRIES_MAX + " entries");
     }
@@ -776,7 +1070,7 @@ public final class Build {
   }
 
   private static void addErrorProne(List<String> arguments) throws IOException {
-    Objects.requireNonNull(arguments, "arguments");
+    assert arguments != null;
     arguments.addAll(errorProneArguments());
   }
 
@@ -827,7 +1121,7 @@ public final class Build {
   }
 
   private static String modulePath(List<Path> entries) throws IOException {
-    Objects.requireNonNull(entries, "entries");
+    assert entries != null;
     requireCollectionSize(entries, "module path entries");
     var paths = new ArrayList<String>();
     for (Path entry : entries) {
@@ -850,7 +1144,7 @@ public final class Build {
   }
 
   private static void requireCollectionSize(List<?> values, String name) {
-    Objects.requireNonNull(values, name);
+    assert values != null;
     assert name != null && !name.isBlank();
     if (values.size() > COLLECTION_ENTRIES_MAX) {
       throw new IllegalStateException(name + " exceed " + COLLECTION_ENTRIES_MAX + " entries");
@@ -862,7 +1156,7 @@ public final class Build {
   }
 
   private static void deleteTree(Path path) throws IOException {
-    Objects.requireNonNull(path, "path");
+    assert path != null;
     if (!Files.exists(path)) return;
     var paths = new ArrayList<>(treePaths(path, TREE_ENTRIES_MAX));
     paths.sort(Comparator.reverseOrder());
@@ -901,7 +1195,7 @@ public final class Build {
   }
 
   private static Path writeArgFile(String name, List<String> arguments) throws IOException {
-    Objects.requireNonNull(name, "name");
+    assert name != null;
     Files.createDirectories(ARGFILES);
     Path argFile = ARGFILES.resolve(name + ".args");
     if (!argFile.normalize().startsWith(ARGFILES)) {
@@ -920,8 +1214,8 @@ public final class Build {
 
   private static void runArgFile(
       String executable, Path argFile, Duration timeout, boolean forceAtTimeout) throws Exception {
-    Objects.requireNonNull(executable, "executable");
-    Objects.requireNonNull(argFile, "argFile");
+    assert executable != null;
+    assert argFile != null;
     printInvocation(executable, argFile);
     runProcess(new ProcessBuilder(executable, "@" + argFile), timeout, forceAtTimeout);
   }
@@ -932,7 +1226,7 @@ public final class Build {
 
   private static void runArguments(String executable, String name, List<String> arguments)
       throws Exception {
-    Objects.requireNonNull(name, "name");
+    assert name != null;
     if (name.isBlank()) throw new IllegalArgumentException("name is blank");
     List<String> command = command(executable, arguments);
     printInvocation(executable, name);
@@ -951,8 +1245,8 @@ public final class Build {
   }
 
   private static int commandBytes(String executable, List<String> arguments) {
-    Objects.requireNonNull(executable, "executable");
-    Objects.requireNonNull(arguments, "arguments");
+    assert executable != null;
+    assert arguments != null;
     if (arguments.size() > ARGUMENTS_MAX) {
       throw new IllegalStateException("arguments exceed " + ARGUMENTS_MAX + " entries");
     }
@@ -964,7 +1258,7 @@ public final class Build {
   }
 
   private static int argumentBytes(String argument) {
-    Objects.requireNonNull(argument, "argument");
+    assert argument != null;
     int bytes = argument.getBytes(StandardCharsets.UTF_8).length;
     if (bytes > ARGUMENT_BYTES_MAX) {
       throw new IllegalStateException("argument exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
@@ -978,7 +1272,7 @@ public final class Build {
 
   private static void runProcess(ProcessBuilder builder, Duration timeout, boolean forceAtTimeout)
       throws Exception {
-    Objects.requireNonNull(builder, "builder");
+    assert builder != null;
     requirePositiveDuration(timeout, "timeout");
     long started = System.nanoTime();
     Process process = builder.inheritIO().start();
@@ -1007,10 +1301,10 @@ public final class Build {
 
   private static boolean cacheHit(
       Path directory, Path stamp, String fingerprint, List<Path> requiredFiles) throws IOException {
-    Objects.requireNonNull(directory, "directory");
-    Objects.requireNonNull(stamp, "stamp");
-    Objects.requireNonNull(fingerprint, "fingerprint");
-    Objects.requireNonNull(requiredFiles, "requiredFiles");
+    assert directory != null;
+    assert stamp != null;
+    assert fingerprint != null;
+    assert requiredFiles != null;
     requireCollectionSize(requiredFiles, "required cache files");
     if (!Files.isDirectory(directory) || !Files.isRegularFile(stamp)) return false;
     for (Path requiredFile : requiredFiles) {
@@ -1023,8 +1317,8 @@ public final class Build {
   }
 
   private static void writeStamp(Path stamp, String fingerprint) throws IOException {
-    Objects.requireNonNull(stamp, "stamp");
-    Objects.requireNonNull(fingerprint, "fingerprint");
+    assert stamp != null;
+    assert fingerprint != null;
     if (fingerprint.getBytes(StandardCharsets.UTF_8).length > STAMP_BYTES_MAX) {
       throw new IllegalStateException("fingerprint exceeds " + STAMP_BYTES_MAX + " UTF-8 bytes");
     }
@@ -1038,7 +1332,7 @@ public final class Build {
   }
 
   private static String readStamp(Path path) throws IOException {
-    Objects.requireNonNull(path, "path");
+    assert path != null;
     byte[] bytes;
     try (var input = Files.newInputStream(path)) {
       bytes = input.readNBytes(STAMP_BYTES_MAX + 1);
@@ -1063,8 +1357,8 @@ public final class Build {
   }
 
   private static void updateDigestFromFile(MessageDigest digest, Path path) throws IOException {
-    Objects.requireNonNull(digest, "digest");
-    Objects.requireNonNull(path, "path");
+    assert digest != null;
+    assert path != null;
     long fileBytes = Files.size(path);
     if (fileBytes > FILE_BYTES_MAX) {
       throw new IllegalStateException("file exceeds " + FILE_BYTES_MAX + " bytes: " + path);
@@ -1094,7 +1388,7 @@ public final class Build {
   }
 
   private static List<Path> treePaths(Path root, int entriesMax) throws IOException {
-    Objects.requireNonNull(root, "root");
+    assert root != null;
     if (entriesMax <= 0 || entriesMax > TREE_ENTRIES_MAX) {
       throw new IllegalArgumentException("entriesMax must be 1.." + TREE_ENTRIES_MAX);
     }
@@ -1155,10 +1449,10 @@ public final class Build {
       Predicate<Path> predicate,
       String description)
       throws IOException {
-    Objects.requireNonNull(requestedPaths, "requestedPaths");
-    Objects.requireNonNull(defaults, "defaults");
-    Objects.requireNonNull(predicate, "predicate");
-    Objects.requireNonNull(description, "description");
+    assert requestedPaths != null;
+    assert defaults != null;
+    assert predicate != null;
+    assert description != null;
     if (requestedPaths.size() > 256) throw new IllegalStateException("paths exceed 256 entries");
     var result = new TreeSet<Path>();
     List<Path> paths =
@@ -1209,7 +1503,7 @@ public final class Build {
   }
 
   private static Path resolveProjectPath(String value) {
-    Objects.requireNonNull(value, "path");
+    assert value != null;
     if (value.getBytes(StandardCharsets.UTF_8).length > ARGUMENT_BYTES_MAX) {
       throw new IllegalStateException("path exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
     }
@@ -1221,14 +1515,14 @@ public final class Build {
 
   static record TestSelection(boolean buildTool, List<String> classNames) {
     TestSelection {
-      Objects.requireNonNull(classNames, "classNames");
+      assert classNames != null;
       assert buildTool || !classNames.isEmpty();
       assert classNames.size() <= COLLECTION_ENTRIES_MAX;
     }
   }
 
   private static List<Path> directoryEntries(Path directory, int entriesMax) throws IOException {
-    Objects.requireNonNull(directory, "directory");
+    assert directory != null;
     assert entriesMax > 0 && entriesMax <= TREE_ENTRIES_MAX;
     var result = new ArrayList<Path>();
     try (Stream<Path> paths = Files.list(directory)) {
@@ -1250,7 +1544,7 @@ public final class Build {
   }
 
   private static String argumentFileContent(List<String> arguments) {
-    Objects.requireNonNull(arguments, "arguments");
+    assert arguments != null;
     if (arguments.size() > ARGUMENTS_MAX) {
       throw new IllegalStateException("arguments exceed " + ARGUMENTS_MAX + " entries");
     }
@@ -1258,7 +1552,7 @@ public final class Build {
         new StringBuilder(Math.min(ARGFILE_BYTES_MAX, Math.multiplyExact(arguments.size(), 32)));
     int contentBytes = 0;
     for (String argument : arguments) {
-      Objects.requireNonNull(argument, "argument");
+      assert argument != null;
       int argumentBytes = argument.getBytes(StandardCharsets.UTF_8).length;
       if (argumentBytes > ARGUMENT_BYTES_MAX) {
         throw new IllegalStateException("argument exceeds " + ARGUMENT_BYTES_MAX + " UTF-8 bytes");
@@ -1289,7 +1583,7 @@ public final class Build {
   private static int waitForProcess(
       Process process, Duration timeout, Duration killTimeout, boolean forceAtTimeout)
       throws InterruptedException {
-    Objects.requireNonNull(process, "process");
+    assert process != null;
     requirePositiveDuration(timeout, "timeout");
     requirePositiveDuration(killTimeout, "killTimeout");
     if (process.waitFor(timeout.toNanos(), TimeUnit.NANOSECONDS)) return process.exitValue();
@@ -1321,7 +1615,7 @@ public final class Build {
   }
 
   private static void requirePositiveDuration(Duration duration, String name) {
-    Objects.requireNonNull(duration, name);
+    assert duration != null;
     if (duration.isNegative() || duration.isZero() || duration.compareTo(PROCESS_TIMEOUT) > 0) {
       throw new IllegalArgumentException(name + " must be positive and at most " + PROCESS_TIMEOUT);
     }

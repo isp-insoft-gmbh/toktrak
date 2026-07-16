@@ -28,6 +28,7 @@ public final class BuildTest {
     rejectsOversizedHashInput();
     rejectsTraversalAboveLimit();
     rejectsArgumentLimits();
+    generatesEclipseProjects();
     selectsTestsByFileAndDirectory();
     rejectsNonTestSelection();
     rejectsOversizedStamp();
@@ -82,6 +83,78 @@ public final class BuildTest {
     expectFailure(
         () -> Build.argumentFileContentForTest(Collections.nCopies(300, "x".repeat(32 * 1024))),
         "argument file exceeds 8388608 UTF-8 bytes");
+  }
+
+  private static void generatesEclipseProjects() throws Exception {
+    Path root = Files.createTempDirectory("toktrak-ide-");
+    try {
+      for (String directory :
+          List.of(
+              "sources/toktrak", "tests/toktrak.tests", "tools/refaster", "tests/tools", "deps")) {
+        Files.createDirectories(root.resolve(directory));
+      }
+      for (String file :
+          List.of(
+              "sources/toktrak/module-info.java",
+              "tests/toktrak.tests/module-info.java",
+              "tools/Build.java",
+              "tools/refaster/Rules.java",
+              "tests/tools/BuildTest.java",
+              "deps/main.jar",
+              "deps/test.jar",
+              "deps/error_prone_refaster-2.50.0.jar")) {
+        Files.createFile(root.resolve(file));
+      }
+      Path output = root.resolve("output/ide/eclipse");
+      Build.generateEclipseProjectsForTest(
+          root,
+          output,
+          List.of(root.resolve("deps/main.jar")),
+          List.of(root.resolve("deps/test.jar")),
+          root.resolve("deps/error_prone_refaster-2.50.0.jar"));
+
+      var parser = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder();
+      for (String project : List.of("toktrak", "toktrak.tests", "toktrak.build")) {
+        Path directory = output.resolve(project);
+        parser.parse(directory.resolve(".project").toFile());
+        parser.parse(directory.resolve(".classpath").toFile());
+        if (!Files.isRegularFile(directory.resolve(".settings/org.eclipse.core.resources.prefs"))
+            || !Files.isRegularFile(directory.resolve(".settings/org.eclipse.jdt.core.prefs"))) {
+          throw new AssertionError("missing Eclipse settings: " + project);
+        }
+      }
+      String generated =
+          Files.readString(output.resolve("toktrak/.project"))
+              + Files.readString(output.resolve("toktrak/.classpath"))
+              + Files.readString(output.resolve("toktrak.tests/.project"))
+              + Files.readString(output.resolve("toktrak.tests/.classpath"))
+              + Files.readString(output.resolve("toktrak.build/.project"))
+              + Files.readString(output.resolve("toktrak.build/.classpath"));
+      for (String expected :
+          List.of(
+              "<name>toktrak</name>",
+              "<name>toktrak.tests</name>",
+              "<name>toktrak.build</name>",
+              "name=\"module\" value=\"true\"",
+              "name=\"test\" value=\"true\"",
+              "name=\"add-exports\"",
+              "JavaSE-26",
+              "src/tools",
+              "test/tools",
+              "error_prone_refaster-2.50.0.jar")) {
+        if (!generated.contains(expected)) {
+          throw new AssertionError("missing Eclipse metadata: " + expected);
+        }
+      }
+      if (generated.contains("output/modules") || generated.contains("output/runtimes")) {
+        throw new AssertionError("Eclipse metadata references authoritative output");
+      }
+    } finally {
+      List<Path> paths = Build.treePathsForTest(root, 1_000);
+      for (int index = paths.size() - 1; index >= 0; index--) {
+        Files.deleteIfExists(paths.get(index));
+      }
+    }
   }
 
   private static void selectsTestsByFileAndDirectory() throws Exception {
