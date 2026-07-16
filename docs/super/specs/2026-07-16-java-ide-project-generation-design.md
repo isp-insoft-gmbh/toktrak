@@ -34,10 +34,6 @@ mise run ide intellij
 Bare `mise run ide` generates both formats. A named argument generates only that
 format. Unknown or multiple arguments fail before writing metadata.
 
-Until both generators exist, bare `mise run ide` and `mise run ide intellij`
-fail before writing metadata; `mise run ide eclipse` is the supported first
-delivery.
-
 The command must:
 
 1. require assertions;

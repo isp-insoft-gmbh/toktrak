@@ -29,6 +29,7 @@ public final class BuildTest {
     rejectsTraversalAboveLimit();
     rejectsArgumentLimits();
     generatesEclipseProjects();
+    generatesIntellijProjects();
     selectsTestsByFileAndDirectory();
     rejectsNonTestSelection();
     rejectsOversizedStamp();
@@ -148,6 +149,87 @@ public final class BuildTest {
       }
       if (generated.contains("output/modules") || generated.contains("output/runtimes")) {
         throw new AssertionError("Eclipse metadata references authoritative output");
+      }
+    } finally {
+      List<Path> paths = Build.treePathsForTest(root, 1_000);
+      for (int index = paths.size() - 1; index >= 0; index--) {
+        Files.deleteIfExists(paths.get(index));
+      }
+    }
+  }
+
+  private static void generatesIntellijProjects() throws Exception {
+    Path root = Files.createTempDirectory("toktrak-intellij-");
+    try {
+      for (String directory :
+          List.of(
+              "sources/toktrak", "tests/toktrak.tests", "tools/refaster", "tests/tools", "deps")) {
+        Files.createDirectories(root.resolve(directory));
+      }
+      for (String file :
+          List.of(
+              "sources/toktrak/module-info.java",
+              "tests/toktrak.tests/module-info.java",
+              "tools/Build.java",
+              "tools/refaster/Rules.java",
+              "tests/tools/BuildTest.java",
+              "deps/main.jar",
+              "deps/test.jar",
+              "deps/error_prone_refaster-2.50.0.jar")) {
+        Files.createFile(root.resolve(file));
+      }
+      Path idea = root.resolve(".idea");
+      Files.createDirectories(idea);
+      Path workspace = idea.resolve("workspace.xml");
+      Files.writeString(workspace, "user-owned");
+      Build.generateIntellijProjectsForTest(
+          root,
+          idea,
+          List.of(root.resolve("deps/main.jar")),
+          List.of(root.resolve("deps/test.jar")),
+          root.resolve("deps/error_prone_refaster-2.50.0.jar"));
+
+      var parser = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder();
+      for (String file :
+          List.of(
+              "modules.xml",
+              "misc.xml",
+              "compiler.xml",
+              "modules/toktrak.iml",
+              "modules/toktrak.tests.iml",
+              "modules/toktrak.build.iml")) {
+        parser.parse(idea.resolve(file).toFile());
+      }
+      String generated =
+          Files.readString(idea.resolve("modules.xml"))
+              + Files.readString(idea.resolve("misc.xml"))
+              + Files.readString(idea.resolve("compiler.xml"))
+              + Files.readString(idea.resolve("modules/toktrak.iml"))
+              + Files.readString(idea.resolve("modules/toktrak.tests.iml"))
+              + Files.readString(idea.resolve("modules/toktrak.build.iml"));
+      for (String expected :
+          List.of(
+              "toktrak.iml",
+              "toktrak.tests.iml",
+              "toktrak.build.iml",
+              "languageLevel=\"JDK_26\"",
+              "isTestSource=\"true\"",
+              "packagePrefix=\"tools\"",
+              "scope=\"TEST\"",
+              "type=\"module-library\"",
+              "module-name=\"toktrak\"",
+              "ADDITIONAL_OPTIONS_OVERRIDE",
+              "--add-exports=toktrak/toktrak.dev=toktrak.tests",
+              "output/ide/intellij")) {
+        if (!generated.contains(expected)) {
+          throw new AssertionError("missing IntelliJ metadata: " + expected);
+        }
+      }
+      if (generated.contains("output/modules") || generated.contains("output/runtimes")) {
+        throw new AssertionError("IntelliJ metadata references authoritative output");
+      }
+      if (!Files.readString(workspace).equals("user-owned")) {
+        throw new AssertionError("IntelliJ generation replaced workspace.xml");
       }
     } finally {
       List<Path> paths = Build.treePathsForTest(root, 1_000);

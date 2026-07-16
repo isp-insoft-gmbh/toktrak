@@ -38,6 +38,7 @@ public final class Build {
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
   private static final Path IDE = OUTPUT.resolve("ide");
   private static final Path ECLIPSE_IDE = IDE.resolve("eclipse");
+  private static final Path INTELLIJ_IDEA = ROOT.resolve(".idea");
   private static final Path ARGFILES = OUTPUT.resolve("args");
   private static final Path BUILD_TESTS = OUTPUT.resolve("build-tests");
   private static final Path REFASTER_OUTPUT = OUTPUT.resolve("refaster");
@@ -118,6 +119,7 @@ public final class Build {
     deleteTree(REFASTER_DEPS);
     deleteTree(RUNTIMES);
     deleteTree(IDE);
+    cleanIntellijMetadata(INTELLIJ_IDEA);
     deleteTree(ARGFILES);
     deleteTree(BUILD_TESTS);
     deleteTree(REFASTER_OUTPUT);
@@ -172,35 +174,41 @@ public final class Build {
 
   private static void ideCommand(List<String> arguments) throws Exception {
     assert arguments != null;
-    if (arguments.isEmpty()) {
-      throw new IllegalStateException(
-          "IntelliJ IDE generation is not implemented; use 'ide eclipse'");
-    }
-    if (arguments.size() != 1) {
+    if (arguments.size() > 1) {
       throw new IllegalArgumentException("ide requires zero or one target");
+    }
+    if (arguments.isEmpty()) {
+      generateIdeMetadata(true, true);
+      return;
     }
     switch (arguments.getFirst()) {
       case "--help" -> System.out.println("usage: mise run ide [eclipse|intellij]");
-      case "eclipse" -> generateEclipseProjects();
-      case "intellij" ->
-          throw new IllegalStateException("IntelliJ IDE generation is not implemented");
+      case "eclipse" -> generateIdeMetadata(true, false);
+      case "intellij" -> generateIdeMetadata(false, true);
       default -> throw new IllegalArgumentException("unknown IDE target: " + arguments.getFirst());
     }
   }
 
-  private static void generateEclipseProjects() throws Exception {
+  private static void generateIdeMetadata(boolean eclipse, boolean intellij) throws Exception {
+    assert eclipse || intellij;
+    if (Runtime.version().feature() != 26) {
+      throw new IllegalStateException("IDE metadata requires Java 26");
+    }
     ensureDependency(
         "sources/main-deps.txt", MAIN_DEPS, "resolve-toktrak-production-dependencies", true);
     ensureDependency("sources/test-deps.txt", TEST_DEPS, "resolve-toktrak-test-dependencies", true);
     ensureRefasterDependencies();
     verifyModules(MAIN_DEPS);
     verifyModules(TEST_DEPS);
-    generateEclipseProjects(
-        ROOT,
-        ECLIPSE_IDE,
-        jarPaths(List.of(MAIN_DEPS)),
-        jarPaths(List.of(TEST_DEPS)),
-        refasterJar());
+    List<Path> mainJars = jarPaths(List.of(MAIN_DEPS));
+    List<Path> testJars = jarPaths(List.of(TEST_DEPS));
+    Path refaster = refasterJar();
+    if (eclipse) {
+      generateEclipseProjects(ROOT, ECLIPSE_IDE, mainJars, testJars, refaster);
+    }
+    if (intellij) {
+      generateIntellijProjects(ROOT, INTELLIJ_IDEA, mainJars, testJars, refaster);
+    }
   }
 
   static void generateEclipseProjectsForTest(
@@ -262,6 +270,192 @@ public final class Build {
     assert Files.isRegularFile(app.resolve(".project"));
     assert Files.isRegularFile(tests.resolve(".project"));
     assert Files.isRegularFile(build.resolve(".project"));
+  }
+
+  static void generateIntellijProjectsForTest(
+      Path root, Path idea, List<Path> mainJars, List<Path> testJars, Path refasterJar)
+      throws IOException {
+    generateIntellijProjects(root, idea, mainJars, testJars, refasterJar);
+  }
+
+  private static void generateIntellijProjects(
+      Path root, Path idea, List<Path> mainJars, List<Path> testJars, Path refasterJar)
+      throws IOException {
+    assert root != null;
+    assert idea != null;
+    assert mainJars != null;
+    assert testJars != null;
+    assert refasterJar != null;
+    root = root.toAbsolutePath().normalize();
+    idea = idea.toAbsolutePath().normalize();
+    if (!idea.equals(root.resolve(".idea"))) {
+      throw new IllegalArgumentException("IntelliJ metadata must be written to .idea");
+    }
+    requireDirectory(root.resolve("sources/toktrak"));
+    requireDirectory(root.resolve("tests/toktrak.tests"));
+    requireDirectory(root.resolve("tools"));
+    requireDirectory(root.resolve("tests/tools"));
+    requireCollectionSize(mainJars, "IntelliJ main JARs");
+    requireCollectionSize(testJars, "IntelliJ test JARs");
+    requireFile(refasterJar);
+    for (Path jar : mainJars) requireFile(jar);
+    for (Path jar : testJars) requireFile(jar);
+
+    List<Path> allTestJars = new ArrayList<>(mainJars);
+    if (testJars.size() > COLLECTION_ENTRIES_MAX - allTestJars.size()) {
+      throw new IllegalStateException("IntelliJ test JARs exceed collection limit");
+    }
+    allTestJars.addAll(testJars);
+    writeIdeFile(idea, idea.resolve("modules.xml"), intellijModules());
+    writeIdeFile(idea, idea.resolve("misc.xml"), intellijMisc());
+    writeIdeFile(idea, idea.resolve("compiler.xml"), intellijCompiler());
+    writeIdeFile(
+        idea,
+        idea.resolve("modules/toktrak.iml"),
+        intellijModule(
+            "toktrak",
+            intellijContent("sources/toktrak", false, null),
+            intellijLibrary(root, mainJars, false)));
+    writeIdeFile(
+        idea,
+        idea.resolve("modules/toktrak.tests.iml"),
+        intellijModule(
+            "toktrak.tests",
+            intellijContent("tests/toktrak.tests", true, null),
+            "    <orderEntry type=\"module\" module-name=\"toktrak\" scope=\"TEST\"/>\n"
+                + intellijLibrary(root, allTestJars, true)));
+    writeIdeFile(
+        idea,
+        idea.resolve("modules/toktrak.build.iml"),
+        intellijModule(
+            "toktrak.build",
+            intellijContent("tools", false, "tools")
+                + intellijContent("tests/tools", true, "tools"),
+            intellijLibrary(root, List.of(refasterJar), false)));
+    assert Files.isRegularFile(idea.resolve("modules.xml"));
+    assert Files.isRegularFile(idea.resolve("modules/toktrak.iml"));
+    assert Files.isRegularFile(idea.resolve("modules/toktrak.tests.iml"));
+    assert Files.isRegularFile(idea.resolve("modules/toktrak.build.iml"));
+  }
+
+  private static String intellijModules() {
+    var modules = new StringBuilder();
+    for (String name : List.of("toktrak", "toktrak.tests", "toktrak.build")) {
+      modules
+          .append("      <module fileurl=\"file://$PROJECT_DIR$/.idea/modules/")
+          .append(xml(name))
+          .append(".iml\" filepath=\"$PROJECT_DIR$/.idea/modules/")
+          .append(xml(name))
+          .append(".iml\"/>\n");
+    }
+    return """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <project version="4">
+      <component name="ProjectModuleManager">
+        <modules>
+    %s    </modules>
+      </component>
+    </project>
+    """
+        .formatted(modules);
+  }
+
+  private static String intellijMisc() {
+    return """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <project version="4">
+      <component name="ProjectRootManager" version="2" languageLevel="JDK_26" project-jdk-name="26" project-jdk-type="JavaSDK">
+        <output url="file://$PROJECT_DIR$/output/ide/intellij"/>
+      </component>
+    </project>
+    """;
+  }
+
+  private static String intellijCompiler() {
+    var options = new StringBuilder();
+    for (String export : TEST_EXPORTS) {
+      if (!options.isEmpty()) options.append(' ');
+      options.append("--add-exports=").append(export);
+    }
+    return """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <project version="4">
+      <component name="CompilerConfiguration">
+        <bytecodeTargetLevel target="26"/>
+      </component>
+      <component name="JavacSettings">
+        <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+          <module name="toktrak.tests" options="%s"/>
+        </option>
+      </component>
+    </project>
+    """
+        .formatted(xml(options.toString()));
+  }
+
+  private static String intellijModule(String name, String content, String dependencies) {
+    assert name != null && !name.isBlank();
+    assert content != null && !content.isBlank();
+    assert dependencies != null;
+    return """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <module type="JAVA_MODULE" version="4">
+      <component name="NewModuleRootManager" LANGUAGE_LEVEL="JDK_26" inherit-compiler-output="false">
+        <output url="file://$PROJECT_DIR$/output/ide/intellij/classes/%s"/>
+        <output-test url="file://$PROJECT_DIR$/output/ide/intellij/test-classes/%s"/>
+        <exclude-output/>
+    %s    <orderEntry type="inheritedJdk"/>
+        <orderEntry type="sourceFolder" forTests="false"/>
+    %s  </component>
+    </module>
+    """
+        .formatted(xml(name), xml(name), content, dependencies);
+  }
+
+  private static String intellijContent(String path, boolean test, String packagePrefix) {
+    assert path != null && !path.isBlank();
+    String prefix = packagePrefix == null ? "" : " packagePrefix=\"" + xml(packagePrefix) + "\"";
+    return "    <content url=\"file://$PROJECT_DIR$/"
+        + xml(path)
+        + "\">\n"
+        + "      <sourceFolder url=\"file://$PROJECT_DIR$/"
+        + xml(path)
+        + "\" isTestSource=\""
+        + test
+        + "\""
+        + prefix
+        + "/>\n"
+        + "    </content>\n";
+  }
+
+  private static String intellijLibrary(Path root, List<Path> jars, boolean test) {
+    assert root != null;
+    assert jars != null;
+    requireCollectionSize(jars, "IntelliJ library JARs");
+    var roots = new StringBuilder();
+    for (Path jar : jars) {
+      Path normalized = jar.toAbsolutePath().normalize();
+      if (!normalized.startsWith(root)) {
+        throw new IllegalArgumentException("IntelliJ library escapes project root");
+      }
+      String relative = root.relativize(normalized).toString().replace('\\', '/');
+      roots
+          .append("          <root url=\"jar://$PROJECT_DIR$/")
+          .append(xml(relative))
+          .append("!/\"/>\n");
+    }
+    String scope = test ? " scope=\"TEST\"" : "";
+    return """
+        <orderEntry type="module-library"%s>
+          <library>
+            <CLASSES>
+    %s        </CLASSES>
+            <JAVADOC/>
+            <SOURCES/>
+          </library>
+        </orderEntry>
+    """
+        .formatted(scope, roots);
   }
 
   private static void requireDirectory(Path directory) {
@@ -1161,6 +1355,31 @@ public final class Build {
     var paths = new ArrayList<>(treePaths(path, TREE_ENTRIES_MAX));
     paths.sort(Comparator.reverseOrder());
     for (Path child : paths) Files.delete(child);
+  }
+
+  private static void cleanIntellijMetadata(Path idea) throws IOException {
+    assert idea != null;
+    for (String file :
+        List.of(
+            "modules.xml",
+            "misc.xml",
+            "compiler.xml",
+            "modules/toktrak.iml",
+            "modules/toktrak.tests.iml",
+            "modules/toktrak.build.iml")) {
+      Files.deleteIfExists(idea.resolve(file));
+    }
+    deleteDirectoryIfEmpty(idea.resolve("modules"));
+    deleteDirectoryIfEmpty(idea);
+  }
+
+  private static void deleteDirectoryIfEmpty(Path directory) throws IOException {
+    assert directory != null;
+    if (!Files.isDirectory(directory)) return;
+    try (var entries = Files.newDirectoryStream(directory)) {
+      if (entries.iterator().hasNext()) return;
+    }
+    Files.delete(directory);
   }
 
   private static String runtimeName(String name) {
