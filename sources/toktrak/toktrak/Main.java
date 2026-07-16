@@ -7,7 +7,9 @@ public final class Main {
 
   public static void main(String[] args) throws Exception {
     if (args == null) throw new IllegalArgumentException("args are required");
-    requireAssertions();
+    if (!Main.class.desiredAssertionStatus()) {
+      throw new IllegalStateException("Java assertions must be enabled with -ea");
+    }
     if (args.length == 1 && args[0].equals("--help")) {
       System.out.println("TokTrak server");
       return;
@@ -31,12 +33,6 @@ public final class Main {
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
       app.close();
-    }
-  }
-
-  private static void requireAssertions() {
-    if (!Main.class.desiredAssertionStatus()) {
-      throw new IllegalStateException("Java assertions must be enabled with -ea");
     }
   }
 }
