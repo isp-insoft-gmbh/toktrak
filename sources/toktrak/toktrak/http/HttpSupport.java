@@ -50,6 +50,11 @@ public final class HttpSupport {
     send(exchange, status, "text/html; charset=utf-8", body.getBytes(StandardCharsets.UTF_8));
   }
 
+  public static void css(HttpExchange exchange, int status, String body) throws IOException {
+    assert body != null;
+    send(exchange, status, "text/css; charset=utf-8", body.getBytes(StandardCharsets.UTF_8));
+  }
+
   private static void send(HttpExchange exchange, int status, String contentType, byte[] body)
       throws IOException {
     assert exchange != null;

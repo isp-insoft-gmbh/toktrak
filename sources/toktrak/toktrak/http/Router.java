@@ -13,6 +13,8 @@ import toktrak.json.Json;
 public final class Router implements HttpHandler {
   private static final int PATH_BYTES_MAX = 2 * 1024;
   private static final int METHOD_CHARACTERS_MAX = 32;
+  private static final String MAIN_CSS =
+      ".environment-banner{background:#b00020;color:white;padding:.5rem}";
 
   private final HealthState health;
   private final boolean devAuth;
@@ -105,6 +107,10 @@ public final class Router implements HttpHandler {
     assert exchange != null;
     String path = exchange.getRequestURI().getPath();
     assert !exceedsPathLimit(path);
+    if (path.equals("/assets/main.css") && exchange.getRequestMethod().equals("GET")) {
+      HttpSupport.css(exchange, 200, MAIN_CSS);
+      return;
+    }
     if (path.equals("/health")) {
       if (health.healthy())
         HttpSupport.json(exchange, 200, Json.write(java.util.Map.of("status", "ok")));
@@ -116,14 +122,12 @@ public final class Router implements HttpHandler {
       return;
     }
     if (path.equals("/") && exchange.getRequestMethod().equals("GET")) {
-      String strip =
-          devAuth
-              ? "<div style=\"background:#b00020;color:white;padding:.5rem\">DEV AUTH</div>"
-              : "";
+      String strip = devAuth ? "<div class=\"environment-banner\">DEV AUTH</div>" : "";
       HttpSupport.html(
           exchange,
           200,
           "<!doctype html><meta charset=\"utf-8\"><title>TokTrak</title>"
+              + "<link rel=\"stylesheet\" href=\"/assets/main.css\">"
               + strip
               + "<h1>TokTrak</h1>");
       return;
