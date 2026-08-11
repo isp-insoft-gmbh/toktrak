@@ -13,8 +13,19 @@ import toktrak.json.Json;
 public final class Router implements HttpHandler {
   private static final int PATH_BYTES_MAX = 2 * 1024;
   private static final int METHOD_CHARACTERS_MAX = 32;
+  private static final String URI_TOO_LONG_PATH = "URI exceeds 2048-byte limit";
+  private static final String INVALID_METHOD = "(invalid method)";
   private static final String MAIN_CSS =
-      ".environment-banner{background:#b00020;color:white;padding:.5rem}";
+      ".environment-banner{background:#b00020;color:white;padding:.5rem;font-weight:800}"
+          + ".error-page{font:16px/1.4 ui-monospace,monospace;max-width:760px;margin:48px auto;"
+          + "border:4px solid #111;padding:28px;background:#fff;color:#111}"
+          + ".error-page h1{font-size:64px;line-height:1;margin:24px 0 8px}"
+          + ".error-page p{font-family:system-ui,sans-serif}"
+          + ".error-page dl{display:grid;grid-template-columns:max-content 1fr;"
+          + "border-top:3px solid #111;margin-top:28px}"
+          + ".error-page dt,.error-page dd{padding:10px;border-bottom:2px solid #111;margin:0}"
+          + ".error-page dt{font-weight:800}"
+          + ".error-page code{overflow-wrap:anywhere}";
 
   private final HealthState health;
   private final boolean devAuth;
@@ -31,29 +42,36 @@ public final class Router implements HttpHandler {
   @Override
   public void handle(HttpExchange exchange) throws IOException {
     assert exchange != null;
-    String method = exchange.getRequestMethod();
-    if (method == null || method.isBlank() || method.length() > METHOD_CHARACTERS_MAX) {
+    String rawPath = exchange.getRequestURI().getRawPath();
+    String path = exchange.getRequestURI().getPath();
+    if (exceedsPathLimit(rawPath) || exceedsPathLimit(path)) {
+      String requestId = UUID.randomUUID().toString();
       try {
-        HttpSupport.json(
+        respondError(
             exchange,
-            400,
-            new ApiError(
-                    "invalid_method", "request method is invalid", UUID.randomUUID().toString())
-                .json());
+            414,
+            "uri_too_long",
+            "request URI is too long",
+            "Request URI is too long.",
+            requestId,
+            null);
       } finally {
         exchange.close();
       }
       return;
     }
-    String rawPath = exchange.getRequestURI().getRawPath();
-    String path = exchange.getRequestURI().getPath();
-    if (exceedsPathLimit(rawPath) || exceedsPathLimit(path)) {
+    String method = exchange.getRequestMethod();
+    if (method == null || method.isBlank() || method.length() > METHOD_CHARACTERS_MAX) {
+      String requestId = UUID.randomUUID().toString();
       try {
-        HttpSupport.json(
+        respondError(
             exchange,
-            414,
-            new ApiError("uri_too_long", "request URI is too long", UUID.randomUUID().toString())
-                .json());
+            400,
+            "invalid_method",
+            "request method is invalid",
+            "Request method is invalid.",
+            requestId,
+            null);
       } finally {
         exchange.close();
       }
@@ -63,10 +81,14 @@ public final class Router implements HttpHandler {
       requestExecutor.execute(() -> handleAccepted(exchange));
     } catch (RejectedExecutionException exception) {
       try {
-        HttpSupport.json(
+        respondError(
             exchange,
             503,
-            new ApiError("server_busy", "server is busy", UUID.randomUUID().toString()).json());
+            "server_busy",
+            "server is busy",
+            "Server is busy. Try again.",
+            UUID.randomUUID().toString(),
+            null);
       } finally {
         exchange.close();
       }
@@ -90,10 +112,14 @@ public final class Router implements HttpHandler {
     } catch (Exception exception) {
       if (exchange.getResponseCode() < 0) {
         try {
-          HttpSupport.json(
+          respondError(
               exchange,
               500,
-              new ApiError("internal_error", "internal server error", context.requestId()).json());
+              "internal_error",
+              "internal server error",
+              "Internal server error. Try again.",
+              context.requestId(),
+              exception);
         } catch (IOException responseException) {
           // The peer may have disconnected; the exchange is closed below.
         }
@@ -107,6 +133,9 @@ public final class Router implements HttpHandler {
     assert exchange != null;
     String path = exchange.getRequestURI().getPath();
     assert !exceedsPathLimit(path);
+    if (devAuth && path.equals("/debug/error") && exchange.getRequestMethod().equals("GET")) {
+      throw new IllegalStateException("debug failure");
+    }
     if (path.equals("/assets/main.css") && exchange.getRequestMethod().equals("GET")) {
       HttpSupport.css(exchange, 200, MAIN_CSS);
       return;
@@ -139,10 +168,52 @@ public final class Router implements HttpHandler {
           exchange, 404, new ApiError("not_found", "route not found", context.requestId()).json());
       return;
     }
-    HttpSupport.html(
+    RequestContext context = RequestContext.currentOrNull();
+    assert context != null;
+    respondError(
         exchange,
         404,
-        "<!doctype html><meta charset=\"utf-8\"><title>404</title><h1>404</h1><p>BRUTAL ERROR</p>");
+        "not_found",
+        "route not found",
+        "Route not found.",
+        context.requestId(),
+        null);
+  }
+
+  private void respondError(
+      HttpExchange exchange,
+      int status,
+      String code,
+      String jsonMessage,
+      String browserMessage,
+      String requestId,
+      Throwable failure)
+      throws IOException {
+    assert exchange != null;
+    assert status >= 400 && status <= 599;
+    assert code != null && !code.isBlank();
+    assert jsonMessage != null && !jsonMessage.isBlank();
+    assert browserMessage != null && !browserMessage.isBlank();
+    assert requestId != null && !requestId.isBlank();
+    String path = status == 414 ? URI_TOO_LONG_PATH : exchange.getRequestURI().getPath();
+    if (path == null || path.isBlank()) path = "/";
+    String method = exchange.getRequestMethod();
+    if (method == null || method.isBlank() || method.length() > METHOD_CHARACTERS_MAX) {
+      method = INVALID_METHOD;
+    }
+    if (isJsonPath(exchange.getRequestURI().getPath())) {
+      HttpSupport.json(exchange, status, new ApiError(code, jsonMessage, requestId).json());
+    } else {
+      HttpSupport.html(
+          exchange,
+          status,
+          ErrorPage.render(
+              status, code, browserMessage, requestId, method, path, failure, devAuth));
+    }
+  }
+
+  private static boolean isJsonPath(String path) {
+    return path != null && (path.equals("/health") || path.startsWith("/api/"));
   }
 
   private static boolean exceedsPathLimit(String value) {

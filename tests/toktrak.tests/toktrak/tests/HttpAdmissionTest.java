@@ -8,6 +8,7 @@ import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -21,8 +22,9 @@ final class HttpAdmissionTest {
   private static final int QUEUE_CAPACITY = 256;
 
   @Test
-  void given_saturatedProductionExecutor_when_requestingHealth_then_returnsServiceUnavailable()
-      throws Exception {
+  void
+      given_saturatedProductionExecutor_when_requestingBrowserAndApiRoutes_then_returnsTypedServiceUnavailable()
+          throws Exception {
     var releaseWorkers = new CountDownLatch(1);
     var workersStarted = new CountDownLatch(WORKER_COUNT);
     var workers =
@@ -36,7 +38,7 @@ final class HttpAdmissionTest {
             new ThreadPoolExecutor.AbortPolicy());
     HttpServer server =
         HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 128);
-    server.createContext("/", new Router(new HealthState(), true, workers));
+    server.createContext("/", new Router(new HealthState(), false, workers));
     server.setExecutor(Runnable::run);
     try {
       for (int index = 0; index < WORKER_COUNT; index++) {
@@ -58,7 +60,7 @@ final class HttpAdmissionTest {
 
       var connection =
           (HttpURLConnection)
-              URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/health")
+              URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/nope")
                   .toURL()
                   .openConnection();
       connection.setConnectTimeout(2_000);
@@ -67,11 +69,36 @@ final class HttpAdmissionTest {
       connection.setRequestProperty("Connection", "close");
       try {
         assertEquals(503, connection.getResponseCode());
+        assertEquals("text/html; charset=utf-8", connection.getHeaderField("Content-Type"));
         try (var input = connection.getErrorStream()) {
-          assertTrue(input.readAllBytes().length > 0);
+          String body = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+          assertTrue(body.contains("Server is busy. Try again."));
+          assertTrue(body.contains("Request ID"));
         }
       } finally {
         connection.disconnect();
+      }
+
+      var apiConnection =
+          (HttpURLConnection)
+              URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/api/nope")
+                  .toURL()
+                  .openConnection();
+      apiConnection.setConnectTimeout(2_000);
+      apiConnection.setReadTimeout(2_000);
+      apiConnection.setRequestMethod("GET");
+      apiConnection.setRequestProperty("Connection", "close");
+      try {
+        assertEquals(503, apiConnection.getResponseCode());
+        assertEquals(
+            "application/json; charset=utf-8", apiConnection.getHeaderField("Content-Type"));
+        try (var input = apiConnection.getErrorStream()) {
+          assertTrue(
+              new String(input.readAllBytes(), StandardCharsets.UTF_8)
+                  .contains("\"code\":\"server_busy\""));
+        }
+      } finally {
+        apiConnection.disconnect();
       }
     } finally {
       releaseWorkers.countDown();

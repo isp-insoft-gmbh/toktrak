@@ -44,8 +44,14 @@ final class HealthModeTest {
       var response = get(app, "/assets/main.css");
       assertEquals(200, response.statusCode());
       assertEquals("text/css; charset=utf-8", response.contentType());
-      assertEquals(
-          ".environment-banner{background:#b00020;color:white;padding:.5rem}", response.body());
+      assertTrue(
+          response
+              .body()
+              .startsWith(
+                  ".environment-banner{background:#b00020;color:white;padding:.5rem;font-weight:800}"));
+      assertTrue(response.body().contains(".error-page{"));
+      assertTrue(response.body().contains(".error-page dl{"));
+      assertTrue(response.body().contains(".error-page dt,.error-page dd{"));
       assertEquals(
           "default-src 'self'; frame-ancestors 'none'; base-uri 'none'",
           response.contentSecurityPolicy());
@@ -62,7 +68,8 @@ final class HealthModeTest {
         App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
       var response = request(app, "/assets/main.css", "POST");
       assertEquals(404, response.statusCode());
-      assertTrue(response.body().contains("BRUTAL ERROR"));
+      assertTrue(response.body().contains("Route not found."));
+      assertTrue(response.body().contains("DEV AUTH · DEBUG"));
     }
   }
 
