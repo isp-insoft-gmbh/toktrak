@@ -1,6 +1,7 @@
 package toktrak;
 
 import java.util.concurrent.CountDownLatch;
+import toktrak.http.Assets;
 
 public final class Main {
   private Main() {}
@@ -12,6 +13,12 @@ public final class Main {
     }
     if (args.length == 1 && args[0].equals("--help")) {
       System.out.println("TokTrak server");
+      return;
+    }
+    if (args.length == 1 && args[0].equals("--check-assets")) {
+      Assets assets = Assets.load();
+      assets.publicUrl("main.css");
+      System.out.println("TokTrak assets ok: " + assets.publicCount());
       return;
     }
     var app = App.start(args, System.getenv());

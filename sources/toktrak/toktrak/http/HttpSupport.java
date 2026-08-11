@@ -50,9 +50,14 @@ public final class HttpSupport {
     send(exchange, status, "text/html; charset=utf-8", body.getBytes(StandardCharsets.UTF_8));
   }
 
-  public static void css(HttpExchange exchange, int status, String body) throws IOException {
+  public static void asset(HttpExchange exchange, String contentType, byte[] body)
+      throws IOException {
+    assert exchange != null;
+    assert contentType != null && !contentType.isBlank();
     assert body != null;
-    send(exchange, status, "text/css; charset=utf-8", body.getBytes(StandardCharsets.UTF_8));
+    exchange.getResponseHeaders().set("Cache-Control", "public, max-age=31536000, immutable");
+    exchange.getResponseHeaders().set("Cross-Origin-Resource-Policy", "same-origin");
+    send(exchange, 200, contentType, body);
   }
 
   private static void send(HttpExchange exchange, int status, String contentType, byte[] body)

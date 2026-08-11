@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -15,28 +16,19 @@ public final class Router implements HttpHandler {
   private static final int METHOD_CHARACTERS_MAX = 32;
   private static final String URI_TOO_LONG_PATH = "URI exceeds 2048-byte limit";
   private static final String INVALID_METHOD = "(invalid method)";
-  private static final String MAIN_CSS =
-      ".environment-banner{background:#b00020;color:white;padding:.5rem;font-weight:800}"
-          + ".error-page{font:16px/1.4 ui-monospace,monospace;max-width:760px;margin:48px auto;"
-          + "border:4px solid #111;padding:28px;background:#fff;color:#111}"
-          + ".error-page h1{font-size:64px;line-height:1;margin:24px 0 8px}"
-          + ".error-page p{font-family:system-ui,sans-serif}"
-          + ".error-page dl{display:grid;grid-template-columns:max-content 1fr;"
-          + "border-top:3px solid #111;margin-top:28px}"
-          + ".error-page dt,.error-page dd{padding:10px;border-bottom:2px solid #111;margin:0}"
-          + ".error-page dt{font-weight:800}"
-          + ".error-page code{overflow-wrap:anywhere}";
 
   private final HealthState health;
   private final boolean devAuth;
   private final Executor requestExecutor;
+  private final Assets assets;
 
-  public Router(HealthState health, boolean devAuth, Executor requestExecutor) {
+  public Router(HealthState health, boolean devAuth, Executor requestExecutor, Assets assets) {
     assert health != null;
     assert requestExecutor != null;
     this.health = health;
     this.devAuth = devAuth;
     this.requestExecutor = requestExecutor;
+    this.assets = Objects.requireNonNull(assets, "assets");
   }
 
   @Override
@@ -133,12 +125,17 @@ public final class Router implements HttpHandler {
     assert exchange != null;
     String path = exchange.getRequestURI().getPath();
     assert !exceedsPathLimit(path);
+    String rawPath = exchange.getRequestURI().getRawPath();
+    if (exchange.getRequestMethod().equals("GET")
+        && exchange.getRequestURI().getRawQuery() == null) {
+      var asset = assets.publicAsset(rawPath);
+      if (asset.isPresent()) {
+        HttpSupport.asset(exchange, asset.get().mediaType(), asset.get().body());
+        return;
+      }
+    }
     if (devAuth && path.equals("/debug/error") && exchange.getRequestMethod().equals("GET")) {
       throw new IllegalStateException("debug failure");
-    }
-    if (path.equals("/assets/main.css") && exchange.getRequestMethod().equals("GET")) {
-      HttpSupport.css(exchange, 200, MAIN_CSS);
-      return;
     }
     if (path.equals("/health")) {
       if (health.healthy())
@@ -156,7 +153,9 @@ public final class Router implements HttpHandler {
           exchange,
           200,
           "<!doctype html><meta charset=\"utf-8\"><title>TokTrak</title>"
-              + "<link rel=\"stylesheet\" href=\"/assets/main.css\">"
+              + "<link rel=\"stylesheet\" href=\""
+              + assets.publicUrl("main.css")
+              + "\">"
               + strip
               + "<h1>TokTrak</h1>");
       return;
@@ -208,7 +207,15 @@ public final class Router implements HttpHandler {
           exchange,
           status,
           ErrorPage.render(
-              status, code, browserMessage, requestId, method, path, failure, devAuth));
+              status,
+              code,
+              browserMessage,
+              requestId,
+              method,
+              path,
+              assets.publicUrl("main.css"),
+              failure,
+              devAuth));
     }
   }
 

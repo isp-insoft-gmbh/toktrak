@@ -4,12 +4,14 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -54,6 +56,12 @@ public final class BuildTest {
     given_stampAboveLengthLimit_when_readingStamp_then_rejectsInput();
     given_invalidUtf8Stamp_when_readingStamp_then_rejectsInput();
     given_cacheArtifacts_when_checkingCacheHit_then_requiresMatchingOutputs();
+    given_validRuntimeAssets_when_buildingBundle_then_returnsCanonicalIndex();
+    given_invalidRuntimeAssets_when_buildingBundle_then_returnsActionableErrors();
+    given_runtimeAssetBounds_when_buildingBundle_then_rejectsExcess();
+    given_runtimeAssetBundle_when_writingModule_then_copiesAndVerifiesResources();
+    given_runtimeAssets_when_fingerprintingCompilation_then_changesFingerprint();
+    given_explodedAssets_when_fingerprintingRuntime_then_changesFingerprint();
     given_completedProcess_when_waitingForExit_then_returnsExitCode();
     given_argumentsContainingSpaces_when_buildingCommand_then_preservesArguments();
     given_manyFormatterSources_when_batchingSources_then_preservesSourceCount();
@@ -580,6 +588,295 @@ public final class BuildTest {
       Files.deleteIfExists(required);
       Files.deleteIfExists(stamp);
       Files.deleteIfExists(directory);
+    }
+  }
+
+  private static void given_validRuntimeAssets_when_buildingBundle_then_returnsCanonicalIndex()
+      throws Exception {
+    Path root = Files.createTempDirectory("toktrak-assets-valid-");
+    try {
+      Path publicAssets = Files.createDirectories(root.resolve("public"));
+      Path privateAssets = Files.createDirectories(root.resolve("private"));
+      Files.writeString(publicAssets.resolve("main.css"), "body{}");
+      Files.writeString(publicAssets.resolve("app.js"), "export{};");
+      Files.write(
+          publicAssets.resolve("logo.webp"),
+          "RIFF\0\0\0\0WEBP".getBytes(StandardCharsets.ISO_8859_1));
+      Files.write(
+          publicAssets.resolve("photo.avif"),
+          "\0\0\0\20ftypavif".getBytes(StandardCharsets.ISO_8859_1));
+      Files.write(publicAssets.resolve("font.woff2"), "wOF2".getBytes(StandardCharsets.ISO_8859_1));
+      Files.writeString(
+          publicAssets.resolve("logo.svg"),
+          "<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0\"/></svg>");
+      Files.writeString(privateAssets.resolve("tracker.mjs"), "export{};");
+
+      Build.AssetBundle bundle = Build.assetBundleForTest(root);
+      Build.AssetBundle repeated = Build.assetBundleForTest(root);
+      List<String> actual =
+          bundle.assets().stream()
+              .map(asset -> asset.scope() + "\t" + asset.logicalPath() + "\t" + asset.mediaType())
+              .toList();
+      List<String> expected =
+          List.of(
+              "private\ttracker.mjs\ttext/javascript; charset=utf-8",
+              "public\tapp.js\ttext/javascript; charset=utf-8",
+              "public\tfont.woff2\tfont/woff2",
+              "public\tlogo.svg\timage/svg+xml",
+              "public\tlogo.webp\timage/webp",
+              "public\tmain.css\ttext/css; charset=utf-8",
+              "public\tphoto.avif\timage/avif");
+      if (!actual.equals(expected)) throw new AssertionError("unexpected assets: " + actual);
+      for (Build.AssetSource asset : bundle.assets()) {
+        if (!asset.sha256().matches("[0-9a-f]{64}")) {
+          throw new AssertionError("noncanonical asset hash: " + asset.sha256());
+        }
+      }
+      byte[] index = bundle.index();
+      String indexText = new String(index, StandardCharsets.UTF_8);
+      if (!indexText.startsWith("toktrak-assets-v1\n")
+          || indexText.contains("\r")
+          || index.length < 2
+          || index[0] == (byte) 0xEF
+          || index[index.length - 1] != '\n'
+          || index[index.length - 2] == '\n'
+          || !indexText.substring("toktrak-assets-v1\n".length()).contains("\t")) {
+        throw new AssertionError("noncanonical asset index: " + indexText);
+      }
+      if (!Arrays.equals(index, repeated.index())
+          || !bundle.fingerprint().equals(repeated.fingerprint())
+          || !bundle.fingerprint().matches("[0-9a-f]{64}")) {
+        throw new AssertionError("asset bundle is nondeterministic");
+      }
+    } finally {
+      deleteTestTree(root);
+    }
+  }
+
+  private static void given_invalidRuntimeAssets_when_buildingBundle_then_returnsActionableErrors()
+      throws Exception {
+    assertRejectedAsset(
+        "logo.png",
+        new byte[] {0},
+        "convert it to optimized WebP or AVIF, or use SVG for vector artwork");
+    assertRejectedAsset("main.css", new byte[] {(byte) 0xC3}, "save the asset as valid UTF-8");
+    assertRejectedAsset(
+        "logo.webp",
+        "invalid".getBytes(StandardCharsets.UTF_8),
+        "regenerate it as a valid WebP file");
+    assertRejectedAsset(
+        "logo.avif",
+        "invalid".getBytes(StandardCharsets.UTF_8),
+        "regenerate it as a valid AVIF file");
+    assertRejectedAsset(
+        "font.woff2",
+        "invalid".getBytes(StandardCharsets.UTF_8),
+        "regenerate it as a valid WOFF2 file");
+    for (String svg :
+        List.of(
+            "<!DOCTYPE svg><svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><script/></svg>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" onclick=\"x\"/>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" href=\"x\"/>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" style=\"fill:red\"/>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><foreignObject/></svg>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><style/></svg>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"url(https://example.test/x)\"/>")) {
+      assertRejectedAsset(
+          "logo.svg",
+          svg.getBytes(StandardCharsets.UTF_8),
+          "remove scripts, external references, and unsupported SVG features");
+    }
+    assertRejectedAsset(
+        "Bad.css",
+        "body{}".getBytes(StandardCharsets.UTF_8),
+        "rename runtime assets using lowercase ASCII");
+  }
+
+  private static void given_runtimeAssetBounds_when_buildingBundle_then_rejectsExcess()
+      throws Exception {
+    Path countRoot = Files.createTempDirectory("toktrak-assets-count-");
+    try {
+      Path publicAssets = Files.createDirectories(countRoot.resolve("public"));
+      for (int index = 0; index < 65; index++) {
+        Files.writeString(publicAssets.resolve("asset" + index + ".css"), "x");
+      }
+      expectFailure(
+          () -> Build.assetBundleForTest(countRoot),
+          "runtime assets exceed 64 files; remove or combine assets");
+    } finally {
+      deleteTestTree(countRoot);
+    }
+
+    Path fileRoot = Files.createTempDirectory("toktrak-assets-file-size-");
+    try {
+      Path oversized = Files.createDirectories(fileRoot.resolve("public")).resolve("large.woff2");
+      writeSparseFile(oversized, 4L * 1024 * 1024 + 1);
+      expectFailure(
+          () -> Build.assetBundleForTest(fileRoot),
+          "large.woff2; optimize the asset below 4194304 bytes");
+    } finally {
+      deleteTestTree(fileRoot);
+    }
+
+    Path totalRoot = Files.createTempDirectory("toktrak-assets-total-size-");
+    try {
+      Path publicAssets = Files.createDirectories(totalRoot.resolve("public"));
+      for (int index = 0; index < 5; index++) {
+        writeSparseFile(publicAssets.resolve("font" + index + ".woff2"), 4L * 1024 * 1024);
+      }
+      expectFailure(
+          () -> Build.assetBundleForTest(totalRoot),
+          "runtime assets exceed 16777216 total bytes; optimize or remove assets");
+    } finally {
+      deleteTestTree(totalRoot);
+    }
+
+    Path linkRoot = Files.createTempDirectory("toktrak-assets-link-");
+    try {
+      Path publicAssets = Files.createDirectories(linkRoot.resolve("public"));
+      Path target = publicAssets.resolve("target.css");
+      Files.writeString(target, "body{}");
+      Path link = publicAssets.resolve("link.css");
+      Files.createSymbolicLink(link, target.getFileName());
+      expectFailure(
+          () -> Build.assetBundleForTest(linkRoot),
+          "replace the symbolic runtime asset with a regular file or directory");
+      Files.delete(link);
+      Path targetDirectory = Files.createDirectory(publicAssets.resolve("target"));
+      Files.createSymbolicLink(publicAssets.resolve("link"), targetDirectory.getFileName());
+      expectFailure(
+          () -> Build.assetBundleForTest(linkRoot),
+          "replace the symbolic runtime asset with a regular file or directory");
+    } finally {
+      deleteTestTree(linkRoot);
+    }
+  }
+
+  private static void given_runtimeAssetBundle_when_writingModule_then_copiesAndVerifiesResources()
+      throws Exception {
+    Path root = Files.createTempDirectory("toktrak-assets-copy-source-");
+    Path moduleRoot = Files.createTempDirectory("toktrak-assets-copy-module-");
+    try {
+      byte[] css = "body{}".getBytes(StandardCharsets.UTF_8);
+      Files.createDirectories(root.resolve("public"));
+      Files.write(root.resolve("public/main.css"), css);
+      Build.AssetBundle bundle = Build.assetBundleForTest(root);
+      Build.writeAssetsForTest(bundle, moduleRoot);
+      if (!Build.assetsMatchForTest(bundle, moduleRoot)
+          || !Arrays.equals(css, Files.readAllBytes(moduleRoot.resolve("assets/public/main.css")))
+          || !Arrays.equals(
+              bundle.index(), Files.readAllBytes(moduleRoot.resolve("assets/index.tsv")))) {
+        throw new AssertionError("written runtime assets do not match bundle");
+      }
+
+      Files.writeString(moduleRoot.resolve("assets/public/main.css"), "changed");
+      if (Build.assetsMatchForTest(bundle, moduleRoot)) {
+        throw new AssertionError("changed runtime asset matched bundle");
+      }
+      Build.writeAssetsForTest(bundle, moduleRoot);
+      Files.delete(moduleRoot.resolve("assets/index.tsv"));
+      if (Build.assetsMatchForTest(bundle, moduleRoot)) {
+        throw new AssertionError("missing runtime asset index matched bundle");
+      }
+      Build.writeAssetsForTest(bundle, moduleRoot);
+      Files.writeString(moduleRoot.resolve("assets/public/extra.css"), "extra");
+      if (Build.assetsMatchForTest(bundle, moduleRoot)) {
+        throw new AssertionError("unindexed runtime asset matched bundle");
+      }
+    } finally {
+      deleteTestTree(moduleRoot);
+      deleteTestTree(root);
+    }
+  }
+
+  private static void given_runtimeAssets_when_fingerprintingCompilation_then_changesFingerprint()
+      throws Exception {
+    Path root = Files.createTempDirectory("toktrak-assets-compile-fingerprint-");
+    try {
+      Path sources = Files.createDirectories(root.resolve("sources"));
+      Path dependencies = Files.createDirectories(root.resolve("dependencies"));
+      Files.writeString(sources.resolve("Main.java"), "final class Main {}");
+      Path firstAssets = Files.createDirectories(root.resolve("first-assets/public")).getParent();
+      Path secondAssets = Files.createDirectories(root.resolve("second-assets/public")).getParent();
+      Files.writeString(firstAssets.resolve("public/main.css"), "body{}");
+      Files.writeString(secondAssets.resolve("public/main.css"), "body { }");
+      List<Path> sourcePaths = List.of(sources);
+      List<Path> dependencyDirectories = List.of(dependencies);
+      List<String> arguments = List.of("-Xlint:all");
+
+      String first =
+          Build.applicationCompilationFingerprintForTest(
+              sourcePaths, dependencyDirectories, arguments, firstAssets);
+      String second =
+          Build.applicationCompilationFingerprintForTest(
+              sourcePaths, dependencyDirectories, arguments, secondAssets);
+      if (first.equals(second)) {
+        throw new AssertionError("changed runtime asset did not change compilation fingerprint");
+      }
+    } finally {
+      deleteTestTree(root);
+    }
+  }
+
+  private static void given_explodedAssets_when_fingerprintingRuntime_then_changesFingerprint()
+      throws Exception {
+    Path root = Files.createTempDirectory("toktrak-assets-runtime-fingerprint-");
+    try {
+      Path firstSources = Files.createDirectories(root.resolve("first-sources/public")).getParent();
+      Path secondSources =
+          Files.createDirectories(root.resolve("second-sources/public")).getParent();
+      Files.writeString(firstSources.resolve("public/main.css"), "body{}");
+      Files.writeString(secondSources.resolve("public/main.css"), "body { }");
+      Build.AssetBundle firstBundle = Build.assetBundleForTest(firstSources);
+      Build.AssetBundle secondBundle = Build.assetBundleForTest(secondSources);
+      Path firstModule = Files.createDirectories(root.resolve("first-module"));
+      Path secondModule = Files.createDirectories(root.resolve("second-module"));
+      byte[] moduleInfo = new byte[] {1, 2, 3};
+      Files.write(firstModule.resolve("module-info.class"), moduleInfo);
+      Files.write(secondModule.resolve("module-info.class"), moduleInfo);
+      Build.writeAssetsForTest(firstBundle, firstModule);
+      Build.writeAssetsForTest(secondBundle, secondModule);
+
+      String first = Build.applicationRuntimeFingerprintForTest(firstModule);
+      String second = Build.applicationRuntimeFingerprintForTest(secondModule);
+      if (first.equals(second)) {
+        throw new AssertionError("changed runtime asset did not change linked runtime fingerprint");
+      }
+      if (!Build.assetsMatchForTest(firstBundle, firstModule)
+          || Build.assetsMatchForTest(secondBundle, firstModule)) {
+        throw new AssertionError("exploded module assets matched the wrong bundle");
+      }
+    } finally {
+      deleteTestTree(root);
+    }
+  }
+
+  private static void assertRejectedAsset(String relative, byte[] bytes, String remediation)
+      throws Exception {
+    Path root = Files.createTempDirectory("toktrak-assets-invalid-");
+    try {
+      Path publicAssets = Files.createDirectories(root.resolve("public"));
+      Files.write(publicAssets.resolve(relative), bytes);
+      expectFailure(() -> Build.assetBundleForTest(root), relative + "; " + remediation);
+    } finally {
+      deleteTestTree(root);
+    }
+  }
+
+  private static void writeSparseFile(Path path, long bytes) throws Exception {
+    try (var channel =
+        FileChannel.open(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+      channel.position(bytes - 1);
+      channel.write(ByteBuffer.wrap(new byte[] {0}));
+    }
+  }
+
+  private static void deleteTestTree(Path root) throws Exception {
+    if (!Files.exists(root)) return;
+    List<Path> paths = Build.treePathsForTest(root, 1_000);
+    for (int index = paths.size() - 1; index >= 0; index--) {
+      Files.deleteIfExists(paths.get(index));
     }
   }
 

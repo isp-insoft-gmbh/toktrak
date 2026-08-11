@@ -8,6 +8,7 @@ public final class ErrorPage {
   private static final int REQUEST_ID_CHARACTERS_MAX = 64;
   private static final int METHOD_CHARACTERS_MAX = 32;
   private static final int PATH_CHARACTERS_MAX = 2 * 1024;
+  private static final int STYLESHEET_URL_CHARACTERS_MAX = 256;
   private static final int EXCEPTION_CLASS_CHARACTERS_MAX = 1024;
   private static final int EXCEPTION_MESSAGE_CHARACTERS_MAX = 8 * 1024;
   private static final int HTML_CHARACTERS_MAX = 128 * 1024;
@@ -21,6 +22,7 @@ public final class ErrorPage {
       String requestId,
       String method,
       String path,
+      String stylesheetUrl,
       Throwable failure,
       boolean debug) {
     if (status < 400 || status > 599) {
@@ -31,12 +33,14 @@ public final class ErrorPage {
     requireText(requestId, REQUEST_ID_CHARACTERS_MAX, "requestId");
     requireText(method, METHOD_CHARACTERS_MAX, "method");
     requireText(path, PATH_CHARACTERS_MAX, "path");
+    requireText(stylesheetUrl, STYLESHEET_URL_CHARACTERS_MAX, "stylesheetUrl");
 
     var html = new StringBuilder(2 * 1024);
     html.append("<!doctype html><meta charset=\"utf-8\"><title>")
         .append(status)
-        .append(" · TokTrak</title><link rel=\"stylesheet\" href=\"/assets/main.css\">")
-        .append("<main class=\"error-page\">");
+        .append(" · TokTrak</title><link rel=\"stylesheet\" href=\"")
+        .append(escape(stylesheetUrl))
+        .append("\"><main class=\"error-page\">");
     if (debug) {
       html.append("<div class=\"environment-banner\">DEV AUTH · DEBUG</div>");
     }

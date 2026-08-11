@@ -17,6 +17,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import toktrak.dev.DevData;
 import toktrak.health.HealthState;
+import toktrak.http.Assets;
 import toktrak.http.Router;
 import toktrak.log.JsonLogFormatter;
 import toktrak.projection.Projection;
@@ -67,6 +68,7 @@ public final class App implements AutoCloseable {
     Objects.requireNonNull(environment, "environment");
     configureLogging();
     Config config = Config.from(args, environment);
+    Assets assets = Assets.load();
     DataLock dataLock = DataLock.acquire(config.dataDirectory());
     EventLog eventLog = null;
     Writer writer = null;
@@ -95,7 +97,7 @@ public final class App implements AutoCloseable {
           HttpServer.create(
               new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), config.port()),
               HTTP_BACKLOG);
-      server.createContext("/", new Router(health, config.devAuth(), executor));
+      server.createContext("/", new Router(health, config.devAuth(), executor, assets));
       server.setExecutor(Runnable::run);
       server.start();
       if (config.failWrites()) health.degrade("writes_failed");

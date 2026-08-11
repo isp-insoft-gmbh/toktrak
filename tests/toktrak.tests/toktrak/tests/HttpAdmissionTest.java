@@ -15,6 +15,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import toktrak.health.HealthState;
+import toktrak.http.Assets;
 import toktrak.http.Router;
 
 final class HttpAdmissionTest {
@@ -38,7 +39,7 @@ final class HttpAdmissionTest {
             new ThreadPoolExecutor.AbortPolicy());
     HttpServer server =
         HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 128);
-    server.createContext("/", new Router(new HealthState(), false, workers));
+    server.createContext("/", new Router(new HealthState(), false, workers, Assets.load()));
     server.setExecutor(Runnable::run);
     try {
       for (int index = 0; index < WORKER_COUNT; index++) {

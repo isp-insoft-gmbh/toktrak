@@ -1,5 +1,6 @@
 package tools;
 
+import java.io.ByteArrayInputStream;
 import java.io.Console;
 import java.io.IOException;
 import java.lang.module.ModuleFinder;
@@ -12,7 +13,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.Iterator;
@@ -24,10 +27,13 @@ import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Element;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
 
 public final class Build {
   private static final Path ROOT = Path.of("").toAbsolutePath().normalize();
@@ -55,11 +61,18 @@ public final class Build {
   private static final Path REFASTER_RULE = REFASTER_OUTPUT.resolve("toktrak.refaster");
   private static final Path REFASTER_SOURCE = ROOT.resolve("tools/refaster/Rules.java");
   private static final Path APP_SOURCES = ROOT.resolve("sources/toktrak");
+  private static final Path ASSET_SOURCES = APP_SOURCES.resolve("assets");
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
   private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
   private static final long FILE_BYTES_MAX = 512L * 1024 * 1024;
   private static final int TREE_ENTRIES_MAX = 100_000;
+  private static final int ASSET_COUNT_MAX = 64;
+  private static final int ASSET_BYTES_MAX = 4 * 1024 * 1024;
+  private static final int ASSET_BYTES_TOTAL_MAX = 16 * 1024 * 1024;
+  private static final int ASSET_INDEX_BYTES_MAX = 64 * 1024;
+  private static final Pattern ASSET_PATH =
+      Pattern.compile("[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*");
   private static final int COLLECTION_ENTRIES_MAX = 10_000;
   private static final int ARGUMENTS_MAX = 10_000;
   private static final int ARGUMENT_BYTES_MAX = 32 * 1024;
@@ -110,6 +123,55 @@ public final class Build {
           "toktrak/toktrak.log=toktrak.tests");
 
   private Build() {}
+
+  record AssetSource(
+      String scope, String logicalPath, String mediaType, String sha256, ImmutableBytes content) {
+    AssetSource(String scope, String logicalPath, String mediaType, String sha256, byte[] bytes) {
+      this(scope, logicalPath, mediaType, sha256, new ImmutableBytes(bytes));
+    }
+
+    AssetSource {
+      assert scope.equals("public") || scope.equals("private");
+      assert logicalPath != null && !logicalPath.isBlank();
+      assert mediaType != null && !mediaType.isBlank();
+      assert sha256.matches("[0-9a-f]{64}");
+      assert content != null;
+    }
+
+    byte[] bytes() {
+      return content.copy();
+    }
+  }
+
+  record AssetBundle(List<AssetSource> assets, ImmutableBytes indexBytes, String fingerprint) {
+    AssetBundle(List<AssetSource> assets, byte[] index, String fingerprint) {
+      this(assets, new ImmutableBytes(index), fingerprint);
+    }
+
+    AssetBundle {
+      assets = List.copyOf(assets);
+      assert indexBytes != null;
+      assert assets.size() <= ASSET_COUNT_MAX;
+      assert fingerprint.matches("[0-9a-f]{64}");
+    }
+
+    byte[] index() {
+      return indexBytes.copy();
+    }
+  }
+
+  static final class ImmutableBytes {
+    private final byte[] value;
+
+    private ImmutableBytes(byte[] value) {
+      assert value != null;
+      this.value = value.clone();
+    }
+
+    private byte[] copy() {
+      return value.clone();
+    }
+  }
 
   public static void main(String[] args) throws Exception {
     long started = System.nanoTime();
@@ -996,6 +1058,452 @@ public final class Build {
         .replace(">", "&gt;");
   }
 
+  static AssetBundle assetBundleForTest(Path root) throws Exception {
+    return assetBundle(root);
+  }
+
+  private static AssetBundle assetBundle(Path root) throws Exception {
+    assert root != null;
+    Path publicDirectory = root.resolve("public");
+    if (Files.isSymbolicLink(publicDirectory)) throw symbolicAsset(publicDirectory);
+    if (!Files.isDirectory(publicDirectory)) {
+      throw new IllegalStateException(
+          "runtime asset directory is missing: "
+              + publicDirectory
+              + "; create a regular public directory");
+    }
+    Path privateDirectory = root.resolve("private");
+    if (Files.isSymbolicLink(privateDirectory)) throw symbolicAsset(privateDirectory);
+    if (Files.exists(privateDirectory) && !Files.isDirectory(privateDirectory)) {
+      throw new IllegalStateException(
+          "invalid runtime asset directory: "
+              + privateDirectory
+              + "; replace it with a regular directory or remove it");
+    }
+
+    List<Path> assetPaths;
+    try {
+      assetPaths = treePaths(root, 100);
+    } catch (IllegalStateException exception) {
+      throw new IllegalStateException(
+          "runtime asset tree exceeds 100 entries: "
+              + root
+              + "; remove empty directories or combine assets",
+          exception);
+    }
+    var sourcePaths = new ArrayList<Path>();
+    for (Path path : assetPaths) {
+      if (Files.isSymbolicLink(path)) throw symbolicAsset(path);
+      if (path.equals(root)) continue;
+      Path relative = root.relativize(path);
+      String scope = relative.getName(0).toString();
+      if (!scope.equals("public") && !scope.equals("private")) {
+        throw new IllegalStateException(
+            "unknown top-level runtime asset entry: " + path + "; move it under public or private");
+      }
+      if (Files.isRegularFile(path)) {
+        sourcePaths.add(path);
+        if (sourcePaths.size() > ASSET_COUNT_MAX) {
+          throw new IllegalStateException(
+              "runtime assets exceed 64 files; remove or combine assets");
+        }
+      } else if (!Files.isDirectory(path)) {
+        throw new IllegalStateException(
+            "runtime asset is not a regular file or directory: "
+                + path
+                + "; replace it with a regular file or directory");
+      }
+    }
+    sourcePaths.sort(Comparator.comparing(path -> assetKey(root, path)));
+
+    long totalBytes = 0;
+    var sourceSizes = new ArrayList<Long>();
+    for (Path path : sourcePaths) {
+      long size = Files.size(path);
+      if (size > ASSET_BYTES_MAX) {
+        throw new IllegalStateException(
+            "runtime asset exceeds "
+                + ASSET_BYTES_MAX
+                + " bytes: "
+                + path
+                + "; optimize the asset below "
+                + ASSET_BYTES_MAX
+                + " bytes");
+      }
+      totalBytes = Math.addExact(totalBytes, size);
+      if (totalBytes > ASSET_BYTES_TOTAL_MAX) {
+        throw new IllegalStateException(
+            "runtime assets exceed "
+                + ASSET_BYTES_TOTAL_MAX
+                + " total bytes; optimize or remove assets");
+      }
+      sourceSizes.add(size);
+    }
+
+    var assets = new ArrayList<AssetSource>();
+    String previousKey = null;
+    for (int sourceIndex = 0; sourceIndex < sourcePaths.size(); sourceIndex++) {
+      Path path = sourcePaths.get(sourceIndex);
+      Path relative = root.relativize(path);
+      String scope = relative.getName(0).toString();
+      String logicalPath =
+          relative.subpath(1, relative.getNameCount()).toString().replace('\\', '/');
+      if (!ASSET_PATH.matcher(logicalPath).matches()) {
+        throw new IllegalStateException(
+            "invalid runtime asset path: "
+                + path
+                + "; rename runtime assets using lowercase ASCII");
+      }
+      String key = scope + "\t" + logicalPath;
+      if (key.equals(previousKey)) {
+        throw new IllegalStateException(
+            "duplicate runtime asset: " + path + "; remove the duplicate asset path");
+      }
+      previousKey = key;
+      byte[] bytes = readAsset(path, sourceSizes.get(sourceIndex));
+      String mediaType = validateAsset(path, bytes);
+      String sha256 = sha256(bytes);
+      assets.add(new AssetSource(scope, logicalPath, mediaType, sha256, bytes));
+    }
+
+    var indexText = new StringBuilder("toktrak-assets-v1\n");
+    for (AssetSource asset : assets) {
+      indexText
+          .append(asset.scope())
+          .append('\t')
+          .append(asset.logicalPath())
+          .append('\t')
+          .append(asset.bytes().length)
+          .append('\t')
+          .append(asset.mediaType())
+          .append('\t')
+          .append(asset.sha256())
+          .append('\n');
+    }
+    byte[] index = indexText.toString().getBytes(StandardCharsets.UTF_8);
+    if (index.length > ASSET_INDEX_BYTES_MAX) {
+      throw new IllegalStateException(
+          "runtime asset index exceeds "
+              + ASSET_INDEX_BYTES_MAX
+              + " bytes; shorten or combine asset paths");
+    }
+    var digest = MessageDigest.getInstance("SHA-256");
+    digest.update(index);
+    for (AssetSource asset : assets) {
+      update(digest, asset.scope() + "\n" + asset.logicalPath() + "\n");
+      digest.update(asset.bytes());
+    }
+    return new AssetBundle(assets, index, HexFormat.of().formatHex(digest.digest()));
+  }
+
+  private static byte[] readAsset(Path path, long expectedBytes) throws IOException {
+    assert path != null;
+    assert expectedBytes >= 0 && expectedBytes <= ASSET_BYTES_MAX;
+    int expectedLength = Math.toIntExact(expectedBytes);
+    byte[] bytes;
+    try (var input = Files.newInputStream(path)) {
+      bytes = input.readNBytes(Math.addExact(expectedLength, 1));
+    }
+    if (bytes.length != expectedLength || Files.size(path) != expectedBytes) {
+      throw new IllegalStateException(
+          "runtime asset changed while reading: " + path + "; retry the build");
+    }
+    return bytes;
+  }
+
+  private static String assetKey(Path root, Path path) {
+    assert root != null;
+    assert path != null;
+    return root.relativize(path).toString().replace('\\', '/');
+  }
+
+  private static IllegalStateException symbolicAsset(Path path) {
+    assert path != null;
+    return new IllegalStateException(
+        "symbolic runtime asset: "
+            + path
+            + "; replace the symbolic runtime asset with a regular file or directory");
+  }
+
+  private static String validateAsset(Path path, byte[] bytes) throws Exception {
+    assert path != null;
+    assert bytes != null && bytes.length <= ASSET_BYTES_MAX;
+    String name = path.getFileName().toString();
+    if (name.endsWith(".css")) {
+      validateUtf8(path, bytes);
+      return "text/css; charset=utf-8";
+    }
+    if (name.endsWith(".js") || name.endsWith(".mjs")) {
+      validateUtf8(path, bytes);
+      return "text/javascript; charset=utf-8";
+    }
+    if (name.endsWith(".svg")) {
+      String svg = validateUtf8(path, bytes);
+      validateSvg(path, svg);
+      return "image/svg+xml";
+    }
+    if (name.endsWith(".webp")) {
+      if (bytes.length < 12 || !matches(bytes, 0, "RIFF") || !matches(bytes, 8, "WEBP")) {
+        throw new IllegalStateException(
+            "invalid WebP runtime asset: " + path + "; regenerate it as a valid WebP file");
+      }
+      return "image/webp";
+    }
+    if (name.endsWith(".avif")) {
+      boolean brand = false;
+      for (int offset = 8; offset + 4 <= Math.min(bytes.length, 32); offset++) {
+        if (matches(bytes, offset, "avif") || matches(bytes, offset, "avis")) {
+          brand = true;
+          break;
+        }
+      }
+      if (bytes.length < 12 || !matches(bytes, 4, "ftyp") || !brand) {
+        throw new IllegalStateException(
+            "invalid AVIF runtime asset: " + path + "; regenerate it as a valid AVIF file");
+      }
+      return "image/avif";
+    }
+    if (name.endsWith(".woff2")) {
+      if (bytes.length < 4 || !matches(bytes, 0, "wOF2")) {
+        throw new IllegalStateException(
+            "invalid WOFF2 runtime asset: " + path + "; regenerate it as a valid WOFF2 file");
+      }
+      return "font/woff2";
+    }
+    if (name.matches(".*\\.(?:png|jpe?g|gif|bmp|tiff?)")) {
+      throw new IllegalStateException(
+          "unsupported runtime raster asset: "
+              + path
+              + "; convert it to optimized WebP or AVIF, or use SVG for vector artwork");
+    }
+    throw new IllegalStateException(
+        "unsupported runtime asset: " + path + "; use CSS, JavaScript, SVG, WebP, AVIF, or WOFF2");
+  }
+
+  private static String validateUtf8(Path path, byte[] bytes) {
+    assert path != null;
+    assert bytes != null;
+    try {
+      return StandardCharsets.UTF_8
+          .newDecoder()
+          .onMalformedInput(CodingErrorAction.REPORT)
+          .onUnmappableCharacter(CodingErrorAction.REPORT)
+          .decode(ByteBuffer.wrap(bytes))
+          .toString();
+    } catch (CharacterCodingException exception) {
+      throw new IllegalStateException(
+          "invalid UTF-8 runtime asset: " + path + "; save the asset as valid UTF-8", exception);
+    }
+  }
+
+  private static boolean matches(byte[] bytes, int offset, String signature) {
+    assert bytes != null;
+    assert offset >= 0;
+    assert signature != null && signature.length() == 4;
+    if (offset + signature.length() > bytes.length) return false;
+    for (int index = 0; index < signature.length(); index++) {
+      if (bytes[offset + index] != (byte) signature.charAt(index)) return false;
+    }
+    return true;
+  }
+
+  private static void validateSvg(Path path, String svg) {
+    assert path != null;
+    assert svg != null;
+    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+    try {
+      factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+      factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+      factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+      factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+      factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+      factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+      factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+      factory.setXIncludeAware(false);
+      factory.setExpandEntityReferences(false);
+      factory.setNamespaceAware(true);
+    } catch (Exception exception) {
+      throw new IllegalStateException(
+          "cannot secure SVG parser for runtime asset: "
+              + path
+              + "; use a supported JDK 26 XML parser",
+          exception);
+    }
+
+    org.w3c.dom.Document document;
+    try {
+      var builder = factory.newDocumentBuilder();
+      builder.setErrorHandler(new org.xml.sax.helpers.DefaultHandler());
+      document = builder.parse(new ByteArrayInputStream(svg.getBytes(StandardCharsets.UTF_8)));
+    } catch (Exception exception) {
+      throw unsafeSvg(path, exception);
+    }
+    Element root = document.getDocumentElement();
+    if (root == null
+        || !"svg".equals(root.getLocalName())
+        || !"http://www.w3.org/2000/svg".equals(root.getNamespaceURI())) {
+      throw unsafeSvg(path, null);
+    }
+
+    Set<String> deniedElements =
+        Set.of(
+            "script",
+            "style",
+            "foreignobject",
+            "iframe",
+            "object",
+            "embed",
+            "audio",
+            "video",
+            "image",
+            "use");
+    var pending = new ArrayDeque<Node>();
+    pending.add(document);
+    int inspected = 0;
+    while (!pending.isEmpty()) {
+      Node node = pending.removeFirst();
+      inspected = Math.addExact(inspected, 1);
+      if (inspected > 100_000) throw unsafeSvg(path, null);
+      if (node.getNodeType() == Node.PROCESSING_INSTRUCTION_NODE
+          || node.getNodeType() == Node.DOCUMENT_TYPE_NODE) {
+        throw unsafeSvg(path, null);
+      }
+      if (node.getNodeType() == Node.ELEMENT_NODE) {
+        String namespace = node.getNamespaceURI();
+        String localName = node.getLocalName();
+        if (!"http://www.w3.org/2000/svg".equals(namespace)
+            || localName == null
+            || deniedElements.contains(localName.toLowerCase(Locale.ROOT))) {
+          throw unsafeSvg(path, null);
+        }
+        NamedNodeMap attributes = node.getAttributes();
+        for (int index = 0; index < attributes.getLength(); index++) {
+          inspected = Math.addExact(inspected, 1);
+          if (inspected > 100_000) throw unsafeSvg(path, null);
+          Node attribute = attributes.item(index);
+          String attributeName = attribute.getNodeName();
+          String lowerName = attributeName.toLowerCase(Locale.ROOT);
+          String value = attribute.getNodeValue();
+          boolean rootNamespace =
+              node.equals(root)
+                  && attributeName.equals("xmlns")
+                  && value.equals("http://www.w3.org/2000/svg");
+          if (attributeName.equals("xmlns") || attributeName.startsWith("xmlns:")) {
+            if (!rootNamespace) throw unsafeSvg(path, null);
+            continue;
+          }
+          if (lowerName.startsWith("on")
+              || lowerName.equals("style")
+              || lowerName.equals("href")
+              || lowerName.equals("xlink:href")
+              || lowerName.equals("src")) {
+            throw unsafeSvg(path, null);
+          }
+          String lowerValue = value.toLowerCase(Locale.ROOT);
+          if (lowerValue.contains("url(")
+              || lowerValue.contains("@import")
+              || lowerValue.contains("javascript:")
+              || lowerValue.contains("data:")
+              || lowerValue.contains("://")
+              || lowerValue.contains("//")) {
+            throw unsafeSvg(path, null);
+          }
+        }
+      }
+      for (Node child = node.getFirstChild(); child != null; child = child.getNextSibling()) {
+        pending.addLast(child);
+        if (pending.size() > 100_000) throw unsafeSvg(path, null);
+      }
+    }
+  }
+
+  private static IllegalStateException unsafeSvg(Path path, Exception cause) {
+    assert path != null;
+    String message =
+        "unsafe SVG runtime asset: "
+            + path
+            + "; remove scripts, external references, and unsupported SVG features";
+    return cause == null
+        ? new IllegalStateException(message)
+        : new IllegalStateException(message, cause);
+  }
+
+  private static String sha256(byte[] bytes) throws Exception {
+    assert bytes != null;
+    return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+  }
+
+  static void writeAssetsForTest(AssetBundle bundle, Path moduleRoot) throws Exception {
+    writeAssets(bundle, moduleRoot);
+  }
+
+  private static void writeAssets(AssetBundle bundle, Path moduleRoot) throws Exception {
+    assert bundle != null;
+    assert moduleRoot != null;
+    Path output = moduleRoot.resolve("assets");
+    deleteTree(output);
+    Files.createDirectories(output);
+    for (AssetSource asset : bundle.assets()) {
+      Path target = output.resolve(asset.scope()).resolve(asset.logicalPath()).normalize();
+      if (!target.startsWith(output))
+        throw new IllegalStateException("runtime asset escapes output");
+      Files.createDirectories(target.getParent());
+      Files.write(target, asset.bytes(), StandardOpenOption.CREATE_NEW);
+    }
+    Files.write(output.resolve("index.tsv"), bundle.index(), StandardOpenOption.CREATE_NEW);
+    if (!assetsMatch(bundle, moduleRoot)) {
+      throw new IllegalStateException(
+          "copied runtime assets failed verification; run mise run clean and retry");
+    }
+  }
+
+  static boolean assetsMatchForTest(AssetBundle bundle, Path moduleRoot) throws Exception {
+    return assetsMatch(bundle, moduleRoot);
+  }
+
+  private static boolean assetsMatch(AssetBundle bundle, Path moduleRoot) throws Exception {
+    assert bundle != null;
+    assert moduleRoot != null;
+    Path output = moduleRoot.resolve("assets");
+    if (Files.isSymbolicLink(output) || !Files.isDirectory(output)) return false;
+    var expectedPaths = new TreeSet<String>();
+    expectedPaths.add("");
+    expectedPaths.add("index.tsv");
+    for (AssetSource asset : bundle.assets()) {
+      Path relative = Path.of(asset.scope()).resolve(asset.logicalPath());
+      expectedPaths.add(relative.toString().replace('\\', '/'));
+      for (Path parent = relative.getParent(); parent != null; parent = parent.getParent()) {
+        expectedPaths.add(parent.toString().replace('\\', '/'));
+      }
+    }
+    List<Path> outputPaths;
+    try {
+      outputPaths = treePaths(output, Math.addExact(expectedPaths.size(), 1));
+    } catch (IllegalStateException exception) {
+      return false;
+    }
+    var actualPaths = new TreeSet<String>();
+    for (Path path : outputPaths) {
+      if (Files.isSymbolicLink(path) || (!Files.isRegularFile(path) && !Files.isDirectory(path))) {
+        return false;
+      }
+      actualPaths.add(output.relativize(path).toString().replace('\\', '/'));
+    }
+    if (!actualPaths.equals(expectedPaths)) return false;
+    byte[] expectedIndex = bundle.index();
+    Path index = output.resolve("index.tsv");
+    if (Files.size(index) != expectedIndex.length
+        || !Arrays.equals(expectedIndex, Files.readAllBytes(index))) return false;
+    for (AssetSource asset : bundle.assets()) {
+      Path path = output.resolve(asset.scope()).resolve(asset.logicalPath());
+      if (Files.size(path) != asset.bytes().length
+          || !sha256(Files.readAllBytes(path)).equals(asset.sha256())) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private static String dependencyFingerprint(Path dependencyFile) throws Exception {
     var digest = MessageDigest.getInstance("SHA-256");
     updateDigestFromFile(digest, dependencyFile);
@@ -1028,6 +1536,28 @@ public final class Build {
       updateDigestFromFile(digest, jar);
     }
     return HexFormat.of().formatHex(digest.digest());
+  }
+
+  static String applicationCompilationFingerprintForTest(
+      List<Path> sources, List<Path> dependencyDirectories, List<String> arguments, Path assetRoot)
+      throws Exception {
+    return applicationCompilationFingerprint(
+        sources, dependencyDirectories, arguments, assetBundle(assetRoot));
+  }
+
+  private static String applicationCompilationFingerprint(
+      List<Path> sources,
+      List<Path> dependencyDirectories,
+      List<String> arguments,
+      AssetBundle assetBundle)
+      throws Exception {
+    assert sources != null;
+    assert dependencyDirectories != null;
+    assert arguments != null;
+    assert assetBundle != null;
+    var fingerprintArguments = new ArrayList<>(arguments);
+    fingerprintArguments.add("assets=" + assetBundle.fingerprint());
+    return compilationFingerprint("modules", sources, dependencyDirectories, fingerprintArguments);
   }
 
   private static String testResultFingerprint(String compileFingerprint, List<String> arguments)
@@ -1114,6 +1644,7 @@ public final class Build {
   private static void compile() throws Exception {
     deps();
     compileRefaster();
+    AssetBundle assetBundle = assetBundle(ASSET_SOURCES);
     List<String> arguments = new ArrayList<>();
     arguments.add("-Xlint:all");
     arguments.add("-Werror");
@@ -1131,28 +1662,32 @@ public final class Build {
     List<String> fingerprintArguments = new ArrayList<>(arguments);
     fingerprintArguments.addAll(errorProneJvmArguments());
     String fingerprint =
-        compilationFingerprint(
-            "modules",
+        applicationCompilationFingerprint(
             List.of(
                 ROOT.resolve("sources/toktrak"),
                 ROOT.resolve("tests/toktrak.tests"),
                 ERROR_PRONE_CONFIG),
             List.of(MAIN_DEPS, TEST_DEPS, BUILD_DEPS),
-            fingerprintArguments);
+            fingerprintArguments,
+            assetBundle);
     Path stamp = MODULES.resolve(".compile-fingerprint");
     long started = System.nanoTime();
     if (cacheHit(
-        MODULES,
-        stamp,
-        fingerprint,
-        List.of(
-            APP_MODULE.resolve("module-info.class"), TEST_MODULE.resolve("module-info.class")))) {
+            MODULES,
+            stamp,
+            fingerprint,
+            List.of(
+                APP_MODULE.resolve("module-info.class"),
+                APP_MODULE.resolve("assets/index.tsv"),
+                TEST_MODULE.resolve("module-info.class")))
+        && assetsMatch(assetBundle, APP_MODULE)) {
       printCached(javacExecutable(), argFile, started);
       return;
     }
     deleteTree(MODULES);
     Files.createDirectories(MODULES);
     runJavacArgFile(argFile);
+    writeAssets(assetBundle, APP_MODULE);
     writeStamp(stamp, fingerprint);
   }
 
@@ -1447,7 +1982,7 @@ public final class Build {
     runArgFile(
         runtimeJava(runtime),
         "smoke-test-toktrak-production-runtime",
-        List.of("-ea", "-m", "toktrak/toktrak.Main", "--help"));
+        List.of("-ea", "-m", "toktrak/toktrak.Main", "--check-assets"));
   }
 
   private static void dev(List<String> args) throws Exception {
@@ -1531,8 +2066,21 @@ public final class Build {
       update(digest, jar.getFileName().toString() + "\n");
       updateDigestFromFile(digest, jar);
     }
-    if (includeApp) updateTree(digest, APP_MODULE, ".class");
+    if (includeApp) updateApplicationRuntimeFingerprint(digest, APP_MODULE);
     return HexFormat.of().formatHex(digest.digest());
+  }
+
+  static String applicationRuntimeFingerprintForTest(Path appModule) throws Exception {
+    var digest = MessageDigest.getInstance("SHA-256");
+    updateApplicationRuntimeFingerprint(digest, appModule);
+    return HexFormat.of().formatHex(digest.digest());
+  }
+
+  private static void updateApplicationRuntimeFingerprint(MessageDigest digest, Path appModule)
+      throws IOException {
+    assert digest != null;
+    assert appModule != null;
+    updateTree(digest, appModule, "");
   }
 
   private static void updateTree(MessageDigest digest, Path directory, String suffix)
@@ -1542,6 +2090,7 @@ public final class Build {
     assert suffix != null;
     for (Path path :
         treePaths(directory, TREE_ENTRIES_MAX).stream()
+            .filter(Files::isRegularFile)
             .filter(candidate -> candidate.toString().endsWith(suffix))
             .sorted()
             .toList()) {

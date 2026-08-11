@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import toktrak.http.ErrorPage;
 
 final class ErrorPageTest {
+  private static final String STYLESHEET_URL = "/assets/main.0123456789abcdef0123456789abcdef.css";
+
   @Test
   void given_arbitraryErrorStatus_when_renderingPage_then_returnsUsefulProductionHtml() {
     String html =
@@ -16,12 +18,14 @@ final class ErrorPageTest {
             "00000000-0000-4000-8000-000000000001",
             "POST",
             "/coffee",
+            STYLESHEET_URL,
             new IllegalStateException("debug failure"),
             false);
     assertTrue(html.contains("<h1>418</h1>"));
     assertTrue(html.contains("cannot brew coffee"));
     assertTrue(html.contains("<code>/coffee</code>"));
     assertTrue(html.contains("00000000-0000-4000-8000-000000000001"));
+    assertTrue(html.contains("href=\"" + STYLESHEET_URL + "\""));
     assertTrue(html.contains("href=\"/\""));
     assertFalse(html.contains("teapot"));
     assertFalse(html.contains("POST"));
@@ -40,6 +44,7 @@ final class ErrorPageTest {
             "request&1",
             "GET",
             "/bad?<value>\"'",
+            "/assets/main.<hash>&\".css",
             new IllegalStateException("debug <failure> & safe"),
             true);
     assertTrue(html.contains("DEV AUTH · DEBUG"));
@@ -47,6 +52,7 @@ final class ErrorPageTest {
     assertTrue(html.contains("failed &lt;publicly&gt;"));
     assertTrue(html.contains("request&amp;1"));
     assertTrue(html.contains("/bad?&lt;value&gt;&quot;&#39;"));
+    assertTrue(html.contains("href=\"/assets/main.&lt;hash&gt;&amp;&quot;.css\""));
     assertTrue(html.contains("<dt>Method</dt><dd><code>GET</code></dd>"));
     assertTrue(html.contains("java.lang.IllegalStateException: debug &lt;failure&gt; &amp; safe"));
     assertFalse(html.contains("<failure>"));
@@ -56,38 +62,66 @@ final class ErrorPageTest {
   @Test
   void given_errorStatusBoundaries_when_renderingPage_then_acceptsBoundaries() {
     assertDoesNotThrow(
-        () -> ErrorPage.render(400, "bad", "bad", "request", "GET", "/", null, false));
+        () ->
+            ErrorPage.render(
+                400, "bad", "bad", "request", "GET", "/", STYLESHEET_URL, null, false));
     assertDoesNotThrow(
-        () -> ErrorPage.render(599, "bad", "bad", "request", "GET", "/", null, false));
+        () ->
+            ErrorPage.render(
+                599, "bad", "bad", "request", "GET", "/", STYLESHEET_URL, null, false));
   }
 
   @Test
   void given_errorStatusOutsideRange_when_renderingPage_then_rejectsStatus() {
     assertThrows(
         IllegalArgumentException.class,
-        () -> ErrorPage.render(399, "bad", "bad", "request", "GET", "/", null, false));
+        () ->
+            ErrorPage.render(
+                399, "bad", "bad", "request", "GET", "/", STYLESHEET_URL, null, false));
     assertThrows(
         IllegalArgumentException.class,
-        () -> ErrorPage.render(600, "bad", "bad", "request", "GET", "/", null, false));
+        () ->
+            ErrorPage.render(
+                600, "bad", "bad", "request", "GET", "/", STYLESHEET_URL, null, false));
   }
 
   @Test
   void given_blankRendererInputs_when_renderingPage_then_rejectsInputs() {
     assertThrows(
         IllegalArgumentException.class,
-        () -> ErrorPage.render(500, "", "message", "request", "GET", "/", null, false));
+        () ->
+            ErrorPage.render(
+                500, "", "message", "request", "GET", "/", STYLESHEET_URL, null, false));
     assertThrows(
         IllegalArgumentException.class,
-        () -> ErrorPage.render(500, "code", "", "request", "GET", "/", null, false));
+        () ->
+            ErrorPage.render(500, "code", "", "request", "GET", "/", STYLESHEET_URL, null, false));
     assertThrows(
         IllegalArgumentException.class,
-        () -> ErrorPage.render(500, "code", "message", "", "GET", "/", null, false));
+        () ->
+            ErrorPage.render(500, "code", "message", "", "GET", "/", STYLESHEET_URL, null, false));
     assertThrows(
         IllegalArgumentException.class,
-        () -> ErrorPage.render(500, "code", "message", "request", "", "/", null, false));
+        () ->
+            ErrorPage.render(
+                500, "code", "message", "request", "", "/", STYLESHEET_URL, null, false));
     assertThrows(
         IllegalArgumentException.class,
-        () -> ErrorPage.render(500, "code", "message", "request", "GET", "", null, false));
+        () ->
+            ErrorPage.render(
+                500, "code", "message", "request", "GET", "", STYLESHEET_URL, null, false));
+  }
+
+  @Test
+  void given_invalidStylesheetUrl_when_renderingPage_then_rejectsInput() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> ErrorPage.render(500, "code", "message", "request", "GET", "/", "", null, false));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            ErrorPage.render(
+                500, "code", "message", "request", "GET", "/", "x".repeat(257), null, false));
   }
 
   @Test
@@ -100,6 +134,7 @@ final class ErrorPageTest {
             "request",
             "GET",
             "/",
+            STYLESHEET_URL,
             new IllegalStateException("x".repeat(8_193)),
             true);
     assertTrue(html.contains("x".repeat(8_192)));
@@ -116,6 +151,7 @@ final class ErrorPageTest {
             "&".repeat(64),
             "&".repeat(32),
             "&".repeat(2_048),
+            "&".repeat(256),
             new IllegalStateException("&".repeat(8_192)),
             true);
     assertTrue(html.length() <= 128 * 1024);
