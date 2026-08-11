@@ -13,6 +13,7 @@
 
 ## Safety and Style
 
+- Never include secrets in exception messages.
 - Enable assertions (`-ea`) in every dev, test, and production launch. Assert
   internal arguments, returns, pre/postconditions, invariants, expected states,
   and forbidden states. Pair assertions across boundaries. Never replace
