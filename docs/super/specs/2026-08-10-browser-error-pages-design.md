@@ -42,11 +42,13 @@ include stack traces. Project rules forbid secrets in exception messages.
 ## Components
 
 Add `toktrak.http.ErrorPage`, a deterministic renderer with no I/O. It accepts
-the status, stable code, public message, request ID, method, display path,
-optional failure, and debug-mode flag. It validates bounded inputs, HTML-escapes
-every dynamic value, limits displayed exception messages to 8 KiB, and returns
-one bounded HTML document. Accepting values instead of `RequestContext` lets
-admission failures use the same renderer before scoped context exists.
+any HTTP error status from 400 through 599 plus a stable code, public message,
+request ID, method, display path, optional failure, and debug-mode flag. It has
+no status-specific templates; `Router` supplies the error details. It validates
+bounded inputs, HTML-escapes every dynamic value, limits displayed exception
+messages to 8 KiB, and returns one bounded HTML document. Accepting values
+instead of `RequestContext` lets admission failures use the same renderer before
+scoped context exists.
 
 `Router` selects the existing JSON envelope for API failures and `ErrorPage` for
 browser failures. Unknown browser routes use the renderer instead of the fixed
