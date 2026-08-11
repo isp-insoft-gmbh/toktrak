@@ -202,6 +202,18 @@ fingerprints. Build tests cover missing or corrupted copied outputs and stale
 cache prevention. Full verification remains warning-free with assertions
 enabled.
 
+## Feasibility evidence
+
+Java 26 documentation and an isolated experiment confirm that `jlink` accepts
+the project's exploded-module shape, retains copied non-class resources, and
+makes them readable through `Module.getResourceAsStream` in the linked runtime.
+Independent `jimage` inspection confirmed both the generated index and CSS
+resource. A missing-resource negative control failed deterministically, and a
+separate control confirmed `javac` does not copy source-tree resources.
+
+See
+[JPMS runtime asset packaging research](../../research/2026-08-10-jpms-runtime-assets.md).
+
 ## Scope
 
 This design moves `main.css` out of Java and establishes the runtime asset
