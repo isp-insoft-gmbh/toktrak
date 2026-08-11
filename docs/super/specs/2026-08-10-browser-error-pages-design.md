@@ -10,9 +10,11 @@ without changing JSON API errors or weakening browser security.
 ## HTTP behavior
 
 Requests whose decoded path starts with `/api/` keep the existing JSON error
-envelope. Other requests receive HTML error pages, including admission failures
-that occur before request-context binding. An overlong URI displays a fixed
-bounded path description instead of echoing the rejected URI.
+envelope and messages. `/health` remains the existing machine-readable JSON
+endpoint in every health state. Other requests receive HTML error pages,
+including admission failures that occur before request-context binding. An
+overlong URI displays a fixed bounded path description instead of echoing the
+rejected URI.
 
 Stable browser errors are:
 
@@ -45,10 +47,11 @@ Add `toktrak.http.ErrorPage`, a deterministic renderer with no I/O. It accepts
 any HTTP error status from 400 through 599 plus a stable code, public message,
 request ID, method, display path, optional failure, and debug-mode flag. It has
 no status-specific templates; `Router` supplies the error details. It validates
-bounded inputs, HTML-escapes every dynamic value, limits displayed exception
-messages to 8 KiB, and returns one bounded HTML document. Accepting values
-instead of `RequestContext` lets admission failures use the same renderer before
-scoped context exists.
+field-specific bounded inputs, HTML-escapes every dynamic value, limits
+displayed exception messages to 8 KiB and exception class names to 1 KiB, and
+returns an HTML document bounded to 128 KiB after worst-case escaping. Accepting
+values instead of `RequestContext` lets admission failures use the same renderer
+before scoped context exists.
 
 `Router` selects the existing JSON envelope for API failures and `ErrorPage` for
 browser failures. Unknown browser routes use the renderer instead of the fixed
@@ -73,9 +76,9 @@ Reject invalid internal status/code/message/context arguments with assertions or
 stable argument exceptions according to existing trust-boundary conventions.
 
 If an API handler fails before responding, return the existing JSON
-`internal_error` envelope. If a browser handler fails before responding, return
-a 500 HTML page. If a response already started, preserve the existing close-only
-behavior.
+`internal_error` envelope and message. If a browser handler fails before
+responding, return a 500 HTML page. If a response already started, preserve the
+existing close-only behavior.
 
 ## Verification
 
