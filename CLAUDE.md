@@ -14,6 +14,10 @@
 ## Safety and Style
 
 - Never include secrets in exception messages.
+- Runtime raster images must be optimized WebP or AVIF. Use SVG for vectors; the
+  build must reject other raster formats.
+- Build validation errors must identify the rejected asset, violated constraint,
+  and exact remediation.
 - Enable assertions (`-ea`) in every dev, test, and production launch. Assert
   internal arguments, returns, pre/postconditions, invariants, expected states,
   and forbidden states. Pair assertions across boundaries. Never replace
