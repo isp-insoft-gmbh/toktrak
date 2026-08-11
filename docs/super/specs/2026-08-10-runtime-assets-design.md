@@ -159,9 +159,10 @@ for the current `main.css` URL; no Java source hard-codes a generated URL.
 
 Only `GET` serves an asset. Matching uses the ASCII raw request path exactly;
 there is no decoding, normalization, prefix lookup, or filesystem/module lookup.
-A nonempty query is rejected, preventing duplicate immutable cache entries.
-Unknown fingerprints, private names, alternate encodings, other methods, and
-noncanonical paths receive the normal browser 404.
+Any query component, including an empty trailing `?`, is rejected, preventing
+duplicate immutable cache entries. Unknown fingerprints, private names,
+alternate encodings, other methods, and noncanonical paths receive the normal
+browser 404.
 
 Successful public asset responses include:
 
