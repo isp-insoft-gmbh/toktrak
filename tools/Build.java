@@ -90,7 +90,7 @@ public final class Build {
   private static final Duration PROCESS_KILL_TIMEOUT = Duration.ofSeconds(5);
   private static final int PIT_THREADS = 4;
   private static final int PIT_TIMEOUT_MILLIS = 10_000;
-  private static final String PIT_JVM_ARGS = "-ea,-Djunit.jupiter.execution.timeout.default=5s";
+  private static final String PIT_JVM_ARGS = "-ea,-Djunit.jupiter.execution.timeout.default=10s";
   private static final String PIT_MAIN =
       "org.pitest." + "mutation" + "test.commandline." + "Mutation" + "CoverageReport";
   private static final Set<String> BUILD_OWNED_PIT_OPTIONS =

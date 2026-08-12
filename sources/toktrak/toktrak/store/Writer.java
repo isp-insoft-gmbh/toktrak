@@ -189,7 +189,7 @@ public final class Writer implements AutoCloseable {
     synchronized (pauseMonitor) {
       pauseRequested = true;
       pauseMonitor.notifyAll();
-      long deadline = deadlineAfter(Duration.ofSeconds(2));
+      long deadline = deadlineAfter(Duration.ofSeconds(5));
       while (!paused) {
         long remainingNanos = deadline - System.nanoTime();
         if (remainingNanos <= 0) throw new IllegalStateException("writer did not pause");

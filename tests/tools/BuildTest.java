@@ -421,7 +421,7 @@ public final class BuildTest {
             "4",
             "--timeoutConst",
             "10000",
-            "-ea,-Djunit.jupiter.execution.timeout.default=5s",
+            "-ea,-Djunit.jupiter.execution.timeout.default=10s",
             "--verbosity",
             "NO_SPINNER",
             "--fullMutationMatrix")) {
