@@ -18,6 +18,8 @@ boundaries for server, dashboard, and client installer before final packaging.
 
 ## Phase 1: Durable Server Core
 
+**Status:** Complete (2026-08-12).
+
 **Outcome:** A headless Java 26 service starts under dev auth, exposes
 health/error behavior, and durably records and rebuilds projections from its
 event log.
