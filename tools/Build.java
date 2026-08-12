@@ -1623,6 +1623,7 @@ public final class Build {
   private static void format(boolean replace, List<String> paths) throws Exception {
     assert paths != null;
     List<String> sourcePaths = javaSourcePaths(paths).stream().map(Path::toString).toList();
+    if (sourcePaths.isEmpty()) return;
     for (List<String> arguments : formatterArguments(replace, sourcePaths)) {
       runArguments(
           googleJavaFormatExecutable(),
@@ -2828,12 +2829,17 @@ public final class Build {
     return new TestSelection(buildTool, List.copyOf(classNames));
   }
 
+  static List<Path> javaSourcePathsForTest(List<String> paths) throws IOException {
+    return javaSourcePaths(paths);
+  }
+
   private static List<Path> javaSourcePaths(List<String> paths) throws IOException {
     return selectedFiles(
         paths,
         List.of(ROOT.resolve("sources"), ROOT.resolve("tests"), ROOT.resolve("tools")),
         candidate -> candidate.getFileName().toString().endsWith(".java"),
-        "Java source");
+        "Java source",
+        true);
   }
 
   private static List<Path> selectedFiles(
@@ -2841,6 +2847,16 @@ public final class Build {
       List<Path> defaults,
       Predicate<Path> predicate,
       String description)
+      throws IOException {
+    return selectedFiles(requestedPaths, defaults, predicate, description, false);
+  }
+
+  private static List<Path> selectedFiles(
+      List<String> requestedPaths,
+      List<Path> defaults,
+      Predicate<Path> predicate,
+      String description,
+      boolean ignoreNonMatchingFiles)
       throws IOException {
     assert requestedPaths != null;
     assert defaults != null;
@@ -2860,6 +2876,7 @@ public final class Build {
       if (Files.isRegularFile(path)) {
         traversed = Math.addExact(traversed, 1);
         if (!predicate.test(path)) {
+          if (ignoreNonMatchingFiles) continue;
           throw new IllegalStateException("not a " + description + ": " + path);
         }
         result.add(path);
@@ -2889,7 +2906,7 @@ public final class Build {
             "selected files exceed " + COLLECTION_ENTRIES_MAX + " entries");
       }
     }
-    if (result.isEmpty()) {
+    if (result.isEmpty() && !ignoreNonMatchingFiles) {
       throw new IllegalStateException("no " + description + " files selected");
     }
     return List.copyOf(result);

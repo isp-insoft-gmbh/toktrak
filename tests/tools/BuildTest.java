@@ -65,6 +65,7 @@ public final class BuildTest {
     given_explodedAssets_when_fingerprintingRuntime_then_changesFingerprint();
     given_completedProcess_when_waitingForExit_then_returnsExitCode();
     given_argumentsContainingSpaces_when_buildingCommand_then_preservesArguments();
+    given_markdownPath_when_selectingJavaFormatSources_then_ignoresIt();
     given_manyFormatterSources_when_batchingSources_then_preservesSourceCount();
     given_commandAboveLengthLimit_when_buildingCommand_then_rejectsInput();
     given_windowsOsNamePattern_when_applyingRefaster_then_rewritesOnlyOsCheck();
@@ -904,6 +905,13 @@ public final class BuildTest {
     List<String> command = Build.commandForTest("tool", List.of("path with spaces/Source.java"));
     if (!command.equals(List.of("tool", "path with spaces/Source.java"))) {
       throw new AssertionError("unexpected command: " + command);
+    }
+  }
+
+  private static void given_markdownPath_when_selectingJavaFormatSources_then_ignoresIt()
+      throws Exception {
+    if (!Build.javaSourcePathsForTest(List.of("README.md")).isEmpty()) {
+      throw new AssertionError("Markdown selected for Java formatting");
     }
   }
 
