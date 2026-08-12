@@ -62,55 +62,84 @@ Features:
 - system dark/light theme auto applies
 - dashboard updates live when server sends fresh data
 
-## How to build
+## Development
 
-The only dependency after cloning this repo is: `mise`. It handles running
-commands and installing and pinning dev dependencies.
+### How do I set up the project?
 
-Install `mise`:
+Install [mise](https://mise.jdx.dev/), clone the repository, then run
+`mise install` and `mise run check`. Mise pins the toolchain; tasks download
+Java dependencies automatically.
 
-win: `winget install jdx.mise`
+### How do I format, build, and test changes?
 
-mac: `brew install mise`
+- `mise run fmt [paths...]` formats Markdown and Java.
+- `mise run check` compiles and lints everything.
+- `mise run test [test paths...]` runs all or selected tests.
+- `mise run verify` runs the complete read-only local gate.
+- `mise run clean` removes generated output.
 
-lnx: `lol lol lol`
+### How do I run TokTrak locally?
 
-Tasks resolve dependencies automatically.
+Run `mise run dev` for the seeded, auto-reloading development server. Use
+`mise run dev --fail-writes` to exercise degraded health and failed writes.
 
-Format Java sources: `mise run fmt [paths...]`
+### How do I build the production runtime?
 
-Quick formatting, compile, and lint check: `mise run check`
+Run `mise run prod`. It builds and verifies the self-contained runtime under
+`output/runtimes/prod`.
 
-Run tests: `mise run test [test paths...]`
+### How do I reproduce CI locally?
 
-Generate JaCoCo coverage reports and enforce global 80% instruction / 65% branch
-plus package-specific gates: `mise run coverage`; open
-`output/coverage/report/index.html`. Package gates: health 80/75, HTTP 80/65,
-JSON 70/50, logging 90/75, projection 80/70, storage 75/60.
+Run `mise run ci`, then `mise run coverage`. `ci` applies Refaster, requires its
+result to leave the tree clean, and runs verification.
 
-Create or update a Selfie snapshot with `_TODO`, run its narrow test, then
-inspect and commit both the Java rewrite and generated `.ss` file. CI runs
-Selfie read-only.
+GitHub runs CI and coverage for pull requests, production-runtime verification
+on `trunk`, and PIT weekly or on demand. Open a workflow run's summary first;
+download `coverage-report` or `mutation-report` for the full HTML report.
 
-Apply Refaster rules and format changed Java: `mise run refactor`
+### How do I add a unit test?
 
-Full read-only check and test suite: `mise run verify`
+Add a JUnit test under `tests/toktrak.tests/toktrak/tests`. Name each test
+`given_<camelCaseContext>_when_<camelCaseBehavior>_then_<camelCaseExpectation>`.
+Run the narrow file while iterating, then `mise run verify`.
 
-CI refactor/clean-tree gate followed by verification: `mise run ci`
+### How do I inspect coverage?
 
-Mutation reports: `mise run pit`; open `output/mutations/index.html`
+Run `mise run coverage`, then open `output/coverage/report/index.html`. The task
+enforces global and package-specific instruction/branch floors; add meaningful
+tests rather than weakening them.
 
-Hosted CI attaches downloadable JaCoCo and PIT HTML reports to their workflow
-runs.
+### How do I run mutation tests?
 
-Start the seeded, auto-reloading dev server: `mise run dev`
+After changing tests, run
+`mise run pit --history -- <changed production source paths>` and inspect
+`output/mutations/index.html`. If history is inconsistent, delete
+`output/pit.history` and rerun without `--history`.
 
-Build the production runtime: `mise run prod`
+### How do I create or update a Selfie snapshot?
 
-Clean generated modules, dependencies, argument files, and runtimes:
-`mise run clean`
+Use Selfie only for stable, reviewable HTML, JSON, text, or protocol output.
+Create one with `toMatchDisk_TODO()` or update one by changing `toMatchDisk()`
+to `toMatchDisk_TODO()`, then run its narrow test. Inspect the exact `.ss` diff
+and map every changed fragment to the producing code before approval. Commit the
+golden file and Selfie's rewritten Java; never commit update markers.
 
-We ship an anonymized corpus of test usage data for easy manual testing.
+### Which environment variables does the current server read?
+
+| Variable           | Purpose                                                         |
+| ------------------ | --------------------------------------------------------------- |
+| `TOKTRAK_BASE_URL` | Public server URL; required outside development.                |
+| `TOKTRAK_DATA_DIR` | Persistent event-log directory; required outside development.   |
+| `TOKTRAK_DEV_AUTH` | Enables local development behavior; never use in production.    |
+| `TOKTRAK_PORT`     | HTTP listen port; defaults to `8080`, while `0` picks any port. |
+
+`mise run dev` sets development auth and uses the bundled anonymized corpus.
+Production secrets belong in environment configuration, never source control.
+
+### Where does code and generated output live?
+
+Production code is under `sources`, tests under `tests`, build logic under
+`tools`, and disposable generated files under `output`.
 
 ## How to install client tracker
 
@@ -169,35 +198,3 @@ Deploy behind a reverse proxy for TLS/compression. Back up the mounted
 
 Once the tracker is installed, no further interactions are needed, other than
 checking the dashboard from time to time.
-
-## Project setup
-
-top level command runner and dev dependencies: `mise`
-
-vendored java dependencies: `vendored`
-
-java dependency resolver: `jresolve` downloads modular dependencies into
-`output/deps/{main,test}`, compiler plugins into `output/deps/build`, and the
-isolated shaded Refaster compiler into `output/deps/refaster`
-
-source code: `sources`
-
-tests: `tests` via `junit6`
-
-build output: `output`
-
-java modules: `output/modules`
-
-generated Java tool argument files: `output/args`
-
-Refaster rule source: `tools/refaster/Rules.java`; generated rules/classes:
-`output/refaster`
-
-runtimes via `jlink`: `output/runtimes/{test,dev,prod}`; test/dev runtimes
-exclude `toktrak` and are reused until dependency/JDK inputs change
-
-compiling: `javac` via collection of java @arg files
-
-linting: `javac -Xlint:all` and 'errorprone'
-
-formatting: `google-java-format`
