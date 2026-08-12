@@ -29,9 +29,12 @@ installed on their machine, like Claude Code or Codex. We realize that this does
 not track 100% of the usage in this space (Cloud, Web and CI usage are omitted),
 but for the purposes of this project, it is enough.
 
-The "tracker" is fairly primitive. It is one NodeJS script that installs a
-user-scoped OS scheduler entry and uploads usage data daily. It depends on
-NodeJS (for `npx ccusage ...`) and the native user scheduler on each OS.
+The "tracker" is fairly primitive. It is one plain `.mjs` script that installs a
+user-scoped OS scheduler entry and uploads usage data daily. It uses Node's
+standard library directly: no `package.json`, npm dependencies, transpilation,
+bundling, or JavaScript build system. Its sole external JavaScript execution is
+`npx ccusage@<pinned-version>`. It depends on NodeJS and the native user
+scheduler on each OS.
 
 | OS  | scheduler      | install NodeJS               |
 | --- | -------------- | ---------------------------- |
@@ -80,8 +83,10 @@ Quick formatting, compile, and lint check: `mise run check`
 
 Run tests: `mise run test [test paths...]`
 
-Generate JaCoCo coverage reports: `mise run coverage`; open
-`output/coverage/report/index.html`.
+Generate JaCoCo coverage reports and enforce global 80% instruction / 65% branch
+plus package-specific gates: `mise run coverage`; open
+`output/coverage/report/index.html`. Package gates: health 80/75, HTTP 80/65,
+JSON 70/50, logging 90/75, projection 80/70, storage 75/60.
 
 Create or update a Selfie snapshot with `_TODO`, run its narrow test, then
 inspect and commit both the Java rewrite and generated `.ss` file. CI runs

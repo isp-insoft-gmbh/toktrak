@@ -88,6 +88,18 @@ final class AssetsTest {
         "toktrak-assets-v1\n" + record.replace("\t6\t", "\t4194305\t"),
         resources,
         "runtime asset exceeds 4194304 bytes: main.css");
+    assertCorrupt(
+        "toktrak-assets-v1\n" + record.replace("main.css", "main.exe"),
+        resources,
+        "unsupported runtime asset type: main.exe");
+  }
+
+  @Test
+  void given_invalidIndexEncodingAndSize_when_loadingAssets_then_rejectsIndex() {
+    assertThrows(
+        IllegalStateException.class, () -> Assets.loadForTest(new byte[] {(byte) 0xC3}, Map.of()));
+    assertThrows(
+        IllegalStateException.class, () -> Assets.loadForTest(new byte[1024 * 1024 + 1], Map.of()));
   }
 
   @Test

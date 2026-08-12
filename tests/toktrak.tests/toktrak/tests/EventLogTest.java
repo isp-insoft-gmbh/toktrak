@@ -33,6 +33,11 @@ final class EventLogTest {
             Map.of("eventCount", 0));
     log.appendAndFsync(event);
     assertTrue(Files.readString(dir.resolve("events.ndjson")).endsWith("\n"));
+    String line = Files.readString(dir.resolve("events.ndjson")).stripTrailing();
+    assertTrue(line.contains("\"type\":\"projection-snapshot\""));
+    assertTrue(line.contains("\"at\":\"2026-07-10T00:00:00Z\""));
+    assertTrue(line.contains("\"actor\":\"system\""));
+    assertTrue(line.contains("\"schemaVersion\":1"));
     var replayed = new ArrayList<EventEnvelope>();
     assertEquals(1, log.replay(replayed::add));
     assertEquals("projection-snapshot", replayed.getFirst().type());
@@ -62,6 +67,27 @@ final class EventLogTest {
 
     var ex = assertThrows(IllegalStateException.class, () -> log.replayForTest(_ -> {}, 3));
     assertEquals("event log exceeds 3 events", ex.getMessage());
+  }
+
+  @Test
+  void given_invalidReplayLimit_when_replayingLog_then_rejectsLimit() {
+    var log = EventLog.open(dir.resolve("events.ndjson"));
+    for (int eventCountMax : new int[] {0, 1_000_001}) {
+      var exception =
+          assertThrows(
+              IllegalArgumentException.class, () -> log.replayForTest(_ -> {}, eventCountMax));
+      assertEquals("eventCountMax must be 1..1000000", exception.getMessage());
+    }
+  }
+
+  @Test
+  void given_closedLog_when_usingLog_then_rejectsOperations() {
+    var log = EventLog.open(dir.resolve("events.ndjson"));
+    log.close();
+    assertThrows(IllegalStateException.class, () -> log.replay(_ -> {}));
+    assertThrows(
+        IllegalStateException.class,
+        () -> log.appendAndFsync(EventEnvelope.create("event", Instant.EPOCH, "system", Map.of())));
   }
 
   @Test

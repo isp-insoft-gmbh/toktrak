@@ -94,8 +94,16 @@ public final class Build {
   private static final Duration PROCESS_KILL_TIMEOUT = Duration.ofSeconds(5);
   private static final int PIT_THREADS = 4;
   private static final int PIT_TIMEOUT_MILLIS = 10_000;
-  private static final long COVERAGE_INSTRUCTION_PERCENT_MIN = 75;
-  private static final long COVERAGE_BRANCH_PERCENT_MIN = 60;
+  private static final long COVERAGE_INSTRUCTION_PERCENT_MIN = 80;
+  private static final long COVERAGE_BRANCH_PERCENT_MIN = 65;
+  private static final Map<String, CoverageMinimum> COVERAGE_PACKAGE_MINIMUMS =
+      Map.of(
+          "toktrak.health", new CoverageMinimum(80, 75),
+          "toktrak.http", new CoverageMinimum(80, 65),
+          "toktrak.json", new CoverageMinimum(70, 50),
+          "toktrak.log", new CoverageMinimum(90, 75),
+          "toktrak.projection", new CoverageMinimum(80, 70),
+          "toktrak.store", new CoverageMinimum(75, 60));
   private static final String PIT_JVM_ARGS =
       "-ea,-Djunit.jupiter.execution.timeout.default=5s,"
           + "-Djunit.platform.execution.listeners.deactivate=com.diffplug.selfie.*";
@@ -129,6 +137,7 @@ public final class Build {
       List.of(
           "toktrak/toktrak.dev=toktrak.tests",
           "toktrak/toktrak.http=toktrak.tests",
+          "toktrak/toktrak.json=toktrak.tests",
           "toktrak/toktrak.log=toktrak.tests");
 
   private Build() {}
@@ -1955,22 +1964,50 @@ public final class Build {
           "JaCoCo CSV must contain 1.." + (TREE_ENTRIES_MAX - 1) + " classes");
     }
     Map<String, Integer> columns = csvColumns(lines.getFirst());
-    long instructionsMissed = 0;
-    long instructionsCovered = 0;
-    long branchesMissed = 0;
-    long branchesCovered = 0;
+    var total = new CoverageCounts();
+    var packages = new java.util.HashMap<String, CoverageCounts>();
     for (String line : lines.subList(1, lines.size())) {
       String[] values = line.split(",", -1);
-      instructionsMissed =
-          Math.addExact(instructionsMissed, csvLong(values, columns, "INSTRUCTION_MISSED"));
-      instructionsCovered =
-          Math.addExact(instructionsCovered, csvLong(values, columns, "INSTRUCTION_COVERED"));
-      branchesMissed = Math.addExact(branchesMissed, csvLong(values, columns, "BRANCH_MISSED"));
-      branchesCovered = Math.addExact(branchesCovered, csvLong(values, columns, "BRANCH_COVERED"));
+      var counts =
+          new CoverageCounts(
+              csvLong(values, columns, "INSTRUCTION_MISSED"),
+              csvLong(values, columns, "INSTRUCTION_COVERED"),
+              csvLong(values, columns, "BRANCH_MISSED"),
+              csvLong(values, columns, "BRANCH_COVERED"));
+      total.add(counts);
+      Integer packageIndex = columns.get("PACKAGE");
+      if (packageIndex == null || packageIndex >= values.length || values[packageIndex].isBlank()) {
+        throw new IllegalStateException("JaCoCo CSV column missing: PACKAGE");
+      }
+      packages.computeIfAbsent(values[packageIndex], _ -> new CoverageCounts()).add(counts);
     }
     requireCoverage(
-        "instruction", instructionsCovered, instructionsMissed, COVERAGE_INSTRUCTION_PERCENT_MIN);
-    requireCoverage("branch", branchesCovered, branchesMissed, COVERAGE_BRANCH_PERCENT_MIN);
+        "instruction",
+        total.instructionsCovered,
+        total.instructionsMissed,
+        COVERAGE_INSTRUCTION_PERCENT_MIN);
+    requireCoverage(
+        "branch", total.branchesCovered, total.branchesMissed, COVERAGE_BRANCH_PERCENT_MIN);
+    for (Map.Entry<String, CoverageMinimum> entry : COVERAGE_PACKAGE_MINIMUMS.entrySet()) {
+      CoverageCounts counts = packages.get(entry.getKey());
+      if (counts == null)
+        throw new IllegalStateException("JaCoCo package missing: " + entry.getKey());
+      CoverageMinimum minimum = entry.getValue();
+      requireCoverage(
+          entry.getKey() + " instruction",
+          counts.instructionsCovered,
+          counts.instructionsMissed,
+          minimum.instructionPercent);
+      requireCoverage(
+          entry.getKey() + " branch",
+          counts.branchesCovered,
+          counts.branchesMissed,
+          minimum.branchPercent);
+    }
+    long instructionsCovered = total.instructionsCovered;
+    long instructionsMissed = total.instructionsMissed;
+    long branchesCovered = total.branchesCovered;
+    long branchesMissed = total.branchesMissed;
     appendGitHubSummary(
         "## JaCoCo coverage\n\n| Counter | Covered | Percentage |\n| --- | ---: | ---: |\n"
             + coverageTableRow("Instructions", instructionsCovered, instructionsMissed)
@@ -2043,6 +2080,35 @@ public final class Build {
     }
     System.out.println(
         name + " coverage: " + covered + "/" + total + " (minimum " + percentMin + "%)");
+  }
+
+  private record CoverageMinimum(long instructionPercent, long branchPercent) {}
+
+  private static final class CoverageCounts {
+    private long instructionsMissed;
+    private long instructionsCovered;
+    private long branchesMissed;
+    private long branchesCovered;
+
+    private CoverageCounts() {}
+
+    private CoverageCounts(
+        long instructionsMissed,
+        long instructionsCovered,
+        long branchesMissed,
+        long branchesCovered) {
+      this.instructionsMissed = instructionsMissed;
+      this.instructionsCovered = instructionsCovered;
+      this.branchesMissed = branchesMissed;
+      this.branchesCovered = branchesCovered;
+    }
+
+    private void add(CoverageCounts counts) {
+      instructionsMissed = Math.addExact(instructionsMissed, counts.instructionsMissed);
+      instructionsCovered = Math.addExact(instructionsCovered, counts.instructionsCovered);
+      branchesMissed = Math.addExact(branchesMissed, counts.branchesMissed);
+      branchesCovered = Math.addExact(branchesCovered, counts.branchesCovered);
+    }
   }
 
   private static String jacocoAgentArgument() throws IOException {

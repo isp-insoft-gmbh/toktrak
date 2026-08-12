@@ -16,6 +16,55 @@ final class EventEnvelopeTest {
   private static final Instant AT = Instant.parse("2026-07-10T00:00:00Z");
 
   @Test
+  void given_invalidCoreFields_when_creatingEnvelope_then_rejectsFields() {
+    for (String type : new String[] {null, ""}) {
+      var exception =
+          assertThrows(
+              IllegalArgumentException.class,
+              () -> new EventEnvelope(UUID.randomUUID(), AT, type, 1, "system", Map.of()));
+      assertEquals("event type is required", exception.getMessage());
+    }
+    var exception =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new EventEnvelope(UUID.randomUUID(), AT, "event", 0, "system", Map.of()));
+    assertEquals("event schema version must be positive", exception.getMessage());
+  }
+
+  @Test
+  void given_invalidDataValues_when_creatingEnvelope_then_rejectsValues() {
+    var repeated = new ArrayList<>();
+    var data = new LinkedHashMap<String, Object>();
+    data.put("first", repeated);
+    data.put("second", repeated);
+    assertEquals(
+        "event data containers must not repeat",
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> EventEnvelope.create("event", AT, "system", data))
+            .getMessage());
+    assertEquals(
+        "event data contains unsupported value: java.lang.Object",
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> EventEnvelope.create("event", AT, "system", Map.of("value", new Object())))
+            .getMessage());
+    assertEquals(
+        "event data string exceeds 1048576 characters",
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                    EventEnvelope.create(
+                        "event", AT, "system", Map.of("value", "x".repeat(1_048_577))))
+            .getMessage());
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            EventEnvelope.create(
+                "event", AT, "system", Map.of("value", java.math.BigInteger.TEN.pow(5_000))));
+  }
+
+  @Test
   void given_typeAboveUtf8Limit_when_creatingEnvelope_then_rejectsType() {
     var ex =
         assertThrows(

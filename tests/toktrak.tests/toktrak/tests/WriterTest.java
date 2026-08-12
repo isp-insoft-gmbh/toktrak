@@ -76,6 +76,63 @@ final class WriterTest {
   }
 
   @Test
+  void given_snapshotCommand_when_submittingCommand_then_appendsProjectionSnapshot()
+      throws Exception {
+    var log = EventLog.open(dir.resolve("events.ndjson"));
+    var projection = Projection.empty();
+    projection.apply(
+        EventEnvelope.create(
+            "dev-test", Instant.parse("2026-07-10T00:00:00Z"), "system", java.util.Map.of()));
+    var writer =
+        Writer.start(
+            log,
+            projection,
+            new HealthState(),
+            ClockSource.fixed(Instant.parse("2026-07-10T01:00:00Z")),
+            false);
+    try (writer) {
+      var result = writer.submit(WriteCommand.snapshot("system")).get(2, TimeUnit.SECONDS);
+      assertTrue(result.eventId().isPresent());
+      var replayed = new java.util.ArrayList<EventEnvelope>();
+      assertEquals(1, log.replay(replayed::add));
+      assertEquals("projection-snapshot", replayed.getFirst().type());
+      assertEquals(1, replayed.getFirst().data().get("eventCount"));
+    }
+  }
+
+  @Test
+  void given_invalidWriterSettings_when_startingWriter_then_rejectsSettings() {
+    var log = EventLog.open(dir.resolve("events.ndjson"));
+    for (int capacity : new int[] {0, 1_025}) {
+      assertThrows(
+          IllegalArgumentException.class,
+          () ->
+              Writer.startForTest(
+                  log,
+                  Projection.empty(),
+                  new HealthState(),
+                  ClockSource.system(),
+                  false,
+                  capacity));
+    }
+    for (Duration timeout :
+        new Duration[] {Duration.ZERO, Duration.ofSeconds(-1), Duration.ofSeconds(61)}) {
+      assertThrows(
+          IllegalArgumentException.class,
+          () ->
+              Writer.startForTest(
+                  log,
+                  Projection.empty(),
+                  new HealthState(),
+                  ClockSource.system(),
+                  false,
+                  1,
+                  timeout,
+                  Duration.ofSeconds(1)));
+    }
+  }
+
+  @Test
   void given_closedWriter_when_submittingCommand_then_reportsClosed() throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var writer =

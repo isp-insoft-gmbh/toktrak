@@ -98,6 +98,94 @@ final class ConfigTest {
   }
 
   @Test
+  void given_invalidPortValues_when_parsingConfig_then_rejectsPort() {
+    for (String port : new String[] {"-1", "65536", "not-a-port"}) {
+      var exception =
+          assertThrows(
+              IllegalArgumentException.class,
+              () ->
+                  Config.from(
+                      new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", port)));
+      assertEquals("TOKTRAK_PORT must be 0..65535", exception.getMessage());
+    }
+  }
+
+  @Test
+  void given_portBoundaries_when_parsingConfig_then_acceptsPorts() {
+    for (String port : new String[] {"0", "65535"}) {
+      assertDoesNotThrow(
+          () ->
+              Config.from(
+                  new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", port)));
+    }
+  }
+
+  @Test
+  void given_invalidBaseUrl_when_parsingConfig_then_rejectsUrl() {
+    var exception =
+        assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                Config.from(
+                    new String[] {},
+                    Map.of("TOKTRAK_DATA_DIR", "data", "TOKTRAK_BASE_URL", "http://[invalid")));
+    assertEquals("TOKTRAK_BASE_URL must be a valid URL", exception.getMessage());
+  }
+
+  @Test
+  void given_productionWithoutBaseUrl_when_parsingConfig_then_rejectsBaseUrl() {
+    for (Map<String, String> environment :
+        java.util.List.of(
+            Map.of("TOKTRAK_DATA_DIR", "data"),
+            Map.of("TOKTRAK_DATA_DIR", "data", "TOKTRAK_BASE_URL", " "))) {
+      var exception =
+          assertThrows(
+              IllegalArgumentException.class, () -> Config.from(new String[] {}, environment));
+      assertEquals("TOKTRAK_BASE_URL is required", exception.getMessage());
+    }
+  }
+
+  @Test
+  void given_localHttpProductionUrls_when_parsingConfig_then_acceptsBaseUrl() {
+    for (String baseUrl : new String[] {"http://localhost:8080", "http://127.0.0.1:8080"}) {
+      assertDoesNotThrow(
+          () ->
+              Config.from(
+                  new String[] {},
+                  Map.of("TOKTRAK_DATA_DIR", "data", "TOKTRAK_BASE_URL", baseUrl)));
+    }
+  }
+
+  @Test
+  void given_devOnlyArgumentsInProduction_when_parsingConfig_then_rejectsArguments() {
+    Map<String, String> environment =
+        Map.of("TOKTRAK_DATA_DIR", "data", "TOKTRAK_BASE_URL", "https://toktrak.example");
+    for (String[] arguments :
+        new String[][] {
+          {"--corpus", "events.ndjson"},
+          {"--fail-writes"},
+          {"--clock", "2026-07-10T00:00:00Z"}
+        }) {
+      assertThrows(IllegalArgumentException.class, () -> Config.from(arguments, environment));
+    }
+  }
+
+  @Test
+  void given_unknownOption_when_parsingConfig_then_rejectsArgument() {
+    var exception =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> Config.from(new String[] {"--unknown"}, Map.of("TOKTRAK_DEV_AUTH", "true")));
+    assertEquals("unknown argument: --unknown", exception.getMessage());
+  }
+
+  @Test
+  void given_helpOption_when_parsingConfig_then_acceptsArgument() {
+    assertDoesNotThrow(
+        () -> Config.from(new String[] {"--help"}, Map.of("TOKTRAK_DEV_AUTH", "true")));
+  }
+
+  @Test
   void given_explicitDataDirectoryAndPort_when_parsingConfig_then_usesValues() {
     var config =
         Config.from(

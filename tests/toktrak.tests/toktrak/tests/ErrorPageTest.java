@@ -60,6 +60,22 @@ final class ErrorPageTest {
   }
 
   @Test
+  void given_failureWithoutMessage_when_renderingDevelopmentPage_then_reportsMissingMessage() {
+    String html =
+        ErrorPage.render(
+            500,
+            "internal_error",
+            "internal server error",
+            "request",
+            "GET",
+            "/",
+            STYLESHEET_URL,
+            new IllegalStateException(),
+            true);
+    assertTrue(html.contains("java.lang.IllegalStateException: (no message)"));
+  }
+
+  @Test
   void given_errorStatusBoundaries_when_renderingPage_then_acceptsBoundaries() {
     assertDoesNotThrow(
         () ->

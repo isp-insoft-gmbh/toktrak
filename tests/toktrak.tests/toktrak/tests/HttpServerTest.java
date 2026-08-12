@@ -26,7 +26,7 @@ final class HttpServerTest {
       assertEquals(200, response.statusCode());
       assertEquals("nosniff", response.header("x-content-type-options"));
       assertEquals("DENY", response.header("x-frame-options"));
-      assertTrue(response.body().contains("\"status\":\"ok\""));
+      assertEquals("{\"status\":\"ok\"}", response.body());
     }
   }
 
@@ -64,9 +64,21 @@ final class HttpServerTest {
         App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
       var response = get(app, "/api/nope");
       assertEquals(404, response.statusCode());
-      assertTrue(response.body().contains("\"error\""));
-      assertTrue(response.body().contains("\"code\":\"not_found\""));
-      assertTrue(response.body().contains("\"requestId\""));
+      assertTrue(response.body().startsWith("{\"error\":{"), response.body());
+      assertTrue(response.body().contains("\"code\":\"not_found\""), response.body());
+      assertTrue(response.body().contains("\"message\":\"route not found\""), response.body());
+      assertTrue(response.body().matches(".*\"requestId\":\"[0-9a-f-]{36}\".*"), response.body());
+    }
+  }
+
+  @Test
+  void given_oversizedApiRoute_when_requestingRoute_then_returnsBoundedErrorEnvelope()
+      throws Exception {
+    try (var app =
+        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+      var response = get(app, "/api/" + "x".repeat(2_050));
+      assertEquals(414, response.statusCode());
+      assertTrue(response.body().contains("\"code\":\"uri_too_long\""));
     }
   }
 
