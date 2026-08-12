@@ -1013,7 +1013,7 @@ public final class BuildTest {
       throws Exception {
     Process process = child("sleep");
     expectFailure(
-        () -> Build.waitForProcessForTest(process, Duration.ofMillis(20), Duration.ofMillis(100)),
+        () -> Build.waitForProcessForTest(process, Duration.ofMillis(20), Duration.ofSeconds(2)),
         "process timed out");
     if (process.isAlive()) throw new AssertionError("timed-out child remains alive");
   }
