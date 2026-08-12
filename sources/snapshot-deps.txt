@@ -1,0 +1,1 @@
+pkg:maven/com.diffplug.selfie/selfie-runner-junit5@3.1.1

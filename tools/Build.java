@@ -21,6 +21,7 @@ import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -43,9 +44,12 @@ public final class Build {
   private static final Path TEST_MODULE = MODULES.resolve("toktrak.tests");
   private static final Path MAIN_DEPS = OUTPUT.resolve("deps/main");
   private static final Path TEST_DEPS = OUTPUT.resolve("deps/test");
+  private static final Path SNAPSHOT_DEPS = OUTPUT.resolve("deps/snapshot");
   private static final Path BUILD_DEPS = OUTPUT.resolve("deps/build");
   private static final Path REFASTER_DEPS = OUTPUT.resolve("deps/refaster");
   private static final Path PIT_DEPS = OUTPUT.resolve("deps/pit");
+  private static final Path COVERAGE_DEPS = OUTPUT.resolve("deps/coverage");
+  private static final Path COVERAGE = OUTPUT.resolve("coverage");
   private static final Path MUTATIONS = OUTPUT.resolve("mutations");
   private static final Path PIT_HISTORY = OUTPUT.resolve("pit.history");
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
@@ -90,7 +94,11 @@ public final class Build {
   private static final Duration PROCESS_KILL_TIMEOUT = Duration.ofSeconds(5);
   private static final int PIT_THREADS = 4;
   private static final int PIT_TIMEOUT_MILLIS = 10_000;
-  private static final String PIT_JVM_ARGS = "-ea,-Djunit.jupiter.execution.timeout.default=5s";
+  private static final long COVERAGE_INSTRUCTION_PERCENT_MIN = 75;
+  private static final long COVERAGE_BRANCH_PERCENT_MIN = 60;
+  private static final String PIT_JVM_ARGS =
+      "-ea,-Djunit.jupiter.execution.timeout.default=5s,"
+          + "-Djunit.platform.execution.listeners.deactivate=com.diffplug.selfie.*";
   private static final String PIT_MAIN =
       "org.pitest." + "mutation" + "test.commandline." + "Mutation" + "CoverageReport";
   private static final Set<String> BUILD_OWNED_PIT_OPTIONS =
@@ -99,6 +107,7 @@ public final class Build {
           "--includeLaunchClasspath",
           "--targetClasses",
           "--targetTests",
+          "--excludedTestClasses",
           "--mutableCodePaths",
           "--sourceDirs",
           "--reportDir",
@@ -181,7 +190,7 @@ public final class Build {
       if (args.length == 0) {
         throw new IllegalStateException(
             "command required: clean, fmt, check, test, pit, refactor, ci, verify, ide, dev, or"
-                + " prod");
+                + " prod, or coverage");
       }
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
@@ -202,6 +211,7 @@ public final class Build {
         case "ide" -> ideCommand(commandArguments);
         case "dev" -> dev(commandArguments);
         case "prod" -> jlinkProd();
+        case "coverage" -> coverage();
         default -> throw new IllegalStateException("unknown command: " + args[0]);
       }
     } finally {
@@ -213,9 +223,12 @@ public final class Build {
     deleteTree(MODULES);
     deleteTree(MAIN_DEPS);
     deleteTree(TEST_DEPS);
+    deleteTree(SNAPSHOT_DEPS);
     deleteTree(BUILD_DEPS);
     deleteTree(REFASTER_DEPS);
     deleteTree(PIT_DEPS);
+    deleteTree(COVERAGE_DEPS);
+    deleteTree(COVERAGE);
     deleteTree(MUTATIONS);
     Files.deleteIfExists(PIT_HISTORY);
     deleteTree(RUNTIMES);
@@ -230,6 +243,8 @@ public final class Build {
     ensureDependency(
         "sources/main-deps.txt", MAIN_DEPS, "resolve-toktrak-production-dependencies", true);
     ensureDependency("sources/test-deps.txt", TEST_DEPS, "resolve-toktrak-test-dependencies", true);
+    ensureDependency(
+        "sources/snapshot-deps.txt", SNAPSHOT_DEPS, "resolve-snapshot-dependencies", false);
     ensureBuildDependencies();
     ensureRefasterDependencies();
     verifyModules(MAIN_DEPS);
@@ -297,6 +312,11 @@ public final class Build {
     if (!selection.pitHelp()) validatePitReport(MUTATIONS, selection.dryRun());
   }
 
+  private static void ensureCoverageDependencies() throws Exception {
+    ensureDependency(
+        "sources/coverage-deps.txt", COVERAGE_DEPS, "resolve-coverage-dependencies", false);
+  }
+
   private static void ensurePitDependencies() throws Exception {
     Path stamp = PIT_DEPS.resolve(".fingerprint");
     if (Files.isRegularFile(stamp) && !pitArtifactsValid(PIT_DEPS)) Files.delete(stamp);
@@ -347,6 +367,7 @@ public final class Build {
     paths.add(TEST_MODULE);
     paths.addAll(jarPaths(List.of(MAIN_DEPS)));
     paths.addAll(jarPaths(List.of(TEST_DEPS)));
+    paths.addAll(jarPaths(List.of(SNAPSHOT_DEPS)));
     if (paths.size() > COLLECTION_ENTRIES_MAX) {
       throw new IllegalStateException(
           "PIT classpath exceeds " + COLLECTION_ENTRIES_MAX + " entries");
@@ -464,6 +485,8 @@ public final class Build {
                 String.join(",", selection.targetClasses()),
                 "--targetTests",
                 "toktrak.tests.*",
+                "--excludedTestClasses",
+                "toktrak.tests.SnapshotTest",
                 "--mutableCodePaths",
                 APP_MODULE.toString(),
                 "--sourceDirs",
@@ -1653,6 +1676,10 @@ public final class Build {
     addModuleSourcePaths(arguments);
     arguments.add("--module-path");
     arguments.add(modulePath(List.of(MAIN_DEPS, TEST_DEPS)));
+    arguments.add("--class-path");
+    arguments.add(modulePath(List.of(SNAPSHOT_DEPS)));
+    arguments.add("--add-reads");
+    arguments.add("toktrak.tests=ALL-UNNAMED");
     addExports(arguments);
     arguments.add("-d");
     arguments.add(MODULES.toString());
@@ -1667,7 +1694,7 @@ public final class Build {
                 ROOT.resolve("sources/toktrak"),
                 ROOT.resolve("tests/toktrak.tests"),
                 ERROR_PRONE_CONFIG),
-            List.of(MAIN_DEPS, TEST_DEPS, BUILD_DEPS),
+            List.of(MAIN_DEPS, TEST_DEPS, SNAPSHOT_DEPS, BUILD_DEPS),
             fingerprintArguments,
             assetBundle);
     Path stamp = MODULES.resolve(".compile-fingerprint");
@@ -1766,6 +1793,10 @@ public final class Build {
     addModuleSourcePaths(arguments);
     arguments.add("--module-path");
     arguments.add(modulePath(List.of(MAIN_DEPS, TEST_DEPS)));
+    arguments.add("--class-path");
+    arguments.add(modulePath(List.of(SNAPSHOT_DEPS)));
+    arguments.add("--add-reads");
+    arguments.add("toktrak.tests=ALL-UNNAMED");
     addExports(arguments);
     arguments.add("-d");
     arguments.add(REFASTER_APPLY_MODULES.toString());
@@ -1882,26 +1913,193 @@ public final class Build {
     runTests(testSelection(List.of()));
   }
 
+  private static void coverage() throws Exception {
+    compile();
+    ensureCoverageDependencies();
+    deleteTree(COVERAGE);
+    Files.createDirectories(COVERAGE);
+    TestSelection allTests = testSelection(List.of());
+    runTests(new TestSelection(false, allTests.classNames()), jacocoAgentArgument());
+    Path executionData = COVERAGE.resolve("jacoco.exec");
+    if (!Files.isRegularFile(executionData) || Files.size(executionData) == 0) {
+      throw new IllegalStateException("JaCoCo execution data is missing or empty");
+    }
+    runArgFile(
+        javaExecutable(),
+        "generate-jacoco-coverage-report",
+        List.of(
+            "-ea",
+            "-jar",
+            coverageJar("org.jacoco.cli-").toString(),
+            "report",
+            executionData.toString(),
+            "--classfiles",
+            APP_MODULE.toString(),
+            "--sourcefiles",
+            APP_SOURCES.toString(),
+            "--html",
+            COVERAGE.resolve("report").toString(),
+            "--xml",
+            COVERAGE.resolve("jacoco.xml").toString(),
+            "--csv",
+            COVERAGE.resolve("jacoco.csv").toString(),
+            "--name",
+            "TokTrak"));
+    enforceCoverage(COVERAGE.resolve("jacoco.csv"));
+  }
+
+  private static void enforceCoverage(Path csv) throws IOException {
+    List<String> lines = Files.readAllLines(csv, StandardCharsets.UTF_8);
+    if (lines.size() < 2 || lines.size() > TREE_ENTRIES_MAX) {
+      throw new IllegalStateException(
+          "JaCoCo CSV must contain 1.." + (TREE_ENTRIES_MAX - 1) + " classes");
+    }
+    Map<String, Integer> columns = csvColumns(lines.getFirst());
+    long instructionsMissed = 0;
+    long instructionsCovered = 0;
+    long branchesMissed = 0;
+    long branchesCovered = 0;
+    for (String line : lines.subList(1, lines.size())) {
+      String[] values = line.split(",", -1);
+      instructionsMissed =
+          Math.addExact(instructionsMissed, csvLong(values, columns, "INSTRUCTION_MISSED"));
+      instructionsCovered =
+          Math.addExact(instructionsCovered, csvLong(values, columns, "INSTRUCTION_COVERED"));
+      branchesMissed = Math.addExact(branchesMissed, csvLong(values, columns, "BRANCH_MISSED"));
+      branchesCovered = Math.addExact(branchesCovered, csvLong(values, columns, "BRANCH_COVERED"));
+    }
+    requireCoverage(
+        "instruction", instructionsCovered, instructionsMissed, COVERAGE_INSTRUCTION_PERCENT_MIN);
+    requireCoverage("branch", branchesCovered, branchesMissed, COVERAGE_BRANCH_PERCENT_MIN);
+    appendGitHubSummary(
+        "## JaCoCo coverage\n\n| Counter | Covered | Percentage |\n| --- | ---: | ---: |\n"
+            + coverageTableRow("Instructions", instructionsCovered, instructionsMissed)
+            + coverageTableRow("Branches", branchesCovered, branchesMissed)
+            + "\nDownload the `coverage-report` artifact and open `report/index.html`.\n");
+  }
+
+  private static Map<String, Integer> csvColumns(String header) {
+    String[] names = header.split(",", -1);
+    var columns = new java.util.HashMap<String, Integer>();
+    for (int index = 0; index < names.length; index++) columns.put(names[index], index);
+    return Map.copyOf(columns);
+  }
+
+  private static long csvLong(String[] values, Map<String, Integer> columns, String name) {
+    Integer index = columns.get(name);
+    if (index == null || index >= values.length) {
+      throw new IllegalStateException("JaCoCo CSV column missing: " + name);
+    }
+    try {
+      return Long.parseLong(values[index]);
+    } catch (NumberFormatException exception) {
+      throw new IllegalStateException("JaCoCo CSV value is not an integer: " + name, exception);
+    }
+  }
+
+  static void requireCoverageForTest(String name, long covered, long missed, long percentMin) {
+    requireCoverage(name, covered, missed, percentMin);
+  }
+
+  private static String coverageTableRow(String name, long covered, long missed) {
+    long total = Math.addExact(covered, missed);
+    long permille = Math.floorDiv(Math.multiplyExact(covered, 1_000), total);
+    return "| "
+        + name
+        + " | "
+        + covered
+        + "/"
+        + total
+        + " | "
+        + (permille / 10)
+        + "."
+        + (permille % 10)
+        + "% |\n";
+  }
+
+  private static void appendGitHubSummary(String markdown) throws IOException {
+    assert markdown != null && !markdown.isBlank();
+    String configured = System.getenv("GITHUB_STEP_SUMMARY");
+    if (configured == null) return;
+    Path summary = Path.of(configured).toAbsolutePath().normalize();
+    if (Files.isSymbolicLink(summary) || !Files.isRegularFile(summary)) {
+      throw new IllegalStateException("GITHUB_STEP_SUMMARY is not a regular file: " + summary);
+    }
+    if (Files.size(summary) > 1024 * 1024) {
+      throw new IllegalStateException("GITHUB_STEP_SUMMARY exceeds 1048576 bytes: " + summary);
+    }
+    Files.writeString(summary, markdown, StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+  }
+
+  private static void requireCoverage(String name, long covered, long missed, long percentMin) {
+    assert name != null && !name.isBlank();
+    if (covered < 0 || missed < 0 || percentMin < 0 || percentMin > 100) {
+      throw new IllegalArgumentException("invalid coverage count or minimum");
+    }
+    long total = Math.addExact(covered, missed);
+    if (total == 0 || Math.multiplyExact(covered, 100) < Math.multiplyExact(total, percentMin)) {
+      throw new IllegalStateException(
+          name + " coverage is below " + percentMin + "%: " + covered + "/" + total);
+    }
+    System.out.println(
+        name + " coverage: " + covered + "/" + total + " (minimum " + percentMin + "%)");
+  }
+
+  private static String jacocoAgentArgument() throws IOException {
+    return "-javaagent:"
+        + coverageJar("org.jacoco.agent-")
+        + "=destfile="
+        + COVERAGE.resolve("jacoco.exec")
+        + ",append=true,includes=toktrak.*";
+  }
+
+  private static Path coverageJar(String prefix) throws IOException {
+    List<Path> matches =
+        jarPaths(List.of(COVERAGE_DEPS)).stream()
+            .filter(path -> path.getFileName().toString().startsWith(prefix))
+            .filter(
+                path ->
+                    path.getFileName().toString().contains("nodeps") || prefix.contains("agent"))
+            .toList();
+    if (matches.size() != 1) {
+      throw new IllegalStateException("expected one coverage JAR with prefix " + prefix);
+    }
+    return matches.getFirst();
+  }
+
   private static void runTests(TestSelection selection) throws Exception {
+    runTests(selection, null);
+  }
+
+  private static void runTests(TestSelection selection, String javaAgent) throws Exception {
     assert selection != null;
     if (selection.buildTool()) testBuildTool();
     if (selection.classNames().isEmpty()) return;
     Path runtime = ensureTestRuntime();
     List<String> arguments = new ArrayList<>();
     arguments.add("-ea");
+    if (javaAgent != null) arguments.add(javaAgent);
     arguments.add("--module-path");
     arguments.add(MODULES.toString());
     arguments.add("--add-modules");
     arguments.add("toktrak.tests,toktrak," + String.join(",", moduleNames(TEST_DEPS)));
+    arguments.add("--class-path");
+    arguments.add(modulePath(List.of(SNAPSHOT_DEPS)));
+    arguments.add("--add-reads");
+    arguments.add("toktrak.tests=ALL-UNNAMED");
     addExports(arguments);
     arguments.add("-m");
     arguments.add("toktrak.tests/toktrak.tests.TestLauncher");
-    runTestGroup(runtime, arguments, selection.classNames(), "--unit");
-    runTestGroup(runtime, arguments, selection.classNames(), "--tagged");
+    runTestGroup(runtime, arguments, selection.classNames(), "--unit", javaAgent != null);
+    runTestGroup(runtime, arguments, selection.classNames(), "--tagged", javaAgent != null);
   }
 
   private static void runTestGroup(
-      Path runtime, List<String> baseArguments, List<String> classNames, String group)
+      Path runtime,
+      List<String> baseArguments,
+      List<String> classNames,
+      String group,
+      boolean coverage)
       throws Exception {
     Duration timeout = testTimeout(group);
     var arguments = new ArrayList<>(baseArguments);
@@ -1909,7 +2107,7 @@ public final class Build {
     arguments.addAll(classNames);
     runArgFile(
         runtimeJava(runtime),
-        "run-toktrak-" + group.substring(2) + "-test-suite",
+        "run-toktrak-" + group.substring(2) + "-test-suite" + (coverage ? "-with-coverage" : ""),
         arguments,
         timeout,
         group.equals("--unit"));
@@ -2007,6 +2205,7 @@ public final class Build {
     var roots = new ArrayList<String>();
     roots.addAll(APP_JDK_MODULES);
     roots.addAll(TEST_JDK_MODULES);
+    roots.add("java.instrument");
     return ensureRuntime(
         "test",
         List.of(MAIN_DEPS, TEST_DEPS),

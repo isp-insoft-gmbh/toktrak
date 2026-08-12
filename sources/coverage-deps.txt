@@ -1,0 +1,2 @@
+pkg:maven/org.jacoco/org.jacoco.agent@0.8.15?classifier=runtime
+pkg:maven/org.jacoco/org.jacoco.cli@0.8.15?classifier=nodeps

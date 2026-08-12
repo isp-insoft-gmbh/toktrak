@@ -50,6 +50,7 @@ public final class BuildTest {
     given_pitArguments_when_selectingTargets_then_parsesOptions();
     given_invalidPitArguments_when_selectingTargets_then_rejectsInput();
     given_pitSelection_when_buildingArguments_then_preservesRequiredOptions();
+    given_coverageCounts_when_checkingMinimum_then_acceptsBoundaryAndRejectsBelow();
     given_pitReports_when_validatingReport_then_acceptsOnlyValidMutations();
     given_pitArtifactSets_when_validatingDependencies_then_acceptsCompleteSetAndRejectsMissingHistoryOrInvalidJunitPlugin();
     given_existingArgumentFile_when_requestingPitHelp_then_preservesFile();
@@ -406,6 +407,14 @@ public final class BuildTest {
         "path is outside production sources");
   }
 
+  private static void
+      given_coverageCounts_when_checkingMinimum_then_acceptsBoundaryAndRejectsBelow() {
+    Build.requireCoverageForTest("instruction", 75, 25, 75);
+    expectFailure(
+        () -> Build.requireCoverageForTest("branch", 59, 41, 60),
+        "branch coverage is below 60%: 59/100");
+  }
+
   private static void given_pitSelection_when_buildingArguments_then_preservesRequiredOptions()
       throws Exception {
     List<String> arguments =
@@ -417,11 +426,13 @@ public final class BuildTest {
         List.of(
             "--outputFormats",
             "HTML,XML",
+            "--excludedTestClasses",
+            "toktrak.tests.SnapshotTest",
             "--threads",
             "4",
             "--timeoutConst",
             "10000",
-            "-ea,-Djunit.jupiter.execution.timeout.default=5s",
+            "-ea,-Djunit.jupiter.execution.timeout.default=5s,-Djunit.platform.execution.listeners.deactivate=com.diffplug.selfie.*",
             "--verbosity",
             "NO_SPINNER",
             "--fullMutationMatrix")) {

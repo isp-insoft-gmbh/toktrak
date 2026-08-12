@@ -7,6 +7,7 @@ module toktrak.tests {
   requires org.junit.platform.launcher;
   requires toktrak;
 
+  opens selfie;
   opens toktrak.tests to
       org.junit.platform.commons,
       org.junit.jupiter.engine;

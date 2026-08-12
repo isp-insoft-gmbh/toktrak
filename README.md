@@ -80,11 +80,23 @@ Quick formatting, compile, and lint check: `mise run check`
 
 Run tests: `mise run test [test paths...]`
 
+Generate JaCoCo coverage reports: `mise run coverage`; open
+`output/coverage/report/index.html`.
+
+Create or update a Selfie snapshot with `_TODO`, run its narrow test, then
+inspect and commit both the Java rewrite and generated `.ss` file. CI runs
+Selfie read-only.
+
 Apply Refaster rules and format changed Java: `mise run refactor`
 
 Full read-only check and test suite: `mise run verify`
 
 CI refactor/clean-tree gate followed by verification: `mise run ci`
+
+Mutation reports: `mise run pit`; open `output/mutations/index.html`
+
+Hosted CI attaches downloadable JaCoCo and PIT HTML reports to their workflow
+runs.
 
 Start the seeded, auto-reloading dev server: `mise run dev`
 
