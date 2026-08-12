@@ -71,5 +71,5 @@ env = { TOKTRAK_DEV_AUTH = "true" }
 run = "java -ea tools/Build.java dev -- --corpus tests/corpus/dev.jsonl"
 
 [tasks.prod]
-description = "Build and smoke-test the self-contained production runtime"
+description = "Build and verify the self-contained production runtime"
 run = "java -ea tools/Build.java prod"

@@ -1,4 +1,4 @@
-name: Production smoke test
+name: Production runtime verification
 
 on:
   push:

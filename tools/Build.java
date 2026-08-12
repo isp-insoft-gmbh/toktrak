@@ -1981,7 +1981,7 @@ public final class Build {
     Path runtime = ensureRuntime("prod", List.of(MAIN_DEPS), List.of("toktrak"), true);
     runArgFile(
         runtimeJava(runtime),
-        "smoke-test-toktrak-production-runtime",
+        "verify-toktrak-production-runtime",
         List.of("-ea", "-m", "toktrak/toktrak.Main", "--check-assets"));
   }
 
