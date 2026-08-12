@@ -189,7 +189,7 @@ public final class Writer implements AutoCloseable {
     synchronized (pauseMonitor) {
       pauseRequested = true;
       pauseMonitor.notifyAll();
-      long deadline = deadlineAfter(Duration.ofSeconds(5));
+      long deadline = deadlineAfter(Duration.ofSeconds(2));
       while (!paused) {
         long remainingNanos = deadline - System.nanoTime();
         if (remainingNanos <= 0) throw new IllegalStateException("writer did not pause");
@@ -202,7 +202,6 @@ public final class Writer implements AutoCloseable {
   private void run() {
     try {
       while (true) {
-        awaitResume();
         Request request = claimNext();
         if (request == null) return;
         afterClaim.run();
@@ -218,6 +217,7 @@ public final class Writer implements AutoCloseable {
 
   private Request claimNext() throws InterruptedException {
     while (true) {
+      awaitResume();
       synchronized (stateMonitor) {
         if (queue.isEmpty()) {
           if (closed.get()) return null;
