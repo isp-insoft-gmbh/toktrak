@@ -4,7 +4,7 @@ type: plan
 title: Implement identity and tracker tokens
 spec: TT-SPEC-IXJLYK_K
 phase: TT-PHASE-GLEXXHIV
-status: draft
+status: done
 ---
 
 1. Extend `Config` and `App` with bounded production OIDC, company-domain,
