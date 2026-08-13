@@ -76,12 +76,7 @@ final class ConfigTest {
 
   @Test
   void given_nonLocalHttpsProductionUrl_when_parsingConfig_then_acceptsBaseUrl() {
-    var config =
-        Config.from(
-            new String[] {},
-            Map.of(
-                "TOKTRAK_DATA_DIR", "data",
-                "TOKTRAK_BASE_URL", "https://toktrak.example"));
+    var config = Config.from(new String[] {}, productionEnvironment("https://toktrak.example"));
     assertEquals("https://toktrak.example", config.baseUrl());
   }
 
@@ -148,18 +143,13 @@ final class ConfigTest {
   @Test
   void given_localHttpProductionUrls_when_parsingConfig_then_acceptsBaseUrl() {
     for (String baseUrl : new String[] {"http://localhost:8080", "http://127.0.0.1:8080"}) {
-      assertDoesNotThrow(
-          () ->
-              Config.from(
-                  new String[] {},
-                  Map.of("TOKTRAK_DATA_DIR", "data", "TOKTRAK_BASE_URL", baseUrl)));
+      assertDoesNotThrow(() -> Config.from(new String[] {}, productionEnvironment(baseUrl)));
     }
   }
 
   @Test
   void given_devOnlyArgumentsInProduction_when_parsingConfig_then_rejectsArguments() {
-    Map<String, String> environment =
-        Map.of("TOKTRAK_DATA_DIR", "data", "TOKTRAK_BASE_URL", "https://toktrak.example");
+    Map<String, String> environment = productionEnvironment("https://toktrak.example");
     for (String[] arguments :
         new String[][] {
           {"--corpus", "events.ndjson"},
@@ -186,6 +176,51 @@ final class ConfigTest {
   }
 
   @Test
+  void given_productionWithoutAuthSetting_when_parsingConfig_then_rejectsSetting() {
+    var environment = new java.util.HashMap<>(productionEnvironment("https://toktrak.example"));
+    environment.remove("TOKTRAK_TOKEN_PEPPER");
+    var exception =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> Config.from(new String[] {}, Map.copyOf(environment)));
+    assertEquals("TOKTRAK_TOKEN_PEPPER is required", exception.getMessage());
+  }
+
+  @Test
+  void given_invalidProductionAuthSettings_when_parsingConfig_then_rejectsSettings() {
+    for (Map.Entry<String, String> invalid :
+        Map.of(
+                "TOKTRAK_ALLOWED_DOMAIN", "invalid",
+                "TOKTRAK_SESSION_SECRET", "short",
+                "TOKTRAK_TOKEN_PEPPER", "short",
+                "TOKTRAK_OIDC_DISCOVERY_URL", "ftp://accounts.example/config")
+            .entrySet()) {
+      var environment = new java.util.HashMap<>(productionEnvironment("https://toktrak.example"));
+      environment.put(invalid.getKey(), invalid.getValue());
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> Config.from(new String[] {}, Map.copyOf(environment)),
+          invalid.getKey());
+    }
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> Config.from(new String[] {}, productionEnvironment("ftp://toktrak.example")));
+  }
+
+  @Test
+  void given_devAuthWithProductionAuthSetting_when_parsingConfig_then_rejectsSetting() {
+    var exception =
+        assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                Config.from(
+                    new String[] {},
+                    Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_OIDC_CLIENT_ID", "client")));
+    assertEquals(
+        "TOKTRAK_OIDC_CLIENT_ID is forbidden with TOKTRAK_DEV_AUTH=true", exception.getMessage());
+  }
+
+  @Test
   void given_explicitDataDirectoryAndPort_when_parsingConfig_then_usesValues() {
     var config =
         Config.from(
@@ -199,5 +234,18 @@ final class ConfigTest {
                 "9090"));
     assertEquals(9090, config.port());
     assertEquals(Path.of("output", "dev-data"), config.dataDirectory());
+  }
+
+  private static Map<String, String> productionEnvironment(String baseUrl) {
+    String secret = java.util.Base64.getEncoder().encodeToString(new byte[32]);
+    return Map.of(
+        "TOKTRAK_DATA_DIR", "data",
+        "TOKTRAK_BASE_URL", baseUrl,
+        "TOKTRAK_OIDC_DISCOVERY_URL", "https://accounts.example/.well-known/openid-configuration",
+        "TOKTRAK_OIDC_CLIENT_ID", "client",
+        "TOKTRAK_OIDC_CLIENT_SECRET", "secret",
+        "TOKTRAK_ALLOWED_DOMAIN", "example.com",
+        "TOKTRAK_SESSION_SECRET", secret,
+        "TOKTRAK_TOKEN_PEPPER", secret);
   }
 }

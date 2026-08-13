@@ -1,6 +1,7 @@
 package toktrak.tests;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static toktrak.store.EventTypes.*;
 
 import java.time.Instant;
 import java.util.Map;
@@ -62,7 +63,15 @@ final class ProjectionTest {
             "dev-test", Instant.parse("2026-07-10T00:00:00Z"), "system", Map.of()));
 
     assertEquals(
-        Map.of("projectionVersion", Projection.VERSION, "eventCount", 1),
+        Map.of(
+            "projectionVersion",
+            Projection.VERSION,
+            "eventCount",
+            1,
+            "users",
+            java.util.List.of(),
+            "trackerTokens",
+            java.util.List.of()),
         projection.snapshotData());
   }
 
@@ -92,9 +101,125 @@ final class ProjectionTest {
   }
 
   @Test
-  void given_invalidTransitionCounts_when_creatingTransition_then_rejectsCounts() {
-    assertThrows(IllegalArgumentException.class, () -> new Projection.Transition(-1, 0));
-    assertThrows(IllegalArgumentException.class, () -> new Projection.Transition(0, -1));
+  void given_invalidIdentityEvents_when_applyingProjection_then_rejectsBrokenInvariants() {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    var projection = Projection.empty();
+    Map<String, Object> key = Map.of("issuer", "https://issuer.example", "subject", "subject-1");
+    assertThrows(
+        IllegalStateException.class,
+        () -> projection.apply(EventEnvelope.create(IDENTITY_USER_DEACTIVATED, at, "actor", key)));
+    assertThrows(
+        IllegalStateException.class,
+        () ->
+            projection.apply(
+                EventEnvelope.create(
+                    IDENTITY_TRACKER_TOKEN_CREATED,
+                    at,
+                    "actor",
+                    Map.of(
+                        "issuer", "https://issuer.example",
+                        "subject", "subject-1",
+                        "tokenId", "00000000-0000-4000-8000-000000000001",
+                        "label", "Laptop",
+                        "digest",
+                            java.util.Base64.getUrlEncoder()
+                                .withoutPadding()
+                                .encodeToString(new byte[32])))));
+    assertThrows(
+        IllegalStateException.class,
+        () ->
+            projection.apply(
+                EventEnvelope.create(
+                    PROJECTION_SNAPSHOT,
+                    at,
+                    "system",
+                    Map.of(
+                        "projectionVersion",
+                        Projection.VERSION,
+                        "eventCount",
+                        1,
+                        "users",
+                        "invalid",
+                        "trackerTokens",
+                        java.util.List.of()))));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Projection.UserKey("https://issuer.example", "é".repeat(129)));
+    assertThrows(IllegalArgumentException.class, () -> new Projection.UserKey(null, "subject"));
+    assertThrows(IllegalArgumentException.class, () -> new Projection.UserKey(" ", "subject"));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Projection.UserKey("https://issuer.example", null));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Projection.UserKey("https://issuer.example", " "));
+  }
+
+  @Test
+  void given_corruptIdentitySnapshots_when_applyingProjection_then_rejectsInvalidFields() {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    Map<String, Object> user =
+        Map.of(
+            "issuer", "https://issuer.example",
+            "subject", "subject-1",
+            "email", "user@example.com",
+            "displayName", "Example User",
+            "color", "#a8dadc",
+            "active", true,
+            "authenticatedAt", at.toString());
+    var invalidActive = new java.util.HashMap<>(user);
+    invalidActive.put("active", "yes");
+    var invalidColor = new java.util.HashMap<>(user);
+    invalidColor.put("color", "blue");
+    var invalidInstant = new java.util.HashMap<>(user);
+    invalidInstant.put("authenticatedAt", "today");
+    for (Object users :
+        java.util.List.of(
+            java.util.List.of("invalid"),
+            java.util.List.of(Map.copyOf(invalidActive)),
+            java.util.List.of(Map.copyOf(invalidColor)),
+            java.util.List.of(Map.copyOf(invalidInstant)),
+            java.util.List.of(new java.util.HashMap<>(user), new java.util.HashMap<>(user)))) {
+      var event =
+          EventEnvelope.create(
+              PROJECTION_SNAPSHOT,
+              at,
+              "system",
+              Map.of(
+                  "projectionVersion",
+                  Projection.VERSION,
+                  "eventCount",
+                  1,
+                  "users",
+                  users,
+                  "trackerTokens",
+                  java.util.List.of()));
+      assertThrows(IllegalStateException.class, () -> Projection.empty().apply(event));
+    }
+    Map<String, Object> orphanToken =
+        Map.of(
+            "tokenId", "00000000-0000-4000-8000-000000000001",
+            "issuer", "https://issuer.example",
+            "subject", "missing",
+            "label", "Laptop",
+            "digest",
+                java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[32]),
+            "createdAt", at.toString());
+    var orphan =
+        EventEnvelope.create(
+            PROJECTION_SNAPSHOT,
+            at,
+            "system",
+            Map.of(
+                "projectionVersion",
+                Projection.VERSION,
+                "eventCount",
+                1,
+                "users",
+                java.util.List.of(user),
+                "trackerTokens",
+                java.util.List.of(orphanToken)));
+    assertThrows(IllegalStateException.class, () -> Projection.empty().apply(orphan));
   }
 
   @Test

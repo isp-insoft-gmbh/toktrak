@@ -3,6 +3,8 @@ package toktrak;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -13,15 +15,30 @@ public record Config(
     boolean devAuth,
     Path corpus,
     boolean failWrites,
-    ClockSource clock) {
+    ClockSource clock,
+    String oidcDiscoveryUrl,
+    String oidcClientId,
+    String oidcClientSecret,
+    String allowedDomain,
+    String sessionSecret,
+    String tokenPepper) {
   private static final int ARGUMENTS_MAX = 64;
   private static final int VALUE_CHARACTERS_MAX = 8 * 1024;
+  private static final List<String> AUTH_NAMES =
+      List.of(
+          "TOKTRAK_OIDC_DISCOVERY_URL",
+          "TOKTRAK_OIDC_CLIENT_ID",
+          "TOKTRAK_OIDC_CLIENT_SECRET",
+          "TOKTRAK_ALLOWED_DOMAIN",
+          "TOKTRAK_SESSION_SECRET",
+          "TOKTRAK_TOKEN_PEPPER");
 
   public Config {
     if (port < 0 || port > 65_535) throw new IllegalArgumentException("port must be 0..65535");
     Objects.requireNonNull(dataDirectory, "dataDirectory");
     Objects.requireNonNull(clock, "clock");
     assert baseUrl == null || baseUrl.length() <= VALUE_CHARACTERS_MAX;
+    assert devAuth == (oidcDiscoveryUrl == null);
   }
 
   public static Config from(String[] args, Map<String, String> environment) {
@@ -47,6 +64,35 @@ public record Config(
     }
     if (!dev && baseUrl != null && isNonLocalHttp(baseUrl)) {
       throw new IllegalArgumentException("non-local HTTP requires TOKTRAK_DEV_AUTH=true");
+    }
+    if (!dev) requireSecureOrLocalUri(baseUrl, "TOKTRAK_BASE_URL");
+
+    String oidcDiscoveryUrl = null;
+    String oidcClientId = null;
+    String oidcClientSecret = null;
+    String allowedDomain = null;
+    String sessionSecret = null;
+    String tokenPepper = null;
+    if (dev) {
+      for (String name : AUTH_NAMES) {
+        if (environmentValue(environment, name) != null) {
+          throw new IllegalArgumentException(name + " is forbidden with TOKTRAK_DEV_AUTH=true");
+        }
+      }
+    } else {
+      oidcDiscoveryUrl = requiredEnvironment(environment, "TOKTRAK_OIDC_DISCOVERY_URL");
+      requireSecureOrLocalUri(oidcDiscoveryUrl, "TOKTRAK_OIDC_DISCOVERY_URL");
+      oidcClientId = requiredEnvironment(environment, "TOKTRAK_OIDC_CLIENT_ID");
+      oidcClientSecret = requiredEnvironment(environment, "TOKTRAK_OIDC_CLIENT_SECRET");
+      allowedDomain = requiredEnvironment(environment, "TOKTRAK_ALLOWED_DOMAIN");
+      if (!allowedDomain.matches(
+          "(?i)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+")) {
+        throw new IllegalArgumentException("TOKTRAK_ALLOWED_DOMAIN is invalid");
+      }
+      sessionSecret = requiredEnvironment(environment, "TOKTRAK_SESSION_SECRET");
+      tokenPepper = requiredEnvironment(environment, "TOKTRAK_TOKEN_PEPPER");
+      requireSecret(sessionSecret, "TOKTRAK_SESSION_SECRET");
+      requireSecret(tokenPepper, "TOKTRAK_TOKEN_PEPPER");
     }
 
     String portValue = environmentValue(environment, "TOKTRAK_PORT");
@@ -79,9 +125,36 @@ public record Config(
       throw new IllegalArgumentException("--fail-writes requires TOKTRAK_DEV_AUTH=true");
     if (!dev && customClock)
       throw new IllegalArgumentException("--clock requires TOKTRAK_DEV_AUTH=true");
-    var config = new Config(port, Path.of(data), baseUrl, dev, corpus, failWrites, clock);
-    assert config.port == port;
-    return config;
+    return new Config(
+        port,
+        Path.of(data),
+        baseUrl,
+        dev,
+        corpus,
+        failWrites,
+        clock,
+        oidcDiscoveryUrl,
+        oidcClientId,
+        oidcClientSecret,
+        allowedDomain,
+        sessionSecret,
+        tokenPepper);
+  }
+
+  public byte[] sessionSecretBytes() {
+    if (devAuth) throw new IllegalStateException("development has no configured session secret");
+    return Base64.getDecoder().decode(sessionSecret);
+  }
+
+  public byte[] tokenPepperBytes() {
+    if (devAuth) throw new IllegalStateException("development has no configured token pepper");
+    return Base64.getDecoder().decode(tokenPepper);
+  }
+
+  private static String requiredEnvironment(Map<String, String> environment, String name) {
+    String value = environmentValue(environment, name);
+    if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " is required");
+    return value;
   }
 
   private static String environmentValue(Map<String, String> environment, String name) {
@@ -120,17 +193,41 @@ public record Config(
 
   private static boolean isNonLocalHttp(String value) {
     assert value != null && value.length() <= VALUE_CHARACTERS_MAX;
-    URI uri;
-    try {
-      uri = URI.create(value);
-    } catch (IllegalArgumentException exception) {
-      throw new IllegalArgumentException("TOKTRAK_BASE_URL must be a valid URL", exception);
-    }
+    URI uri = uri(value, "TOKTRAK_BASE_URL");
     String host = uri.getHost();
     return "http".equalsIgnoreCase(uri.getScheme())
         && host != null
         && !host.equalsIgnoreCase("localhost")
         && !host.equals("127.0.0.1")
         && !host.equals("::1");
+  }
+
+  private static void requireSecureOrLocalUri(String value, String name) {
+    URI uri = uri(value, name);
+    String host = uri.getHost();
+    boolean local =
+        "http".equalsIgnoreCase(uri.getScheme())
+            && ("localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host));
+    if (!("https".equalsIgnoreCase(uri.getScheme()) || local)
+        || host == null
+        || uri.getFragment() != null) {
+      throw new IllegalArgumentException(name + " is invalid");
+    }
+  }
+
+  private static URI uri(String value, String name) {
+    try {
+      return URI.create(value);
+    } catch (IllegalArgumentException exception) {
+      throw new IllegalArgumentException(name + " must be a valid URL", exception);
+    }
+  }
+
+  private static void requireSecret(String value, String name) {
+    try {
+      if (Base64.getDecoder().decode(value).length < 32) throw new IllegalArgumentException();
+    } catch (IllegalArgumentException exception) {
+      throw new IllegalArgumentException(name + " must be Base64 with at least 32 bytes");
+    }
   }
 }

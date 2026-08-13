@@ -126,12 +126,18 @@ golden file and Selfie's rewritten Java; never commit update markers.
 
 ### Which environment variables does the current server read?
 
-| Variable           | Purpose                                                         |
-| ------------------ | --------------------------------------------------------------- |
-| `TOKTRAK_BASE_URL` | Public server URL; required outside development.                |
-| `TOKTRAK_DATA_DIR` | Persistent event-log directory; required outside development.   |
-| `TOKTRAK_DEV_AUTH` | Enables local development behavior; never use in production.    |
-| `TOKTRAK_PORT`     | HTTP listen port; defaults to `8080`, while `0` picks any port. |
+| Variable                     | Purpose                                                         |
+| ---------------------------- | --------------------------------------------------------------- |
+| `TOKTRAK_BASE_URL`           | Public server URL; required outside development.                |
+| `TOKTRAK_DATA_DIR`           | Persistent event-log directory; required outside development.   |
+| `TOKTRAK_DEV_AUTH`           | Enables local development behavior; never use in production.    |
+| `TOKTRAK_PORT`               | HTTP listen port; defaults to `8080`, while `0` picks any port. |
+| `TOKTRAK_OIDC_DISCOVERY_URL` | Production OIDC discovery endpoint.                             |
+| `TOKTRAK_OIDC_CLIENT_ID`     | Production OIDC client ID.                                      |
+| `TOKTRAK_OIDC_CLIENT_SECRET` | Production OIDC client secret.                                  |
+| `TOKTRAK_ALLOWED_DOMAIN`     | Exact verified company email/hosted domain.                     |
+| `TOKTRAK_SESSION_SECRET`     | Base64 cookie-signing secret, at least 32 bytes.                |
+| `TOKTRAK_TOKEN_PEPPER`       | Stable Base64 tracker-token HMAC pepper, at least 32 bytes.     |
 
 `mise run dev` sets development auth and uses the bundled anonymized corpus.
 Production secrets belong in environment configuration, never source control.

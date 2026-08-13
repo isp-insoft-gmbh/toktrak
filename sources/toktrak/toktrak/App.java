@@ -3,7 +3,9 @@ package toktrak;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -15,10 +17,13 @@ import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import toktrak.auth.AuthService;
+import toktrak.auth.OidcClient;
 import toktrak.dev.DevData;
 import toktrak.health.HealthState;
 import toktrak.http.Assets;
 import toktrak.http.Router;
+import toktrak.identity.IdentityService;
 import toktrak.log.JsonLogFormatter;
 import toktrak.projection.Projection;
 import toktrak.store.DataLock;
@@ -97,7 +102,8 @@ public final class App implements AutoCloseable {
           HttpServer.create(
               new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), config.port()),
               HTTP_BACKLOG);
-      server.createContext("/", new Router(health, config.devAuth(), executor, assets));
+      AuthService auth = auth(config, projection, writer, server.getAddress().getPort());
+      server.createContext("/", new Router(health, config.devAuth(), executor, assets, auth));
       server.setExecutor(Runnable::run);
       server.start();
       if (config.failWrites()) health.degrade("writes_failed");
@@ -117,6 +123,42 @@ public final class App implements AutoCloseable {
       if (exception instanceof RuntimeException runtimeException) throw runtimeException;
       throw new IllegalStateException("cannot start TokTrak", exception);
     }
+  }
+
+  private static AuthService auth(
+      Config config, Projection projection, Writer writer, int boundPort) {
+    assert config != null;
+    assert projection != null;
+    assert writer != null;
+    assert boundPort >= 0 && boundPort <= 65_535;
+    URI baseUri =
+        URI.create(
+            config.devAuth()
+                ? "http://127.0.0.1:" + boundPort
+                : Objects.requireNonNull(config.baseUrl()));
+    if (config.devAuth()) {
+      byte[] sessionSecret = randomSecret();
+      byte[] tokenPepper = new byte[32];
+      var identities = new IdentityService(writer, projection, tokenPepper);
+      return AuthService.development(
+          baseUri, config.clock(), projection, identities, sessionSecret);
+    }
+    var identities = new IdentityService(writer, projection, config.tokenPepperBytes());
+    var oidc =
+        new OidcClient(
+            URI.create(config.oidcDiscoveryUrl()),
+            config.oidcClientId(),
+            config.oidcClientSecret(),
+            config.allowedDomain(),
+            config.clock());
+    return AuthService.production(
+        baseUri, config.clock(), projection, identities, config.sessionSecretBytes(), oidc);
+  }
+
+  private static byte[] randomSecret() {
+    byte[] bytes = new byte[32];
+    new SecureRandom().nextBytes(bytes);
+    return bytes;
   }
 
   private static void configureLogging() {

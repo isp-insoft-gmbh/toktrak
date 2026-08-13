@@ -115,16 +115,7 @@ final class HttpServerTest {
   @Test
   void given_productionFailurePath_when_requestingRoute_then_returnsUsefulNotFoundHtml()
       throws Exception {
-    try (var app =
-        App.start(
-            new String[] {},
-            Map.of(
-                "TOKTRAK_DATA_DIR",
-                directory.toString(),
-                "TOKTRAK_BASE_URL",
-                "https://toktrak.test",
-                "TOKTRAK_PORT",
-                "0"))) {
+    try (var app = App.start(new String[] {}, productionEnvironment(directory))) {
       var response = get(app, "/debug/error");
       assertEquals(404, response.statusCode());
       assertTrue(response.body().contains("Route not found."));
@@ -133,6 +124,20 @@ final class HttpServerTest {
       assertFalse(response.body().contains("DEBUG"));
       assertFalse(response.body().contains("IllegalStateException"));
     }
+  }
+
+  private static Map<String, String> productionEnvironment(Path directory) {
+    String secret = java.util.Base64.getEncoder().encodeToString(new byte[32]);
+    return Map.of(
+        "TOKTRAK_DATA_DIR", directory.toString(),
+        "TOKTRAK_BASE_URL", "https://toktrak.test",
+        "TOKTRAK_PORT", "0",
+        "TOKTRAK_OIDC_DISCOVERY_URL", "https://accounts.example/.well-known/openid-configuration",
+        "TOKTRAK_OIDC_CLIENT_ID", "client",
+        "TOKTRAK_OIDC_CLIENT_SECRET", "secret",
+        "TOKTRAK_ALLOWED_DOMAIN", "example.com",
+        "TOKTRAK_SESSION_SECRET", secret,
+        "TOKTRAK_TOKEN_PEPPER", secret);
   }
 
   private static Response get(App app, String path) throws Exception {

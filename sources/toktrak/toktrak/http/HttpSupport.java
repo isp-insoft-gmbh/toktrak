@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
 public final class HttpSupport {
@@ -50,6 +51,14 @@ public final class HttpSupport {
     send(exchange, status, "text/html; charset=utf-8", body.getBytes(StandardCharsets.UTF_8));
   }
 
+  public static void redirect(HttpExchange exchange, int status, URI location) throws IOException {
+    assert exchange != null;
+    assert status == 302 || status == 303;
+    assert location != null;
+    exchange.getResponseHeaders().set("Location", location.toString());
+    send(exchange, status, "text/plain; charset=utf-8", new byte[0]);
+  }
+
   public static void asset(HttpExchange exchange, String contentType, byte[] body)
       throws IOException {
     assert exchange != null;
@@ -73,6 +82,7 @@ public final class HttpSupport {
     var headers = exchange.getResponseHeaders();
     assert headers != null;
     headers.set("Content-Type", contentType);
+    if (!headers.containsKey("Cache-Control")) headers.set("Cache-Control", "no-store");
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("X-Frame-Options", "DENY");
     headers.set("Referrer-Policy", "no-referrer");

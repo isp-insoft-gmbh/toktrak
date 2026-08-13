@@ -9,18 +9,27 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import toktrak.ClockSource;
+import toktrak.auth.AuthService;
 import toktrak.health.HealthState;
 import toktrak.http.Assets;
 import toktrak.http.Router;
+import toktrak.identity.IdentityService;
+import toktrak.projection.Projection;
+import toktrak.store.EventLog;
+import toktrak.store.Writer;
 
 final class HttpAdmissionTest {
   private static final int WORKER_COUNT = 64;
   private static final int QUEUE_CAPACITY = 256;
+  @TempDir Path directory;
 
   @Test
   void
@@ -39,9 +48,20 @@ final class HttpAdmissionTest {
             new ThreadPoolExecutor.AbortPolicy());
     HttpServer server =
         HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 128);
-    server.createContext("/", new Router(new HealthState(), false, workers, Assets.load()));
-    server.setExecutor(Runnable::run);
-    try {
+    var health = new HealthState();
+    var projection = Projection.empty();
+    try (var log = EventLog.open(directory.resolve("events.ndjson"));
+        var writer = Writer.start(log, projection, health, ClockSource.system(), false)) {
+      var identities = new IdentityService(writer, projection, new byte[32]);
+      var auth =
+          AuthService.development(
+              URI.create("http://127.0.0.1"),
+              ClockSource.system(),
+              projection,
+              identities,
+              new byte[32]);
+      server.createContext("/", new Router(health, false, workers, Assets.load(), auth));
+      server.setExecutor(Runnable::run);
       for (int index = 0; index < WORKER_COUNT; index++) {
         workers.execute(
             () -> {
