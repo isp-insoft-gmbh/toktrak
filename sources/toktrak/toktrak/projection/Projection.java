@@ -160,7 +160,22 @@ public final class Projection {
             existing.color,
             false,
             existing.authenticatedAt));
-    return new State(count, Map.copyOf(users), before.tokens);
+    var tokens = new HashMap<>(before.tokens);
+    for (TrackerToken token : before.tokens.values()) {
+      if (token.owner.equals(key) && token.revokedAt == null) {
+        tokens.put(
+            token.id,
+            new TrackerToken(
+                token.id,
+                token.owner,
+                token.label,
+                token.digest,
+                token.createdAt,
+                token.lastUsedAt,
+                event.at()));
+      }
+    }
+    return new State(count, Map.copyOf(users), Map.copyOf(tokens));
   }
 
   private static State tokenCreated(State before, EventEnvelope event, int count) {

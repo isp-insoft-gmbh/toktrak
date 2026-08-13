@@ -79,9 +79,15 @@ final class IdentityServiceTest {
       assertThrows(
           IllegalArgumentException.class,
           () -> identities.authenticateTrackerToken("x".repeat(257)));
+      var token = identities.createTrackerToken(USER, "Before deactivation");
       identities.deactivate(USER);
+      assertEquals(NOW, projection.trackerToken(token.token().id()).orElseThrow().revokedAt());
       assertThrows(IllegalStateException.class, () -> identities.deactivate(USER));
       assertThrows(IllegalStateException.class, () -> identities.trackerTokens(USER));
+      identities.authenticateUser(USER, "user@example.com", "Example User", null);
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> identities.authenticateTrackerToken(token.plaintext()));
     }
   }
 
