@@ -118,9 +118,10 @@ public final class WriteCommand {
         Projection.TrackerToken token =
             projection
                 .trackerToken(tokenId)
-                .filter(candidate -> candidate.owner().equals(owner))
-                .filter(candidate -> candidate.revokedAt() == null)
                 .orElseThrow(() -> new IllegalStateException("tracker token cannot be revoked"));
+        if (!token.owner().equals(owner) || token.revokedAt() != null) {
+          throw new IllegalStateException("tracker token cannot be revoked");
+        }
         assert token.id().equals(tokenId);
         yield EventEnvelope.create(EventTypes.IDENTITY_TRACKER_TOKEN_REVOKED, at, actor, data);
       }
@@ -129,9 +130,10 @@ public final class WriteCommand {
         Projection.TrackerToken token =
             projection
                 .activeTrackerToken(digest)
-                .filter(candidate -> candidate.id().equals(tokenId))
                 .orElseThrow(() -> new IllegalStateException("tracker token is inactive"));
-        assert token.id().equals(tokenId);
+        if (!token.id().equals(tokenId)) {
+          throw new IllegalStateException("tracker token is inactive");
+        }
         yield EventEnvelope.create(EventTypes.IDENTITY_TRACKER_TOKEN_USED, at, actor, data);
       }
     };
