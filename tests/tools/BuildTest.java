@@ -55,9 +55,9 @@ public final class BuildTest {
     given_pitReports_when_validatingReport_then_acceptsOnlyValidMutations();
     given_pitArtifactSets_when_validatingDependencies_then_acceptsCompleteSetAndRejectsMissingHistoryOrInvalidJunitPlugin();
     given_existingArgumentFile_when_requestingPitHelp_then_preservesFile();
-    given_stampAboveLengthLimit_when_readingStamp_then_rejectsInput();
-    given_invalidUtf8Stamp_when_readingStamp_then_rejectsInput();
-    given_cacheArtifacts_when_checkingCacheHit_then_requiresMatchingOutputs();
+    given_completeArtifact_when_checkingInventory_then_rejectsCorruption();
+    given_artifactFailpoints_when_rebuilding_then_nextRunPublishesCompleteTree();
+    given_runningBuildCommand_when_acquiringBuildLock_then_rejectsCommand();
     given_runningDevelopmentServer_when_requiringExclusiveBuild_then_rejectsCommand();
     given_validRuntimeAssets_when_buildingBundle_then_returnsCanonicalIndex();
     given_invalidRuntimeAssets_when_buildingBundle_then_returnsActionableErrors();
@@ -559,49 +559,92 @@ public final class BuildTest {
     Files.delete(sentinel);
   }
 
-  private static void given_stampAboveLengthLimit_when_readingStamp_then_rejectsInput()
+  private static void given_completeArtifact_when_checkingInventory_then_rejectsCorruption()
       throws Exception {
-    Path stamp = Files.createTempFile("toktrak-build-stamp-", ".txt");
+    Path parent = Files.createTempDirectory("toktrak-build-artifact-");
+    Path artifact = parent.resolve("cache");
     try {
-      Files.writeString(stamp, "x".repeat(129));
-      expectFailure(() -> Build.readStampForTest(stamp), "stamp exceeds 128 UTF-8 bytes");
+      Build.rebuildArtifactForTest(artifact, "expected", BuildTest::writeArtifact, null);
+      if (!Build.artifactMatchesForTest(artifact, "expected")) {
+        throw new AssertionError("complete artifact missed");
+      }
+      for (String relative :
+          List.of(
+              "deps/library.jar",
+              "classes/Outer$Nested.class",
+              "lib/tzdb.dat",
+              "report/index.html")) {
+        Files.delete(artifact.resolve(relative));
+        if (Build.artifactMatchesForTest(artifact, "expected")) {
+          throw new AssertionError("missing artifact matched inventory: " + relative);
+        }
+        Build.rebuildArtifactForTest(artifact, "expected", BuildTest::writeArtifact, null);
+      }
+      Files.writeString(artifact.resolve("classes/Outer$Nested.class"), "changed length");
+      if (Build.artifactMatchesForTest(artifact, "expected")) {
+        throw new AssertionError("changed artifact length matched inventory");
+      }
+      Build.rebuildArtifactForTest(artifact, "expected", BuildTest::writeArtifact, null);
+      Files.writeString(artifact.resolve("extra.class"), "extra");
+      if (Build.artifactMatchesForTest(artifact, "expected")) {
+        throw new AssertionError("unlisted artifact matched inventory");
+      }
+      Build.rebuildArtifactForTest(artifact, "expected", BuildTest::writeArtifact, null);
+      Files.write(artifact.resolve(".toktrak-artifact"), new byte[] {(byte) 0xC3});
+      if (Build.artifactMatchesForTest(artifact, "expected")) {
+        throw new AssertionError("malformed marker matched inventory");
+      }
     } finally {
-      Files.deleteIfExists(stamp);
+      deleteTestTree(parent);
     }
   }
 
-  private static void given_invalidUtf8Stamp_when_readingStamp_then_rejectsInput()
+  private static void given_artifactFailpoints_when_rebuilding_then_nextRunPublishesCompleteTree()
       throws Exception {
-    Path stamp = Files.createTempFile("toktrak-build-stamp-", ".txt");
-    try {
-      Files.write(stamp, new byte[] {(byte) 0xC3});
-      expectFailure(() -> Build.readStampForTest(stamp), "stamp is not valid UTF-8");
-    } finally {
-      Files.deleteIfExists(stamp);
+    for (String failpoint :
+        List.of("stage", "validation", "marker", "invalidation", "deletion", "publish")) {
+      Path parent = Files.createTempDirectory("toktrak-build-failpoint-");
+      Path artifact = parent.resolve("cache");
+      try {
+        Build.rebuildArtifactForTest(artifact, "old", BuildTest::writeArtifact, null);
+        expectFailure(
+            () ->
+                Build.rebuildArtifactForTest(artifact, "new", BuildTest::writeArtifact, failpoint),
+            "artifact failpoint: " + failpoint);
+        Build.rebuildArtifactForTest(artifact, "new", BuildTest::writeArtifact, null);
+        if (!Build.artifactMatchesForTest(artifact, "new")) {
+          throw new AssertionError("failpoint recovery left incomplete artifact: " + failpoint);
+        }
+      } finally {
+        deleteTestTree(parent);
+      }
     }
   }
 
-  private static void given_cacheArtifacts_when_checkingCacheHit_then_requiresMatchingOutputs()
+  private static void writeArtifact(Path directory) throws Exception {
+    for (String relative :
+        List.of(
+            "deps/library.jar",
+            "classes/Outer$Nested.class",
+            "lib/tzdb.dat",
+            "report/index.html")) {
+      Path file = directory.resolve(relative);
+      Files.createDirectories(file.getParent());
+      Files.writeString(file, "complete");
+    }
+  }
+
+  private static void given_runningBuildCommand_when_acquiringBuildLock_then_rejectsCommand()
       throws Exception {
-    Path directory = Files.createTempDirectory("toktrak-build-cache-");
-    Path stamp = directory.resolve(".fingerprint");
-    Path required = directory.resolve("Output.class");
-    try {
-      Files.writeString(stamp, "expected");
-      if (Build.cacheHitForTest(directory, stamp, "expected", List.of(required))) {
-        throw new AssertionError("cache hit without required artifact");
-      }
-      Files.createFile(required);
-      if (!Build.cacheHitForTest(directory, stamp, "expected", List.of(required))) {
-        throw new AssertionError("valid cache missed");
-      }
-      if (Build.cacheHitForTest(directory, stamp, "changed", List.of(required))) {
-        throw new AssertionError("stale fingerprint hit");
-      }
+    Path lockPath = Files.createTempFile("toktrak-build-lock-", ".lock");
+    try (var first = FileChannel.open(lockPath, StandardOpenOption.WRITE);
+        var second = FileChannel.open(lockPath, StandardOpenOption.WRITE);
+        FileLock lock = Build.acquireBuildLockForTest(first)) {
+      if (!lock.isValid()) throw new AssertionError("build lock is invalid");
+      expectFailure(
+          () -> Build.acquireBuildLockForTest(second), "another TokTrak build command is running");
     } finally {
-      Files.deleteIfExists(required);
-      Files.deleteIfExists(stamp);
-      Files.deleteIfExists(directory);
+      Files.deleteIfExists(lockPath);
     }
   }
 

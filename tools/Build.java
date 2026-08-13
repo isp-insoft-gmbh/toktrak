@@ -13,6 +13,7 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -29,6 +30,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -42,6 +44,7 @@ import org.w3c.dom.Node;
 public final class Build {
   private static final Path ROOT = Path.of("").toAbsolutePath().normalize();
   private static final Path OUTPUT = ROOT.resolve("output");
+  private static final Path BUILD_LOCK = OUTPUT.resolve(".build.lock");
   private static final Path DEV_DATA_DIRECTORY = OUTPUT.resolve("toktrak-dev/data");
   private static final Path MODULES = OUTPUT.resolve("modules");
   private static final Path APP_MODULE = MODULES.resolve("toktrak");
@@ -59,14 +62,18 @@ public final class Build {
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
   private static final Path IDE = OUTPUT.resolve("ide");
   private static final Path ECLIPSE_IDE = IDE.resolve("eclipse");
+  private static final Path INTELLIJ_METADATA = IDE.resolve("intellij");
   private static final Path INTELLIJ_IDEA = ROOT.resolve(".idea");
   private static final Path ARGFILES = OUTPUT.resolve("args");
   private static final Path BUILD_TESTS = OUTPUT.resolve("build-tests");
+  private static final Path BUILD_TEST_CLASSES = BUILD_TESTS.resolve("classes");
+  private static final Path BUILD_TEST_RESULTS = BUILD_TESTS.resolve("results");
   private static final Path REFASTER_OUTPUT = OUTPUT.resolve("refaster");
-  private static final Path REFASTER_CLASSES = REFASTER_OUTPUT.resolve("classes");
+  private static final Path REFASTER_COMPILER = REFASTER_OUTPUT.resolve("compiler");
+  private static final Path REFASTER_CLASSES = REFASTER_COMPILER.resolve("classes");
   private static final Path REFASTER_APPLY_MODULES = REFASTER_OUTPUT.resolve("apply-modules");
   private static final Path REFASTER_APPLY_BUILD = REFASTER_OUTPUT.resolve("apply-build");
-  private static final Path REFASTER_RULE = REFASTER_OUTPUT.resolve("toktrak.refaster");
+  private static final Path REFASTER_RULE = REFASTER_COMPILER.resolve("toktrak.refaster");
   private static final Path REFASTER_SOURCE = ROOT.resolve("tools/refaster/Rules.java");
   private static final Path APP_SOURCES = ROOT.resolve("sources/toktrak");
   private static final Path ASSET_SOURCES = APP_SOURCES.resolve("assets");
@@ -90,7 +97,10 @@ public final class Build {
   private static final int COMMAND_BYTES_MAX = 24 * 1024;
   private static final int FORMAT_BATCH_FILES_MAX = 128;
   private static final int COPY_BUFFER_BYTES = 64 * 1024;
-  private static final int STAMP_BYTES_MAX = 128;
+  private static final String ARTIFACT_MARKER = ".toktrak-artifact";
+  private static final int ARTIFACT_MARKER_BYTES_MAX = 8 * 1024 * 1024;
+  private static final int ARTIFACT_FINGERPRINT_BYTES_MAX = 1024;
+  private static final AtomicLong STAGING_SEQUENCE = new AtomicLong();
   private static final int IDE_FILE_BYTES_MAX = 1024 * 1024;
   private static final int GIT_STATUS_BYTES_MAX = 1024 * 1024;
   private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(10);
@@ -222,29 +232,57 @@ public final class Build {
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
       List<String> commandArguments = List.of(args).subList(1, args.length);
-      requireDevelopmentServerStopped(args[0], DEV_DATA_DIRECTORY);
-      if (args[0].equals("pit")) {
+      if (args[0].equals("fmt")) {
+        formatCommand(commandArguments);
+        return;
+      }
+      if (args[0].equals("pit") && commandArguments.equals(List.of("--help"))) {
         pitCommand(commandArguments);
         return;
       }
-      deleteTree(ARGFILES);
-      switch (args[0]) {
-        case "clean" -> clean();
-        case "fmt" -> formatCommand(commandArguments);
-        case "check" -> check();
-        case "test" -> testCommand(commandArguments);
-        case "refactor" -> refactor();
-        case "ci" -> ci();
-        case "verify" -> verify();
-        case "ide" -> ideCommand(commandArguments);
-        case "dev" -> dev(commandArguments);
-        case "prod" -> jlinkProd();
-        case "coverage" -> coverage();
-        default -> throw new IllegalStateException("unknown command: " + args[0]);
+      Files.createDirectories(OUTPUT);
+      try (var channel =
+              FileChannel.open(BUILD_LOCK, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+          FileLock lock = acquireBuildLock(channel)) {
+        assert lock.isValid();
+        requireDevelopmentServerStopped(args[0], DEV_DATA_DIRECTORY);
+        if (args[0].equals("pit")) {
+          pitCommand(commandArguments);
+          return;
+        }
+        deleteTree(ARGFILES);
+        switch (args[0]) {
+          case "clean" -> clean();
+          case "check" -> check();
+          case "test" -> testCommand(commandArguments);
+          case "refactor" -> refactor();
+          case "ci" -> ci();
+          case "verify" -> verify();
+          case "ide" -> ideCommand(commandArguments);
+          case "dev" -> dev(commandArguments);
+          case "prod" -> jlinkProd();
+          case "coverage" -> coverage();
+          default -> throw new IllegalStateException("unknown command: " + args[0]);
+        }
       }
     } finally {
       printTotal(System.nanoTime() - started);
     }
+  }
+
+  static FileLock acquireBuildLockForTest(FileChannel channel) throws IOException {
+    return acquireBuildLock(channel);
+  }
+
+  private static FileLock acquireBuildLock(FileChannel channel) throws IOException {
+    assert channel != null;
+    try {
+      FileLock lock = channel.tryLock();
+      if (lock != null) return lock;
+    } catch (OverlappingFileLockException exception) {
+      throw new IllegalStateException("another TokTrak build command is running", exception);
+    }
+    throw new IllegalStateException("another TokTrak build command is running");
   }
 
   static void requireDevelopmentServerStoppedForTest(String command, Path dataDirectory) {
@@ -280,23 +318,23 @@ public final class Build {
   }
 
   private static void clean() throws IOException {
-    deleteTree(MODULES);
-    deleteTree(MAIN_DEPS);
-    deleteTree(TEST_DEPS);
-    deleteTree(SNAPSHOT_DEPS);
-    deleteTree(BUILD_DEPS);
-    deleteTree(REFASTER_DEPS);
-    deleteTree(PIT_DEPS);
-    deleteTree(COVERAGE_DEPS);
-    deleteTree(COVERAGE);
-    deleteTree(MUTATIONS);
+    cleanGeneratedTree(MODULES);
+    cleanGeneratedTree(MAIN_DEPS);
+    cleanGeneratedTree(TEST_DEPS);
+    cleanGeneratedTree(SNAPSHOT_DEPS);
+    cleanGeneratedTree(BUILD_DEPS);
+    cleanGeneratedTree(REFASTER_DEPS);
+    cleanGeneratedTree(PIT_DEPS);
+    cleanGeneratedTree(COVERAGE_DEPS);
+    cleanGeneratedTree(COVERAGE);
+    cleanGeneratedTree(MUTATIONS);
     Files.deleteIfExists(PIT_HISTORY);
-    deleteTree(RUNTIMES);
-    deleteTree(IDE);
+    cleanGeneratedTree(RUNTIMES);
+    cleanGeneratedTree(IDE);
     cleanIntellijMetadata(INTELLIJ_IDEA);
     deleteTree(ARGFILES);
-    deleteTree(BUILD_TESTS);
-    deleteTree(REFASTER_OUTPUT);
+    cleanGeneratedTree(BUILD_TESTS);
+    cleanGeneratedTree(REFASTER_OUTPUT);
   }
 
   private static void deps() throws Exception {
@@ -336,18 +374,22 @@ public final class Build {
     if (useModuleNames) arguments.add("--use-module-names");
     Path argFile = writeArgFile(argFileName, arguments);
     String fingerprint = dependencyFingerprint(source);
-    Path stamp = output.resolve(".fingerprint");
-    if (Files.isDirectory(output)
-        && Files.isRegularFile(stamp)
-        && readStamp(stamp).equals(fingerprint)) {
+    if (artifactMatches(output, fingerprint)) {
       printCached(javaExecutable(), argFile, started);
       return;
     }
 
-    deleteTree(output);
-    Files.createDirectories(output);
-    runArgFile(javaExecutable(), argFile);
-    writeStamp(stamp, fingerprint);
+    rebuildArtifact(
+        output,
+        fingerprint,
+        staging -> {
+          List<String> stagingArguments = remapArguments(arguments, output, staging);
+          runArgFile(javaExecutable(), argFileName, stagingArguments);
+          List<Path> jars = jarPaths(List.of(staging));
+          if (jars.isEmpty() || jars.stream().anyMatch(path -> emptyFile(path))) {
+            throw new IllegalStateException("resolved dependency artifacts are missing or empty");
+          }
+        });
   }
 
   private static void pitCommand(List<String> arguments) throws Exception {
@@ -361,15 +403,43 @@ public final class Build {
     deleteTree(ARGFILES);
     compile();
     ensurePitDependencies();
-    if (!selection.pitHelp()) deleteTree(MUTATIONS);
     String classpath = pitClasspath();
-    List<String> launchArguments =
-        new ArrayList<>(
-            List.of(
-                "-ea", "-Djunit.jupiter.execution.timeout.default=5s", "-cp", classpath, PIT_MAIN));
-    launchArguments.addAll(pitArguments(selection, MUTATIONS));
-    runArgFile(javaExecutable(), "pit", launchArguments, PROCESS_TIMEOUT, false);
-    if (!selection.pitHelp()) validatePitReport(MUTATIONS, selection.dryRun());
+    if (selection.pitHelp()) {
+      List<String> launchArguments =
+          new ArrayList<>(
+              List.of(
+                  "-ea",
+                  "-Djunit.jupiter.execution.timeout.default=5s",
+                  "-cp",
+                  classpath,
+                  PIT_MAIN));
+      launchArguments.addAll(pitArguments(selection, MUTATIONS));
+      runArgFile(javaExecutable(), "pit", launchArguments, PROCESS_TIMEOUT, false);
+      return;
+    }
+    rebuildArtifact(
+        MUTATIONS,
+        mutationFingerprint(selection),
+        staging -> {
+          List<String> launchArguments =
+              new ArrayList<>(
+                  List.of(
+                      "-ea",
+                      "-Djunit.jupiter.execution.timeout.default=5s",
+                      "-cp",
+                      classpath,
+                      PIT_MAIN));
+          launchArguments.addAll(pitArguments(selection, staging));
+          runArgFile(javaExecutable(), "pit", launchArguments, PROCESS_TIMEOUT, false);
+          validatePitReport(staging, selection.dryRun());
+        });
+  }
+
+  private static String mutationFingerprint(PitSelection selection) throws Exception {
+    var digest = MessageDigest.getInstance("SHA-256");
+    update(digest, "pit\n" + platformFingerprint() + "\n");
+    update(digest, argumentFileContent(pitArguments(selection, MUTATIONS)));
+    return HexFormat.of().formatHex(digest.digest());
   }
 
   private static void ensureCoverageDependencies() throws Exception {
@@ -378,11 +448,17 @@ public final class Build {
   }
 
   private static void ensurePitDependencies() throws Exception {
-    Path stamp = PIT_DEPS.resolve(".fingerprint");
-    if (Files.isRegularFile(stamp) && !pitArtifactsValid(PIT_DEPS)) Files.delete(stamp);
     ensureDependency("sources/pit-deps.txt", PIT_DEPS, "resolve-pit-dependencies", false);
     if (!pitArtifactsValid(PIT_DEPS)) {
       throw new IllegalStateException("PIT dependency artifacts are missing or empty");
+    }
+  }
+
+  private static boolean emptyFile(Path path) {
+    try {
+      return Files.size(path) == 0;
+    } catch (IOException exception) {
+      throw new IllegalStateException("cannot inspect generated file: " + path, exception);
     }
   }
 
@@ -691,12 +767,54 @@ public final class Build {
     List<Path> mainJars = jarPaths(List.of(MAIN_DEPS));
     List<Path> testJars = jarPaths(List.of(TEST_DEPS));
     Path refaster = refasterJar();
+    String fingerprint = ideFingerprint(mainJars, testJars, refaster);
     if (eclipse) {
-      generateEclipseProjects(ROOT, ECLIPSE_IDE, mainJars, testJars, refaster);
+      rebuildArtifact(
+          ECLIPSE_IDE,
+          fingerprint,
+          staging -> generateEclipseProjects(ROOT, staging, mainJars, testJars, refaster));
     }
     if (intellij) {
-      generateIntellijProjects(ROOT, INTELLIJ_IDEA, mainJars, testJars, refaster);
+      rebuildArtifact(
+          INTELLIJ_METADATA,
+          fingerprint,
+          staging -> generateIntellijProjects(ROOT, staging, mainJars, testJars, refaster));
+      installIntellijMetadata(INTELLIJ_METADATA, INTELLIJ_IDEA);
     }
+  }
+
+  private static String ideFingerprint(List<Path> mainJars, List<Path> testJars, Path refaster)
+      throws Exception {
+    var digest = MessageDigest.getInstance("SHA-256");
+    update(digest, "ide\n" + platformFingerprint() + "\n");
+    for (Path path : Stream.concat(mainJars.stream(), testJars.stream()).toList()) {
+      update(digest, path.getFileName() + "\n");
+      updateDigestFromFile(digest, path);
+    }
+    updateDigestFromFile(digest, refaster);
+    return HexFormat.of().formatHex(digest.digest());
+  }
+
+  private static void installIntellijMetadata(Path generated, Path idea) throws IOException {
+    Files.createDirectories(idea);
+    Files.deleteIfExists(idea.resolve(ARTIFACT_MARKER));
+    for (String relative : intellijFiles()) {
+      writeIdeBytes(idea, idea.resolve(relative), Files.readAllBytes(generated.resolve(relative)));
+    }
+    writeIdeBytes(
+        idea,
+        idea.resolve(ARTIFACT_MARKER),
+        Files.readAllBytes(generated.resolve(ARTIFACT_MARKER)));
+  }
+
+  private static List<String> intellijFiles() {
+    return List.of(
+        "modules.xml",
+        "misc.xml",
+        "compiler.xml",
+        "modules/toktrak.iml",
+        "modules/toktrak.tests.iml",
+        "modules/toktrak.build.iml");
   }
 
   static void generateEclipseProjectsForTest(
@@ -715,8 +833,8 @@ public final class Build {
     assert refasterJar != null;
     root = root.toAbsolutePath().normalize();
     output = output.toAbsolutePath().normalize();
-    if (!output.equals(root.resolve("output/ide/eclipse"))) {
-      throw new IllegalArgumentException("Eclipse output must be output/ide/eclipse");
+    if (!output.getParent().equals(root.resolve("output/ide"))) {
+      throw new IllegalArgumentException("Eclipse metadata must be staged under output/ide");
     }
     requireDirectory(root.resolve("sources/toktrak"));
     requireDirectory(root.resolve("tests/toktrak.tests"));
@@ -776,8 +894,9 @@ public final class Build {
     assert refasterJar != null;
     root = root.toAbsolutePath().normalize();
     idea = idea.toAbsolutePath().normalize();
-    if (!idea.equals(root.resolve(".idea"))) {
-      throw new IllegalArgumentException("IntelliJ metadata must be written to .idea");
+    if (!idea.equals(root.resolve(".idea"))
+        && !idea.getParent().equals(root.resolve("output/ide"))) {
+      throw new IllegalArgumentException("IntelliJ metadata must be staged under output/ide");
     }
     requireDirectory(root.resolve("sources/toktrak"));
     requireDirectory(root.resolve("tests/toktrak.tests"));
@@ -1114,6 +1233,11 @@ public final class Build {
   }
 
   private static void writeIdeFile(Path owner, Path file, String content) throws IOException {
+    assert content != null;
+    writeIdeBytes(owner, file, content.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static void writeIdeBytes(Path owner, Path file, byte[] content) throws IOException {
     assert owner != null;
     assert file != null;
     assert content != null;
@@ -1122,14 +1246,23 @@ public final class Build {
     if (!normalizedFile.startsWith(normalizedOwner)) {
       throw new IllegalArgumentException("IDE file escapes output directory");
     }
-    int contentBytes = content.getBytes(StandardCharsets.UTF_8).length;
-    if (contentBytes > IDE_FILE_BYTES_MAX) {
+    if (content.length > IDE_FILE_BYTES_MAX) {
       throw new IllegalStateException("IDE file exceeds " + IDE_FILE_BYTES_MAX + " bytes");
     }
     Files.createDirectories(normalizedFile.getParent());
-    Files.writeString(
-        normalizedFile, content, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-    assert Files.size(normalizedFile) == contentBytes;
+    Path temporary = normalizedFile.resolveSibling("." + normalizedFile.getFileName() + ".tmp");
+    Files.deleteIfExists(temporary);
+    try {
+      Files.write(temporary, content, StandardOpenOption.CREATE_NEW);
+      Files.move(
+          temporary,
+          normalizedFile,
+          StandardCopyOption.ATOMIC_MOVE,
+          StandardCopyOption.REPLACE_EXISTING);
+    } finally {
+      Files.deleteIfExists(temporary);
+    }
+    assert Files.size(normalizedFile) == content.length;
   }
 
   private static String xml(String value) {
@@ -1758,25 +1891,28 @@ public final class Build {
             List.of(MAIN_DEPS, TEST_DEPS, SNAPSHOT_DEPS, BUILD_DEPS),
             fingerprintArguments,
             assetBundle);
-    Path stamp = MODULES.resolve(".compile-fingerprint");
     long started = System.nanoTime();
-    if (cacheHit(
-            MODULES,
-            stamp,
-            fingerprint,
-            List.of(
-                APP_MODULE.resolve("module-info.class"),
-                APP_MODULE.resolve("assets/index.tsv"),
-                TEST_MODULE.resolve("module-info.class")))
-        && assetsMatch(assetBundle, APP_MODULE)) {
+    if (artifactMatches(MODULES, fingerprint) && assetsMatch(assetBundle, APP_MODULE)) {
       printCached(javacExecutable(), argFile, started);
       return;
     }
-    deleteTree(MODULES);
-    Files.createDirectories(MODULES);
-    runJavacArgFile(argFile);
-    writeAssets(assetBundle, APP_MODULE);
-    writeStamp(stamp, fingerprint);
+    rebuildArtifact(
+        MODULES,
+        fingerprint,
+        staging -> {
+          Path stagingArgFile =
+              writeArgFile(
+                  "compile-toktrak-and-test-modules", remapArguments(arguments, MODULES, staging));
+          runJavacArgFile(stagingArgFile);
+          Path stagingApp = staging.resolve("toktrak");
+          Path stagingTests = staging.resolve("toktrak.tests");
+          writeAssets(assetBundle, stagingApp);
+          requireFile(stagingApp.resolve("module-info.class"));
+          requireFile(stagingTests.resolve("module-info.class"));
+          if (!assetsMatch(assetBundle, stagingApp)) {
+            throw new IllegalStateException("compiled runtime assets are incomplete");
+          }
+        });
   }
 
   private static void compileRefaster() throws Exception {
@@ -1795,23 +1931,25 @@ public final class Build {
     String fingerprint =
         compilationFingerprint(
             "refaster", List.of(REFASTER_SOURCE), List.of(REFASTER_DEPS), fingerprintArguments);
-    Path stamp = REFASTER_OUTPUT.resolve(".compile-fingerprint");
-    List<Path> requiredFiles =
-        List.of(REFASTER_CLASSES.resolve("tools/refaster/Rules.class"), REFASTER_RULE);
     long started = System.nanoTime();
-    if (cacheHit(REFASTER_OUTPUT, stamp, fingerprint, requiredFiles)
-        && Files.size(REFASTER_RULE) > 0) {
+    if (artifactMatches(REFASTER_COMPILER, fingerprint)) {
       printCached(javacExecutable(), argFile, started);
       return;
     }
-    deleteTree(REFASTER_CLASSES);
-    Files.deleteIfExists(REFASTER_RULE);
-    Files.createDirectories(REFASTER_CLASSES);
-    runJavacArgFile(argFile);
-    if (!Files.isRegularFile(REFASTER_RULE) || Files.size(REFASTER_RULE) == 0) {
-      throw new IllegalStateException("Refaster rule was not generated");
-    }
-    writeStamp(stamp, fingerprint);
+    rebuildArtifact(
+        REFASTER_COMPILER,
+        fingerprint,
+        staging -> {
+          Path stagingArgFile =
+              writeArgFile(
+                  "compile-refaster-rules", remapArguments(arguments, REFASTER_COMPILER, staging));
+          runJavacArgFile(stagingArgFile);
+          Path rule = staging.resolve("toktrak.refaster");
+          if (!Files.isRegularFile(rule) || Files.size(rule) == 0) {
+            throw new IllegalStateException("Refaster rule was not generated");
+          }
+          requireFile(staging.resolve("classes/tools/refaster/Rules.class"));
+        });
   }
 
   private static Path refasterJar() throws IOException {
@@ -1863,9 +2001,14 @@ public final class Build {
     arguments.add(REFASTER_APPLY_MODULES.toString());
     arguments.add("--module");
     arguments.add("toktrak,toktrak.tests");
-    deleteTree(REFASTER_APPLY_MODULES);
-    Files.createDirectories(REFASTER_APPLY_MODULES);
-    runJavacArgFile(writeArgFile("apply-refaster-to-modules", arguments));
+    rebuildArtifact(
+        REFASTER_APPLY_MODULES,
+        "refaster-application",
+        staging ->
+            runJavacArgFile(
+                writeArgFile(
+                    "apply-refaster-to-modules",
+                    remapArguments(arguments, REFASTER_APPLY_MODULES, staging))));
   }
 
   private static void applyRefasterToBuildTool() throws Exception {
@@ -1875,9 +2018,14 @@ public final class Build {
     arguments.add(REFASTER_APPLY_BUILD.toString());
     arguments.add(ROOT.resolve("tools/Build.java").toString());
     arguments.add(BUILD_TEST_SOURCE.toString());
-    deleteTree(REFASTER_APPLY_BUILD);
-    Files.createDirectories(REFASTER_APPLY_BUILD);
-    runJavacArgFile(writeArgFile("apply-refaster-to-build-tool", arguments));
+    rebuildArtifact(
+        REFASTER_APPLY_BUILD,
+        "refaster-application",
+        staging ->
+            runJavacArgFile(
+                writeArgFile(
+                    "apply-refaster-to-build-tool",
+                    remapArguments(arguments, REFASTER_APPLY_BUILD, staging))));
   }
 
   private static void ci() throws Exception {
@@ -1977,36 +2125,40 @@ public final class Build {
   private static void coverage() throws Exception {
     compile();
     ensureCoverageDependencies();
-    deleteTree(COVERAGE);
-    Files.createDirectories(COVERAGE);
     TestSelection allTests = testSelection(List.of());
-    runTests(new TestSelection(false, allTests.classNames()), jacocoAgentArgument());
-    Path executionData = COVERAGE.resolve("jacoco.exec");
-    if (!Files.isRegularFile(executionData) || Files.size(executionData) == 0) {
-      throw new IllegalStateException("JaCoCo execution data is missing or empty");
-    }
-    runArgFile(
-        javaExecutable(),
-        "generate-jacoco-coverage-report",
-        List.of(
-            "-ea",
-            "-jar",
-            coverageJar("org.jacoco.cli-").toString(),
-            "report",
-            executionData.toString(),
-            "--classfiles",
-            APP_MODULE.toString(),
-            "--sourcefiles",
-            APP_SOURCES.toString(),
-            "--html",
-            COVERAGE.resolve("report").toString(),
-            "--xml",
-            COVERAGE.resolve("jacoco.xml").toString(),
-            "--csv",
-            COVERAGE.resolve("jacoco.csv").toString(),
-            "--name",
-            "TokTrak"));
-    enforceCoverage(COVERAGE.resolve("jacoco.csv"));
+    rebuildArtifact(
+        COVERAGE,
+        "coverage",
+        staging -> {
+          runTests(new TestSelection(false, allTests.classNames()), jacocoAgentArgument(staging));
+          Path executionData = staging.resolve("jacoco.exec");
+          if (!Files.isRegularFile(executionData) || Files.size(executionData) == 0) {
+            throw new IllegalStateException("JaCoCo execution data is missing or empty");
+          }
+          runArgFile(
+              javaExecutable(),
+              "generate-jacoco-coverage-report",
+              List.of(
+                  "-ea",
+                  "-jar",
+                  coverageJar("org.jacoco.cli-").toString(),
+                  "report",
+                  executionData.toString(),
+                  "--classfiles",
+                  APP_MODULE.toString(),
+                  "--sourcefiles",
+                  APP_SOURCES.toString(),
+                  "--html",
+                  staging.resolve("report").toString(),
+                  "--xml",
+                  staging.resolve("jacoco.xml").toString(),
+                  "--csv",
+                  staging.resolve("jacoco.csv").toString(),
+                  "--name",
+                  "TokTrak"));
+          requireFile(staging.resolve("report/index.html"));
+          enforceCoverage(staging.resolve("jacoco.csv"));
+        });
   }
 
   private static void enforceCoverage(Path csv) throws IOException {
@@ -2163,11 +2315,12 @@ public final class Build {
     }
   }
 
-  private static String jacocoAgentArgument() throws IOException {
+  private static String jacocoAgentArgument(Path output) throws IOException {
+    assert output != null;
     return "-javaagent:"
         + coverageJar("org.jacoco.agent-")
         + "=destfile="
-        + COVERAGE.resolve("jacoco.exec")
+        + output.resolve("jacoco.exec")
         + ",append=true,includes=toktrak.*";
   }
 
@@ -2250,7 +2403,7 @@ public final class Build {
     compileArguments.add("-Werror");
     addErrorProne(compileArguments);
     compileArguments.add("-d");
-    compileArguments.add(BUILD_TESTS.toString());
+    compileArguments.add(BUILD_TEST_CLASSES.toString());
     compileArguments.add(sources.get(0).toString());
     compileArguments.add(sources.get(1).toString());
     Path compileArgFile = writeArgFile("compile-build-tool-tests", compileArguments);
@@ -2264,30 +2417,40 @@ public final class Build {
             fingerprintSources,
             List.of(BUILD_DEPS, REFASTER_DEPS),
             compileArguments);
-    Path compileStamp = BUILD_TESTS.resolve(".compile-fingerprint");
-    List<Path> requiredClasses =
-        List.of(
-            BUILD_TESTS.resolve("tools/Build.class"), BUILD_TESTS.resolve("tools/BuildTest.class"));
     long compileStarted = System.nanoTime();
-    if (cacheHit(BUILD_TESTS, compileStamp, compileFingerprint, requiredClasses)) {
+    if (artifactMatches(BUILD_TEST_CLASSES, compileFingerprint)) {
       printCached(javacExecutable(), compileArgFile, compileStarted);
     } else {
-      deleteTree(BUILD_TESTS);
-      Files.createDirectories(BUILD_TESTS);
-      runJavacArgFile(compileArgFile);
-      writeStamp(compileStamp, compileFingerprint);
+      rebuildArtifact(
+          BUILD_TEST_CLASSES,
+          compileFingerprint,
+          staging -> {
+            Path stagingArgFile =
+                writeArgFile(
+                    "compile-build-tool-tests",
+                    remapArguments(compileArguments, BUILD_TEST_CLASSES, staging));
+            runJavacArgFile(stagingArgFile);
+            requireFile(staging.resolve("tools/Build.class"));
+            requireFile(staging.resolve("tools/BuildTest.class"));
+          });
     }
 
-    List<String> testArguments = List.of("-ea", "-cp", BUILD_TESTS.toString(), "tools.BuildTest");
+    List<String> testArguments =
+        List.of("-ea", "-cp", BUILD_TEST_CLASSES.toString(), "tools.BuildTest");
     Path testArgFile = writeArgFile("run-build-tool-tests", testArguments);
     String testFingerprint = testResultFingerprint(compileFingerprint, testArguments);
-    Path testStamp = BUILD_TESTS.resolve(".test-fingerprint");
     long testStarted = System.nanoTime();
-    if (cacheHit(BUILD_TESTS, testStamp, testFingerprint, requiredClasses)) {
+    if (artifactMatches(BUILD_TEST_RESULTS, testFingerprint)) {
       printCached(javaExecutable(), testArgFile, testStarted);
     } else {
-      runArgFile(javaExecutable(), testArgFile);
-      writeStamp(testStamp, testFingerprint);
+      rebuildArtifact(
+          BUILD_TEST_RESULTS,
+          testFingerprint,
+          staging -> {
+            runArgFile(javaExecutable(), testArgFile);
+            Files.writeString(
+                staging.resolve("passed"), testFingerprint, StandardOpenOption.CREATE_NEW);
+          });
     }
   }
 
@@ -2345,31 +2508,38 @@ public final class Build {
     modulePath.add(Path.of(System.getProperty("java.home"), "jmods").toString());
     modulePath.addAll(jarPaths(dependencyDirectories).stream().map(Path::toString).toList());
     if (includeApp) modulePath.add(APP_MODULE.toString());
-    Path argFile =
-        writeArgFile(
-            "link-toktrak-" + runtimeName(name) + "-runtime",
-            List.of(
-                "--module-path",
-                String.join(java.io.File.pathSeparator, modulePath),
-                "--add-modules",
-                String.join(",", roots),
-                "--output",
-                image.toString(),
-                "--strip-debug",
-                "--no-header-files",
-                "--no-man-pages"));
+    List<String> arguments =
+        List.of(
+            "--module-path",
+            String.join(java.io.File.pathSeparator, modulePath),
+            "--add-modules",
+            String.join(",", roots),
+            "--output",
+            image.toString(),
+            "--strip-debug",
+            "--no-header-files",
+            "--no-man-pages");
+    Path argFile = writeArgFile("link-toktrak-" + runtimeName(name) + "-runtime", arguments);
     String fingerprint = fingerprint(name, dependencyDirectories, roots, includeApp);
-    Path stamp = image.resolve(".fingerprint");
-    if (Files.isDirectory(image) && Files.exists(stamp) && readStamp(stamp).equals(fingerprint)) {
+    if (artifactMatches(image, fingerprint)) {
       printCached(jlinkExecutable(), argFile, started);
       return image;
     }
 
     for (Path directory : dependencyDirectories) verifyModules(directory);
-    deleteTree(image);
-    Files.createDirectories(RUNTIMES);
-    runArgFile(jlinkExecutable(), argFile);
-    writeStamp(stamp, fingerprint);
+    rebuildArtifact(
+        image,
+        fingerprint,
+        staging -> {
+          Path stagingArgFile =
+              writeArgFile(
+                  "link-toktrak-" + runtimeName(name) + "-runtime",
+                  remapArguments(arguments, image, staging));
+          Files.delete(staging);
+          runArgFile(jlinkExecutable(), stagingArgFile);
+          requireFile(Path.of(runtimeJava(staging)));
+          requireFile(staging.resolve("lib/tzdb.dat"));
+        });
     return image;
   }
 
@@ -2575,6 +2745,23 @@ public final class Build {
     return path.getFileName().toString().endsWith(".jar");
   }
 
+  private static void cleanGeneratedTree(Path path) throws IOException {
+    assert path != null;
+    deleteStaleStaging(path);
+    deleteGeneratedTree(path);
+  }
+
+  private static void deleteGeneratedTree(Path path) throws IOException {
+    assert path != null;
+    if (!Files.exists(path)) return;
+    for (Path candidate : treePaths(path, TREE_ENTRIES_MAX)) {
+      if (candidate.getFileName().toString().equals(ARTIFACT_MARKER)) {
+        Files.deleteIfExists(candidate);
+      }
+    }
+    deleteTree(path);
+  }
+
   private static void deleteTree(Path path) throws IOException {
     assert path != null;
     if (!Files.exists(path)) return;
@@ -2585,16 +2772,8 @@ public final class Build {
 
   private static void cleanIntellijMetadata(Path idea) throws IOException {
     assert idea != null;
-    for (String file :
-        List.of(
-            "modules.xml",
-            "misc.xml",
-            "compiler.xml",
-            "modules/toktrak.iml",
-            "modules/toktrak.tests.iml",
-            "modules/toktrak.build.iml")) {
-      Files.deleteIfExists(idea.resolve(file));
-    }
+    Files.deleteIfExists(idea.resolve(ARTIFACT_MARKER));
+    for (String file : intellijFiles()) Files.deleteIfExists(idea.resolve(file));
     deleteDirectoryIfEmpty(idea.resolve("modules"));
     deleteDirectoryIfEmpty(idea);
   }
@@ -2739,62 +2918,215 @@ public final class Build {
     if (code != 0) throw new IllegalStateException("command failed with exit code " + code);
   }
 
-  static boolean cacheHitForTest(
-      Path directory, Path stamp, String fingerprint, List<Path> requiredFiles) throws IOException {
-    return cacheHit(directory, stamp, fingerprint, requiredFiles);
+  @FunctionalInterface
+  interface ArtifactBuilder {
+    void build(Path staging) throws Exception;
   }
 
-  private static boolean cacheHit(
-      Path directory, Path stamp, String fingerprint, List<Path> requiredFiles) throws IOException {
+  static boolean artifactMatchesForTest(Path directory, String fingerprint) throws IOException {
+    return artifactMatches(directory, fingerprint);
+  }
+
+  static void rebuildArtifactForTest(
+      Path output, String fingerprint, ArtifactBuilder builder, String failpoint) throws Exception {
+    rebuildArtifact(output, fingerprint, builder, failpoint);
+  }
+
+  private static boolean artifactMatches(Path directory, String fingerprint) throws IOException {
     assert directory != null;
-    assert stamp != null;
-    assert fingerprint != null;
-    assert requiredFiles != null;
-    requireCollectionSize(requiredFiles, "required cache files");
-    if (!Files.isDirectory(directory) || !Files.isRegularFile(stamp)) return false;
-    for (Path requiredFile : requiredFiles) {
-      if (!requiredFile.normalize().startsWith(directory.normalize())) {
-        throw new IllegalArgumentException("required cache file escapes directory");
-      }
-      if (!Files.isRegularFile(requiredFile)) return false;
-    }
-    return readStamp(stamp).equals(fingerprint);
-  }
-
-  private static void writeStamp(Path stamp, String fingerprint) throws IOException {
-    assert stamp != null;
-    assert fingerprint != null;
-    if (fingerprint.getBytes(StandardCharsets.UTF_8).length > STAMP_BYTES_MAX) {
-      throw new IllegalStateException("fingerprint exceeds " + STAMP_BYTES_MAX + " UTF-8 bytes");
-    }
-    Files.writeString(
-        stamp, fingerprint, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-    assert Files.size(stamp) <= STAMP_BYTES_MAX;
-  }
-
-  static String readStampForTest(Path path) throws IOException {
-    return readStamp(path);
-  }
-
-  private static String readStamp(Path path) throws IOException {
-    assert path != null;
+    requireArtifactFingerprint(fingerprint);
+    Path marker = directory.resolve(ARTIFACT_MARKER);
+    if (Files.isSymbolicLink(directory)
+        || !Files.isDirectory(directory)
+        || !Files.isRegularFile(marker)) return false;
     byte[] bytes;
-    try (var input = Files.newInputStream(path)) {
-      bytes = input.readNBytes(STAMP_BYTES_MAX + 1);
-      if (bytes.length > STAMP_BYTES_MAX || input.read() >= 0) {
-        throw new IllegalStateException("stamp exceeds " + STAMP_BYTES_MAX + " UTF-8 bytes");
-      }
+    try (var input = Files.newInputStream(marker)) {
+      bytes = input.readNBytes(ARTIFACT_MARKER_BYTES_MAX + 1);
+      if (bytes.length > ARTIFACT_MARKER_BYTES_MAX || input.read() >= 0) return false;
     }
+    String content;
     try {
-      return StandardCharsets.UTF_8
-          .newDecoder()
-          .onMalformedInput(CodingErrorAction.REPORT)
-          .onUnmappableCharacter(CodingErrorAction.REPORT)
-          .decode(ByteBuffer.wrap(bytes))
-          .toString();
+      content =
+          StandardCharsets.UTF_8
+              .newDecoder()
+              .onMalformedInput(CodingErrorAction.REPORT)
+              .onUnmappableCharacter(CodingErrorAction.REPORT)
+              .decode(ByteBuffer.wrap(bytes))
+              .toString();
     } catch (CharacterCodingException exception) {
-      throw new IllegalStateException("stamp is not valid UTF-8: " + path, exception);
+      return false;
     }
+    String[] lines = content.split("\n", -1);
+    if (lines.length < 3
+        || !lines[0].equals("toktrak-artifact-v1")
+        || !lines[1].equals("fingerprint\t" + fingerprint)
+        || !lines[lines.length - 1].isEmpty()
+        || lines.length > TREE_ENTRIES_MAX + 3) return false;
+    var expected = new java.util.TreeMap<String, Long>();
+    for (int index = 2; index < lines.length - 1; index++) {
+      String line = lines[index];
+      int separator = line.indexOf('\t');
+      if (separator <= 0 || separator == line.length() - 1) return false;
+      long length;
+      try {
+        length = Long.parseLong(line.substring(0, separator));
+      } catch (NumberFormatException exception) {
+        return false;
+      }
+      String relative = line.substring(separator + 1);
+      if (length < 0
+          || length > FILE_BYTES_MAX
+          || !canonicalArtifactPath(relative)
+          || expected.put(relative, length) != null) return false;
+    }
+    var actual = new java.util.TreeMap<String, Long>();
+    List<Path> paths;
+    try {
+      paths = treePaths(directory, TREE_ENTRIES_MAX);
+    } catch (IllegalStateException exception) {
+      return false;
+    }
+    for (Path path : paths) {
+      if (path.equals(directory) || path.equals(marker)) continue;
+      if (Files.isSymbolicLink(path)) return false;
+      if (Files.isDirectory(path)) continue;
+      if (!Files.isRegularFile(path)) return false;
+      String relative = artifactPath(directory, path);
+      long length = Files.size(path);
+      if (length > FILE_BYTES_MAX || actual.put(relative, length) != null) return false;
+    }
+    return actual.equals(expected);
+  }
+
+  private static void rebuildArtifact(Path output, String fingerprint, ArtifactBuilder builder)
+      throws Exception {
+    rebuildArtifact(output, fingerprint, builder, null);
+  }
+
+  private static void rebuildArtifact(
+      Path output, String fingerprint, ArtifactBuilder builder, String failpoint) throws Exception {
+    assert output != null;
+    assert builder != null;
+    requireArtifactFingerprint(fingerprint);
+    Files.createDirectories(output.toAbsolutePath().normalize().getParent());
+    deleteStaleStaging(output);
+    Path staging = stagingPath(output);
+    Files.createDirectory(staging);
+    failArtifactBuild(failpoint, "stage");
+    builder.build(staging);
+    failArtifactBuild(failpoint, "validation");
+    writeArtifactMarker(staging, fingerprint);
+    failArtifactBuild(failpoint, "marker");
+    Path marker = output.resolve(ARTIFACT_MARKER);
+    if (!Files.isSymbolicLink(output)) Files.deleteIfExists(marker);
+    failArtifactBuild(failpoint, "invalidation");
+    deleteGeneratedTree(output);
+    failArtifactBuild(failpoint, "deletion");
+    failArtifactBuild(failpoint, "publish");
+    Files.move(staging, output, StandardCopyOption.ATOMIC_MOVE);
+    assert artifactMatches(output, fingerprint);
+  }
+
+  private static void failArtifactBuild(String configured, String reached) {
+    assert reached != null;
+    if (reached.equals(configured)) {
+      throw new IllegalStateException("artifact failpoint: " + reached);
+    }
+  }
+
+  private static void writeArtifactMarker(Path directory, String fingerprint) throws IOException {
+    var content = new StringBuilder("toktrak-artifact-v1\nfingerprint\t");
+    content.append(fingerprint).append('\n');
+    int contentBytes = content.toString().getBytes(StandardCharsets.UTF_8).length;
+    for (Path path : treePaths(directory, TREE_ENTRIES_MAX).stream().sorted().toList()) {
+      if (path.equals(directory)) continue;
+      if (Files.isSymbolicLink(path)) {
+        throw new IllegalStateException("generated artifact contains symbolic path: " + path);
+      }
+      if (Files.isDirectory(path)) continue;
+      if (!Files.isRegularFile(path)) {
+        throw new IllegalStateException("generated artifact contains unsupported path: " + path);
+      }
+      long length = Files.size(path);
+      if (length > FILE_BYTES_MAX) {
+        throw new IllegalStateException("generated artifact file exceeds limit: " + path);
+      }
+      String line = length + "\t" + artifactPath(directory, path) + "\n";
+      contentBytes = Math.addExact(contentBytes, line.getBytes(StandardCharsets.UTF_8).length);
+      if (contentBytes > ARTIFACT_MARKER_BYTES_MAX) {
+        throw new IllegalStateException(
+            "artifact marker exceeds " + ARTIFACT_MARKER_BYTES_MAX + " UTF-8 bytes");
+      }
+      content.append(line);
+    }
+    Path marker = directory.resolve(ARTIFACT_MARKER);
+    Path temporary = directory.resolve("." + ARTIFACT_MARKER + ".tmp");
+    Files.writeString(temporary, content, StandardOpenOption.CREATE_NEW);
+    Files.move(temporary, marker, StandardCopyOption.ATOMIC_MOVE);
+  }
+
+  private static void requireArtifactFingerprint(String fingerprint) {
+    assert fingerprint != null;
+    int bytes = fingerprint.getBytes(StandardCharsets.UTF_8).length;
+    if (fingerprint.isEmpty()
+        || fingerprint.indexOf('\t') >= 0
+        || fingerprint.indexOf('\r') >= 0
+        || fingerprint.indexOf('\n') >= 0
+        || bytes > ARTIFACT_FINGERPRINT_BYTES_MAX) {
+      throw new IllegalArgumentException("invalid artifact fingerprint");
+    }
+  }
+
+  private static String artifactPath(Path root, Path path) {
+    String relative = root.relativize(path).toString().replace('\\', '/');
+    if (!canonicalArtifactPath(relative)) {
+      throw new IllegalStateException("invalid generated artifact path: " + path);
+    }
+    return relative;
+  }
+
+  private static boolean canonicalArtifactPath(String relative) {
+    if (relative.isEmpty()
+        || relative.indexOf('\t') >= 0
+        || relative.indexOf('\r') >= 0
+        || relative.indexOf('\n') >= 0
+        || relative.startsWith("/")) return false;
+    Path path;
+    try {
+      path = Path.of(relative);
+    } catch (RuntimeException exception) {
+      return false;
+    }
+    return !path.isAbsolute()
+        && !path.startsWith("..")
+        && path.normalize().toString().replace('\\', '/').equals(relative);
+  }
+
+  private static Path stagingPath(Path output) {
+    Path normalized = output.toAbsolutePath().normalize();
+    String name = normalized.getFileName().toString();
+    long sequence = STAGING_SEQUENCE.incrementAndGet();
+    return normalized.resolveSibling(
+        "." + name + ".stage-" + ProcessHandle.current().pid() + "-" + sequence);
+  }
+
+  private static void deleteStaleStaging(Path output) throws IOException {
+    Path normalized = output.toAbsolutePath().normalize();
+    Path parent = normalized.getParent();
+    if (!Files.isDirectory(parent)) return;
+    String prefix = "." + normalized.getFileName() + ".stage-";
+    for (Path path : directoryEntries(parent, TREE_ENTRIES_MAX)) {
+      if (path.getFileName().toString().startsWith(prefix)) deleteGeneratedTree(path);
+    }
+  }
+
+  private static List<String> remapArguments(List<String> arguments, Path from, Path to) {
+    assert arguments != null;
+    assert from != null;
+    assert to != null;
+    String source = from.toString();
+    String target = to.toString();
+    return arguments.stream().map(argument -> argument.replace(source, target)).toList();
   }
 
   static void updateDigestFromFileForTest(MessageDigest digest, Path path) throws IOException {
