@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicLong;
@@ -27,6 +28,14 @@ public final class TestLauncher {
   private static final int SELECTOR_CHARACTERS_MAX = 1_024;
   private static final long TEST_COUNT_MAX = 10_000;
   private static final long TEST_DESCRIPTOR_COUNT_MAX = 20_000;
+  private static final Map<String, String> PARALLEL_CONFIGURATION =
+      Map.of(
+          "junit.jupiter.execution.parallel.enabled", "true",
+          "junit.jupiter.execution.parallel.mode.default", "same_thread",
+          "junit.jupiter.execution.parallel.mode.classes.default", "concurrent",
+          "junit.jupiter.execution.parallel.config.strategy", "fixed",
+          "junit.jupiter.execution.parallel.config.fixed.parallelism", "4",
+          "junit.jupiter.execution.parallel.config.fixed.max-pool-size", "4");
   private static final Pattern TEST_NAME =
       Pattern.compile("given_[a-z][A-Za-z0-9]*_when_[a-z][A-Za-z0-9]*_then_[a-z][A-Za-z0-9]*");
 
@@ -104,7 +113,11 @@ public final class TestLauncher {
   private static LauncherDiscoveryRequest request(
       List<DiscoverySelector> selectors, PostDiscoveryFilter... filters) {
     LauncherDiscoveryRequest request =
-        LauncherDiscoveryRequestBuilder.request().selectors(selectors).filters(filters).build();
+        LauncherDiscoveryRequestBuilder.request()
+            .selectors(selectors)
+            .filters(filters)
+            .configurationParameters(PARALLEL_CONFIGURATION)
+            .build();
     assert request != null;
     return request;
   }
