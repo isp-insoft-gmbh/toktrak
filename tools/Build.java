@@ -2938,6 +2938,7 @@ public final class Build {
     Path marker = directory.resolve(ARTIFACT_MARKER);
     if (Files.isSymbolicLink(directory)
         || !Files.isDirectory(directory)
+        || Files.isSymbolicLink(marker)
         || !Files.isRegularFile(marker)) return false;
     byte[] bytes;
     try (var input = Files.newInputStream(marker)) {
@@ -2958,42 +2959,44 @@ public final class Build {
     }
     String[] lines = content.split("\n", -1);
     if (lines.length < 3
-        || !lines[0].equals("toktrak-artifact-v1")
+        || !lines[0].equals("toktrak-artifact-v2")
         || !lines[1].equals("fingerprint\t" + fingerprint)
         || !lines[lines.length - 1].isEmpty()
         || lines.length > TREE_ENTRIES_MAX + 3) return false;
-    var expected = new java.util.TreeMap<String, Long>();
+    var expected = new java.util.TreeMap<String, String>();
     for (int index = 2; index < lines.length - 1; index++) {
-      String line = lines[index];
-      int separator = line.indexOf('\t');
-      if (separator <= 0 || separator == line.length() - 1) return false;
-      long length;
-      try {
-        length = Long.parseLong(line.substring(0, separator));
-      } catch (NumberFormatException exception) {
+      String[] fields = lines[index].split("\t", -1);
+      if (fields.length != 3 || !canonicalArtifactPath(fields[2])) return false;
+      String signature;
+      if (fields[0].equals("file")) {
+        long length;
+        try {
+          length = Long.parseLong(fields[1]);
+        } catch (NumberFormatException exception) {
+          return false;
+        }
+        if (length < 0 || length > FILE_BYTES_MAX) return false;
+        signature = "file\t" + length;
+      } else if (fields[0].equals("link") && canonicalSymbolicLinkTarget(fields[1])) {
+        signature = "link\t" + fields[1];
+      } else {
         return false;
       }
-      String relative = line.substring(separator + 1);
-      if (length < 0
-          || length > FILE_BYTES_MAX
-          || !canonicalArtifactPath(relative)
-          || expected.put(relative, length) != null) return false;
+      if (expected.put(fields[2], signature) != null) return false;
     }
-    var actual = new java.util.TreeMap<String, Long>();
+    var actual = new java.util.TreeMap<String, String>();
     List<Path> paths;
     try {
       paths = treePaths(directory, TREE_ENTRIES_MAX);
-    } catch (IllegalStateException exception) {
+      for (Path path : paths) {
+        if (path.equals(directory)
+            || path.equals(marker)
+            || (!Files.isSymbolicLink(path) && Files.isDirectory(path))) continue;
+        String relative = artifactPath(directory, path);
+        if (actual.put(relative, artifactSignature(directory, path)) != null) return false;
+      }
+    } catch (IllegalStateException | IOException exception) {
       return false;
-    }
-    for (Path path : paths) {
-      if (path.equals(directory) || path.equals(marker)) continue;
-      if (Files.isSymbolicLink(path)) return false;
-      if (Files.isDirectory(path)) continue;
-      if (!Files.isRegularFile(path)) return false;
-      String relative = artifactPath(directory, path);
-      long length = Files.size(path);
-      if (length > FILE_BYTES_MAX || actual.put(relative, length) != null) return false;
     }
     return actual.equals(expected);
   }
@@ -3035,23 +3038,15 @@ public final class Build {
   }
 
   private static void writeArtifactMarker(Path directory, String fingerprint) throws IOException {
-    var content = new StringBuilder("toktrak-artifact-v1\nfingerprint\t");
+    var content = new StringBuilder("toktrak-artifact-v2\nfingerprint\t");
     content.append(fingerprint).append('\n');
     int contentBytes = content.toString().getBytes(StandardCharsets.UTF_8).length;
     for (Path path : treePaths(directory, TREE_ENTRIES_MAX).stream().sorted().toList()) {
-      if (path.equals(directory)) continue;
-      if (Files.isSymbolicLink(path)) {
-        throw new IllegalStateException("generated artifact contains symbolic path: " + path);
+      if (path.equals(directory) || (!Files.isSymbolicLink(path) && Files.isDirectory(path))) {
+        continue;
       }
-      if (Files.isDirectory(path)) continue;
-      if (!Files.isRegularFile(path)) {
-        throw new IllegalStateException("generated artifact contains unsupported path: " + path);
-      }
-      long length = Files.size(path);
-      if (length > FILE_BYTES_MAX) {
-        throw new IllegalStateException("generated artifact file exceeds limit: " + path);
-      }
-      String line = length + "\t" + artifactPath(directory, path) + "\n";
+      String line =
+          artifactSignature(directory, path) + "\t" + artifactPath(directory, path) + "\n";
       contentBytes = Math.addExact(contentBytes, line.getBytes(StandardCharsets.UTF_8).length);
       if (contentBytes > ARTIFACT_MARKER_BYTES_MAX) {
         throw new IllegalStateException(
@@ -3063,6 +3058,47 @@ public final class Build {
     Path temporary = directory.resolve("." + ARTIFACT_MARKER + ".tmp");
     Files.writeString(temporary, content, StandardOpenOption.CREATE_NEW);
     Files.move(temporary, marker, StandardCopyOption.ATOMIC_MOVE);
+  }
+
+  private static String artifactSignature(Path root, Path path) throws IOException {
+    assert root != null;
+    assert path != null;
+    if (Files.isSymbolicLink(path)) {
+      Path target = Files.readSymbolicLink(path);
+      String text = target.toString().replace('\\', '/');
+      if (!canonicalSymbolicLinkTarget(text)
+          || !path.getParent().resolve(target).normalize().startsWith(root.normalize())
+          || !path.toRealPath().startsWith(root.toRealPath())) {
+        throw new IllegalStateException("generated symbolic link escapes artifact: " + path);
+      }
+      if (!Files.isRegularFile(path)) {
+        throw new IllegalStateException("generated symbolic link is not a regular file: " + path);
+      }
+      return "link\t" + text;
+    }
+    if (!Files.isRegularFile(path)) {
+      throw new IllegalStateException("generated artifact contains unsupported path: " + path);
+    }
+    long length = Files.size(path);
+    if (length > FILE_BYTES_MAX) {
+      throw new IllegalStateException("generated artifact file exceeds limit: " + path);
+    }
+    return "file\t" + length;
+  }
+
+  private static boolean canonicalSymbolicLinkTarget(String value) {
+    if (value.isEmpty()
+        || value.indexOf('\t') >= 0
+        || value.indexOf('\r') >= 0
+        || value.indexOf('\n') >= 0
+        || value.indexOf('\\') >= 0) return false;
+    Path target;
+    try {
+      target = Path.of(value);
+    } catch (RuntimeException exception) {
+      return false;
+    }
+    return !target.isAbsolute() && target.normalize().toString().replace('\\', '/').equals(value);
   }
 
   private static void requireArtifactFingerprint(String fingerprint) {

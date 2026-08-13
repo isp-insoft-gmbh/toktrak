@@ -57,6 +57,7 @@ public final class BuildTest {
     given_existingArgumentFile_when_requestingPitHelp_then_preservesFile();
     given_completeArtifact_when_checkingInventory_then_rejectsCorruption();
     given_artifactFailpoints_when_rebuilding_then_nextRunPublishesCompleteTree();
+    given_generatedSymbolicLinks_when_checkingInventory_then_preservesInternalTargetsAndRejectsEscapes();
     given_runningBuildCommand_when_acquiringBuildLock_then_rejectsCommand();
     given_runningDevelopmentServer_when_requiringExclusiveBuild_then_rejectsCommand();
     given_validRuntimeAssets_when_buildingBundle_then_returnsCanonicalIndex();
@@ -632,6 +633,52 @@ public final class BuildTest {
       Files.createDirectories(file.getParent());
       Files.writeString(file, "complete");
     }
+  }
+
+  private static void
+      given_generatedSymbolicLinks_when_checkingInventory_then_preservesInternalTargetsAndRejectsEscapes()
+          throws Exception {
+    Path root = Files.createTempDirectory("toktrak-build-links-");
+    Path artifact = root.resolve("runtime");
+    Path external = Files.createTempFile("toktrak-build-link-target-", ".txt");
+    try {
+      Build.rebuildArtifactForTest(artifact, "links", BuildTest::writeLinkedArtifact, null);
+      Path link = artifact.resolve("legal/java.logging/LICENSE");
+      if (!Files.isSymbolicLink(link) || !Build.artifactMatchesForTest(artifact, "links")) {
+        throw new AssertionError("internal generated link was not inventoried");
+      }
+
+      Files.delete(link);
+      Files.createSymbolicLink(link, Path.of("../java.base/OTHER"));
+      if (Build.artifactMatchesForTest(artifact, "links")) {
+        throw new AssertionError("changed symbolic link target matched inventory");
+      }
+      Build.rebuildArtifactForTest(artifact, "links", BuildTest::writeLinkedArtifact, null);
+      expectFailure(
+          () ->
+              Build.rebuildArtifactForTest(
+                  artifact,
+                  "escape",
+                  staging ->
+                      Files.createSymbolicLink(
+                          staging.resolve("external"), external.toAbsolutePath()),
+                  null),
+          "generated symbolic link escapes artifact");
+      if (!Build.artifactMatchesForTest(artifact, "links")) {
+        throw new AssertionError("rejected symbolic link replaced complete artifact");
+      }
+    } finally {
+      deleteTestTree(root);
+      Files.deleteIfExists(external);
+    }
+  }
+
+  private static void writeLinkedArtifact(Path directory) throws Exception {
+    Path base = Files.createDirectories(directory.resolve("legal/java.base"));
+    Path logging = Files.createDirectories(directory.resolve("legal/java.logging"));
+    Files.writeString(base.resolve("LICENSE"), "license");
+    Files.writeString(base.resolve("OTHER"), "license");
+    Files.createSymbolicLink(logging.resolve("LICENSE"), Path.of("../java.base/LICENSE"));
   }
 
   private static void given_runningBuildCommand_when_acquiringBuildLock_then_rejectsCommand()
