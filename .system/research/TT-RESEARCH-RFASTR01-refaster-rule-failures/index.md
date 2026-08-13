@@ -1,4 +1,8 @@
-# Refaster Rule Failures
+---
+id: TT-RESEARCH-RFASTR01
+type: research
+title: Refaster rule failures
+---
 
 ## 2026-07-16 — Test method naming convention
 
