@@ -81,7 +81,9 @@ Java dependencies automatically.
 ### How do I run TokTrak locally?
 
 Run `mise run dev` for the seeded, auto-reloading development server. Use
-`mise run dev --fail-writes` to exercise degraded health and failed writes.
+`mise run dev --fail-writes` to exercise degraded health and failed writes. Stop
+the server before running other build tasks; `fmt` remains available while it
+runs.
 
 ### How do I build the production runtime?
 

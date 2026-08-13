@@ -20,8 +20,7 @@ final class HttpServerTest {
   @Test
   void given_healthyApp_when_requestingHealth_then_returnsJsonAndSecurityHeaders()
       throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       var response = get(app, "/health");
       assertEquals(200, response.statusCode());
       assertEquals("nosniff", response.header("x-content-type-options"));
@@ -33,8 +32,7 @@ final class HttpServerTest {
   @Test
   void given_methodAboveLengthLimit_when_requestingBrowserRoute_then_returnsDiagnosticBadRequest()
       throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       var request =
           HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + app.port() + "/nope"))
               .method("X".repeat(33), HttpRequest.BodyPublishers.noBody())
@@ -48,8 +46,7 @@ final class HttpServerTest {
 
   @Test
   void given_pathAboveLengthLimit_when_requestingRoute_then_returnsUriTooLong() throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       var response = get(app, "/" + "a".repeat(2_049));
       assertEquals(414, response.statusCode());
       assertEquals("text/html; charset=utf-8", response.header("content-type"));
@@ -60,8 +57,7 @@ final class HttpServerTest {
 
   @Test
   void given_unknownApiRoute_when_requestingRoute_then_returnsNotFoundEnvelope() throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       var response = get(app, "/api/nope");
       assertEquals(404, response.statusCode());
       assertTrue(response.body().startsWith("{\"error\":{"), response.body());
@@ -74,8 +70,7 @@ final class HttpServerTest {
   @Test
   void given_oversizedApiRoute_when_requestingRoute_then_returnsBoundedErrorEnvelope()
       throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       var response = get(app, "/api/" + "x".repeat(2_050));
       assertEquals(414, response.statusCode());
       assertTrue(response.body().contains("\"code\":\"uri_too_long\""));
@@ -85,8 +80,7 @@ final class HttpServerTest {
   @Test
   void given_unknownDevelopmentBrowserRoute_when_requestingRoute_then_returnsDiagnosticHtml()
       throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       var response = get(app, "/nope");
       assertEquals(404, response.statusCode());
       assertEquals("text/html; charset=utf-8", response.header("content-type"));
@@ -102,8 +96,7 @@ final class HttpServerTest {
   @Test
   void given_developmentFailureRoute_when_requestingRoute_then_returnsDiagnosticHtml()
       throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       var response = get(app, "/debug/error");
       assertEquals(500, response.statusCode());
       assertTrue(response.body().contains("Internal server error. Try again."));
@@ -124,6 +117,13 @@ final class HttpServerTest {
       assertFalse(response.body().contains("DEBUG"));
       assertFalse(response.body().contains("IllegalStateException"));
     }
+  }
+
+  private Map<String, String> devEnvironment() {
+    return Map.of(
+        "TOKTRAK_DEV_AUTH", "true",
+        "TOKTRAK_PORT", "0",
+        "TOKTRAK_DATA_DIR", directory.toString());
   }
 
   private static Map<String, String> productionEnvironment(Path directory) {

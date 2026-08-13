@@ -5,6 +5,9 @@ import java.io.Console;
 import java.io.IOException;
 import java.lang.module.ModuleFinder;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +42,7 @@ import org.w3c.dom.Node;
 public final class Build {
   private static final Path ROOT = Path.of("").toAbsolutePath().normalize();
   private static final Path OUTPUT = ROOT.resolve("output");
+  private static final Path DEV_DATA_DIRECTORY = OUTPUT.resolve("toktrak-dev/data");
   private static final Path MODULES = OUTPUT.resolve("modules");
   private static final Path APP_MODULE = MODULES.resolve("toktrak");
   private static final Path TEST_MODULE = MODULES.resolve("toktrak.tests");
@@ -109,6 +113,19 @@ public final class Build {
           + "-Djunit.platform.execution.listeners.deactivate=com.diffplug.selfie.*";
   private static final String PIT_MAIN =
       "org.pitest." + "mutation" + "test.commandline." + "Mutation" + "CoverageReport";
+  private static final Set<String> DEV_EXCLUSIVE_COMMANDS =
+      Set.of(
+          "check",
+          "ci",
+          "clean",
+          "coverage",
+          "dev",
+          "ide",
+          "pit",
+          "prod",
+          "refactor",
+          "test",
+          "verify");
   private static final Set<String> BUILD_OWNED_PIT_OPTIONS =
       Set.of(
           "--classPath",
@@ -130,7 +147,8 @@ public final class Build {
   private static final boolean ANSI =
       Optional.ofNullable(System.console()).filter(Console::isTerminal).isPresent()
           && System.getenv("NO_COLOR") == null;
-  private static final List<String> APP_JDK_MODULES = List.of("java.logging", "jdk.httpserver");
+  private static final List<String> APP_JDK_MODULES =
+      List.of("java.logging", "java.net.http", "jdk.httpserver");
   private static final List<String> TEST_JDK_MODULES =
       List.of("java.logging", "java.net.http", "jdk.httpserver");
   private static final List<String> TEST_EXPORTS =
@@ -204,6 +222,7 @@ public final class Build {
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
       List<String> commandArguments = List.of(args).subList(1, args.length);
+      requireDevelopmentServerStopped(args[0], DEV_DATA_DIRECTORY);
       if (args[0].equals("pit")) {
         pitCommand(commandArguments);
         return;
@@ -225,6 +244,38 @@ public final class Build {
       }
     } finally {
       printTotal(System.nanoTime() - started);
+    }
+  }
+
+  static void requireDevelopmentServerStoppedForTest(String command, Path dataDirectory) {
+    requireDevelopmentServerStopped(command, dataDirectory);
+  }
+
+  private static void requireDevelopmentServerStopped(String command, Path dataDirectory) {
+    assert command != null;
+    assert dataDirectory != null;
+    if (!DEV_EXCLUSIVE_COMMANDS.contains(command) || !developmentServerRunning(dataDirectory)) {
+      return;
+    }
+    throw new IllegalStateException(
+        "cannot run " + command + " while mise run dev is running; stop it with Ctrl+C");
+  }
+
+  private static boolean developmentServerRunning(Path dataDirectory) {
+    assert dataDirectory != null;
+    Path lockPath = dataDirectory.resolve("toktrak.lock");
+    if (!Files.isRegularFile(lockPath)) return false;
+    try (var channel = FileChannel.open(lockPath, StandardOpenOption.WRITE)) {
+      try {
+        FileLock lock = channel.tryLock();
+        if (lock == null) return true;
+        lock.release();
+        return false;
+      } catch (OverlappingFileLockException exception) {
+        return true;
+      }
+    } catch (IOException exception) {
+      throw new IllegalStateException("cannot inspect development server lock", exception);
     }
   }
 

@@ -4,6 +4,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -57,6 +58,7 @@ public final class BuildTest {
     given_stampAboveLengthLimit_when_readingStamp_then_rejectsInput();
     given_invalidUtf8Stamp_when_readingStamp_then_rejectsInput();
     given_cacheArtifacts_when_checkingCacheHit_then_requiresMatchingOutputs();
+    given_runningDevelopmentServer_when_requiringExclusiveBuild_then_rejectsCommand();
     given_validRuntimeAssets_when_buildingBundle_then_returnsCanonicalIndex();
     given_invalidRuntimeAssets_when_buildingBundle_then_returnsActionableErrors();
     given_runtimeAssetBounds_when_buildingBundle_then_rejectsExcess();
@@ -600,6 +602,42 @@ public final class BuildTest {
       Files.deleteIfExists(required);
       Files.deleteIfExists(stamp);
       Files.deleteIfExists(directory);
+    }
+  }
+
+  private static void
+      given_runningDevelopmentServer_when_requiringExclusiveBuild_then_rejectsCommand()
+          throws Exception {
+    Path directory = Files.createTempDirectory("toktrak-dev-lock-");
+    try {
+      Build.requireDevelopmentServerStoppedForTest("verify", directory);
+      Path lockPath = directory.resolve("toktrak.lock");
+      try (var channel =
+              FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+          FileLock lock = channel.lock()) {
+        if (!lock.isValid()) throw new AssertionError("development lock is invalid");
+        for (String command :
+            List.of(
+                "check",
+                "ci",
+                "clean",
+                "coverage",
+                "dev",
+                "ide",
+                "pit",
+                "prod",
+                "refactor",
+                "test",
+                "verify")) {
+          expectFailure(
+              () -> Build.requireDevelopmentServerStoppedForTest(command, directory),
+              "cannot run " + command + " while mise run dev is running; stop it with Ctrl+C");
+        }
+        Build.requireDevelopmentServerStoppedForTest("fmt", directory);
+      }
+      Build.requireDevelopmentServerStoppedForTest("verify", directory);
+    } finally {
+      deleteTestTree(directory);
     }
   }
 

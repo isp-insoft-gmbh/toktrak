@@ -14,18 +14,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import toktrak.*;
 
 final class HealthModeTest {
   private static final int RAW_RESPONSE_BYTES_MAX = 128 * 1024;
   private static final Pattern STYLESHEET = Pattern.compile("href=\\\"([^\\\"]+)\\\"");
+  @TempDir Path directory;
 
   @Test
   void given_failWritesMode_when_startingApp_then_reportsDegradedHealth() throws Exception {
-    try (var app =
-        App.start(
-            new String[] {"--fail-writes"},
-            Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {"--fail-writes"}, devEnvironment())) {
       var response = get(app, "/health");
       assertEquals(503, response.statusCode());
       assertTrue(response.body().contains("\"status\":\"degraded\""));
@@ -35,8 +34,7 @@ final class HealthModeTest {
 
   @Test
   void given_devAuthMode_when_requestingRoot_then_returnsDevAuthStrip() throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       var response = get(app, "/");
       assertEquals(200, response.statusCode());
       assertTrue(response.body().contains("DEV AUTH"));
@@ -49,8 +47,7 @@ final class HealthModeTest {
   @Test
   void given_fingerprintedStylesheet_when_requestingAsset_then_returnsImmutableVerifiedBytes()
       throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       String assetUrl = stylesheetUrl(get(app, "/"));
       var response = get(app, assetUrl);
       String expected = Files.readString(Path.of("sources/toktrak/assets/public/main.css"));
@@ -75,8 +72,7 @@ final class HealthModeTest {
   @Test
   void given_noncanonicalAssetRequests_when_requestingRoutes_then_returnsBrowserNotFound()
       throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       String assetUrl = stylesheetUrl(get(app, "/"));
       int fingerprintStart = "/assets/main.".length();
       char replacement = assetUrl.charAt(fingerprintStart) == '0' ? '1' : '0';
@@ -101,8 +97,7 @@ final class HealthModeTest {
   @Test
   void given_noncanonicalAssetTargets_when_requestingRawHttp_then_returnsNotFound()
       throws Exception {
-    try (var app =
-        App.start(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0"))) {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
       String assetUrl = stylesheetUrl(get(app, "/"));
       String fileName = assetUrl.substring("/assets/".length());
       for (String target :
@@ -116,6 +111,13 @@ final class HealthModeTest {
       }
       assertEquals(200, rawStatus(app, assetUrl));
     }
+  }
+
+  private Map<String, String> devEnvironment() {
+    return Map.of(
+        "TOKTRAK_DEV_AUTH", "true",
+        "TOKTRAK_PORT", "0",
+        "TOKTRAK_DATA_DIR", directory.toString());
   }
 
   private static String stylesheetUrl(Response response) {
