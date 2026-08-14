@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -58,7 +59,10 @@ public final class Json {
             return Instant.parse(parser.getText());
           }
         });
-    ObjectMapper mapper = new ObjectMapper(factory).registerModule(module);
+    ObjectMapper mapper =
+        new ObjectMapper(factory)
+            .registerModule(module)
+            .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
     assert mapper != null;
     return mapper;
   }

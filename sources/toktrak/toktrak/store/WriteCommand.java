@@ -17,7 +17,9 @@ public final class WriteCommand {
     USER_DEACTIVATED,
     TOKEN_CREATED,
     TOKEN_REVOKED,
-    TOKEN_USED
+    TOKEN_USED,
+    USAGE_UPLOADED,
+    FX_RATE_UPDATED
   }
 
   private final Kind kind;
@@ -93,6 +95,23 @@ public final class WriteCommand {
         Kind.TOKEN_USED, tokenId.toString(), Map.of("tokenId", tokenId.toString()), digest);
   }
 
+  public static WriteCommand usageUploaded(UserKey owner, Map<String, Object> upload) {
+    Objects.requireNonNull(owner, "owner");
+    Objects.requireNonNull(upload, "upload");
+    return new WriteCommand(
+        Kind.USAGE_UPLOADED, owner.subject(), userData(owner, Map.of("upload", upload)), null);
+  }
+
+  public static WriteCommand fxRateUpdated(String date, String eurPerUsd) {
+    return new WriteCommand(
+        Kind.FX_RATE_UPDATED,
+        "system",
+        Map.of(
+            "date", Objects.requireNonNull(date, "date"),
+            "eurPerUsd", Objects.requireNonNull(eurPerUsd, "eurPerUsd")),
+        null);
+  }
+
   EventEnvelope event(Instant at, Projection projection) {
     assert at != null;
     assert projection != null;
@@ -136,6 +155,11 @@ public final class WriteCommand {
         }
         yield EventEnvelope.create(EventTypes.IDENTITY_TRACKER_TOKEN_USED, at, actor, data);
       }
+      case USAGE_UPLOADED -> {
+        requireActiveUser(projection, data);
+        yield EventEnvelope.create(EventTypes.USAGE_UPLOADED, at, actor, data);
+      }
+      case FX_RATE_UPDATED -> EventEnvelope.create(EventTypes.FX_RATE_UPDATED, at, actor, data);
     };
   }
 

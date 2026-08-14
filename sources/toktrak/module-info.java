@@ -11,8 +11,10 @@ module toktrak {
 
   exports toktrak;
   exports toktrak.auth;
+  exports toktrak.fx;
   exports toktrak.health;
   exports toktrak.identity;
   exports toktrak.store;
   exports toktrak.projection;
+  exports toktrak.usage;
 }

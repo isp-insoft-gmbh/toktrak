@@ -25,6 +25,7 @@ import toktrak.identity.IdentityService;
 import toktrak.projection.Projection;
 import toktrak.store.EventLog;
 import toktrak.store.Writer;
+import toktrak.usage.UsageService;
 
 final class HttpAdmissionTest {
   private static final int WORKER_COUNT = 64;
@@ -60,7 +61,16 @@ final class HttpAdmissionTest {
               projection,
               identities,
               new byte[32]);
-      server.createContext("/", new Router(health, false, workers, Assets.load(), auth));
+      server.createContext(
+          "/",
+          new Router(
+              health,
+              false,
+              workers,
+              Assets.load(),
+              auth,
+              new UsageService(writer, ClockSource.system()),
+              projection));
       server.setExecutor(Runnable::run);
       for (int index = 0; index < WORKER_COUNT; index++) {
         workers.execute(

@@ -84,6 +84,26 @@ public final class HttpSupport {
     send(exchange, status, "text/plain; charset=utf-8", new byte[0]);
   }
 
+  public static void eventStream(HttpExchange exchange, String body) throws IOException {
+    assert exchange != null;
+    assert body != null;
+    byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+    if (bytes.length > 64 * 1024) throw new IllegalArgumentException("SSE body is too large");
+    var headers = exchange.getResponseHeaders();
+    headers.set("Content-Type", "text/event-stream; charset=utf-8");
+    headers.set("Cache-Control", "no-store");
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("X-Frame-Options", "DENY");
+    headers.set("Referrer-Policy", "no-referrer");
+    headers.set(
+        "Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+    exchange.sendResponseHeaders(200, 0);
+    try (var output = exchange.getResponseBody()) {
+      output.write(bytes);
+    }
+    assert exchange.getResponseCode() == 200;
+  }
+
   public static void asset(HttpExchange exchange, String contentType, byte[] body)
       throws IOException {
     assert exchange != null;

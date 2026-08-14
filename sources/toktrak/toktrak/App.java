@@ -20,6 +20,7 @@ import java.util.logging.Logger;
 import toktrak.auth.AuthService;
 import toktrak.auth.OidcClient;
 import toktrak.dev.DevData;
+import toktrak.fx.FxService;
 import toktrak.health.HealthState;
 import toktrak.http.Assets;
 import toktrak.http.Router;
@@ -29,6 +30,7 @@ import toktrak.projection.Projection;
 import toktrak.store.DataLock;
 import toktrak.store.EventLog;
 import toktrak.store.Writer;
+import toktrak.usage.UsageService;
 
 public final class App implements AutoCloseable {
   private static final Logger LOG = Logger.getLogger(App.class.getName());
@@ -41,6 +43,7 @@ public final class App implements AutoCloseable {
   private final EventLog eventLog;
   private final Writer writer;
   private final Projection projection;
+  private final FxService fxService;
   private final int port;
   private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -51,6 +54,7 @@ public final class App implements AutoCloseable {
       EventLog eventLog,
       Writer writer,
       Projection projection,
+      FxService fxService,
       int port) {
     assert server != null;
     assert executor != null;
@@ -65,6 +69,7 @@ public final class App implements AutoCloseable {
     this.eventLog = eventLog;
     this.writer = writer;
     this.projection = projection;
+    this.fxService = fxService;
     this.port = port;
   }
 
@@ -77,6 +82,7 @@ public final class App implements AutoCloseable {
     DataLock dataLock = DataLock.acquire(config.dataDirectory());
     EventLog eventLog = null;
     Writer writer = null;
+    FxService fxService = null;
     HttpServer server = null;
     ExecutorService executor = null;
     try {
@@ -103,20 +109,24 @@ public final class App implements AutoCloseable {
               new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), config.port()),
               HTTP_BACKLOG);
       AuthService auth = auth(config, projection, writer, server.getAddress().getPort());
-      server.createContext("/", new Router(health, config.devAuth(), executor, assets, auth));
+      var usage = new UsageService(writer, config.clock());
+      server.createContext(
+          "/", new Router(health, config.devAuth(), executor, assets, auth, usage, projection));
       server.setExecutor(Runnable::run);
       server.start();
+      if (!config.devAuth()) fxService = FxService.start(writer);
       if (config.failWrites()) health.degrade("writes_failed");
       int port = server.getAddress().getPort();
       if (port < 0 || port > 65_535)
         throw new IllegalStateException("HTTP server returned invalid port");
       LOG.info("TokTrak ready at http://127.0.0.1:" + port + "/");
-      var app = new App(server, executor, dataLock, eventLog, writer, projection, port);
+      var app = new App(server, executor, dataLock, eventLog, writer, projection, fxService, port);
       assert app.port == port;
       return app;
     } catch (Exception exception) {
       if (server != null) server.stop(0);
       if (executor != null) shutdownExecutor(executor);
+      if (fxService != null) fxService.close();
       if (writer != null) writer.close();
       if (eventLog != null) eventLog.close();
       dataLock.close();
@@ -203,6 +213,7 @@ public final class App implements AutoCloseable {
     try {
       shutdownExecutor();
     } finally {
+      if (fxService != null) fxService.close();
       closeWriterAndStorage();
     }
   }

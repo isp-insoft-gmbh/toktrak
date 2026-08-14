@@ -4,13 +4,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import toktrak.projection.Projection;
@@ -22,7 +19,6 @@ import toktrak.store.WriteCommand;
 import toktrak.store.Writer;
 
 public final class IdentityService {
-  private static final Duration WRITE_TIMEOUT = Duration.ofSeconds(10);
   private static final int LABEL_CHARACTERS_MAX = 128;
   private static final int TOKEN_BYTES = 32;
   private static final String[] COLORS = {
@@ -125,18 +121,7 @@ public final class IdentityService {
   }
 
   private void write(WriteCommand command) {
-    Writer.Submission submission = writer.trySubmit(command);
-    if (!submission.accepted()) throw new IllegalStateException("writer is unavailable");
-    try {
-      submission.future().get(WRITE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException("identity write interrupted", exception);
-    } catch (ExecutionException | java.util.concurrent.TimeoutException exception) {
-      Throwable cause = exception instanceof ExecutionException ? exception.getCause() : exception;
-      if (cause instanceof RuntimeException runtimeException) throw runtimeException;
-      throw new IllegalStateException("identity write failed", cause);
-    }
+    writer.write(command);
   }
 
   private byte[] digest(String plaintext) {

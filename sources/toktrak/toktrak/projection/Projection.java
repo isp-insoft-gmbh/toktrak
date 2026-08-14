@@ -5,7 +5,9 @@ import static toktrak.store.EventTypes.*;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
@@ -16,13 +18,20 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import toktrak.store.EventEnvelope;
+import toktrak.usage.UsageProjection;
+import toktrak.usage.UsageProjection.Ingestion;
+import toktrak.usage.UsageProjection.Row;
+import toktrak.usage.UsageProjection.Summary;
+import toktrak.usage.UsageUpload;
+import toktrak.usage.UsageUpload.Report;
 
 public final class Projection {
-  public static final int VERSION = 2;
+  public static final int VERSION = 3;
   private static final int USERS_MAX = 10_000;
   private static final int TOKENS_MAX = 100_000;
+  private static final Duration REVISION_WAIT_MAX = Duration.ofSeconds(30);
 
-  private State state = new State(0, Map.of(), Map.of());
+  private State state = new State(0, Map.of(), Map.of(), UsageProjection.empty(), null);
   private long revision;
 
   private Projection() {}
@@ -93,6 +102,44 @@ public final class Projection {
     return Optional.ofNullable(match);
   }
 
+  public synchronized Summary usageSummary() {
+    return state.usage.summary();
+  }
+
+  public synchronized List<Row> usageRows(Report report) {
+    return state.usage.rows(report);
+  }
+
+  public synchronized List<Ingestion> ingestion() {
+    return state.usage.ingestion();
+  }
+
+  public synchronized Optional<FxRate> fxRate() {
+    return Optional.ofNullable(state.fxRate);
+  }
+
+  public synchronized long revision() {
+    assert revision >= 0;
+    return revision;
+  }
+
+  public synchronized long awaitRevision(long after, Duration timeout) throws InterruptedException {
+    if (after < 0) throw new IllegalArgumentException("revision must be nonnegative");
+    Objects.requireNonNull(timeout, "timeout");
+    if (timeout.isNegative() || timeout.isZero() || timeout.compareTo(REVISION_WAIT_MAX) > 0) {
+      throw new IllegalArgumentException("timeout must be positive and at most 30 seconds");
+    }
+    long deadline = Math.addExact(System.nanoTime(), timeout.toNanos());
+    while (revision <= after) {
+      long remaining = deadline - System.nanoTime();
+      if (remaining < 1) return revision;
+      long millis = remaining / 1_000_000;
+      int nanos = (int) (remaining % 1_000_000);
+      wait(millis, nanos);
+    }
+    return revision;
+  }
+
   public synchronized Transition prepare(EventEnvelope event) {
     Objects.requireNonNull(event, "event");
     State after = transition(state, event);
@@ -107,6 +154,7 @@ public final class Projection {
     assert state.equals(transition.before);
     state = transition.after;
     revision = Math.addExact(revision, 1);
+    notifyAll();
     assert state.eventCount >= 0;
   }
 
@@ -134,7 +182,7 @@ public final class Projection {
 
   private static State transition(State before, EventEnvelope event) {
     if (event.type().equals(PROJECTION_SNAPSHOT)) {
-      return compatible(event) ? snapshotState(event) : before;
+      return compatible(event) ? snapshotState(before, event) : before;
     }
     int count = Math.addExact(before.eventCount, 1);
     return switch (event.type()) {
@@ -143,7 +191,9 @@ public final class Projection {
       case IDENTITY_TRACKER_TOKEN_CREATED -> tokenCreated(before, event, count);
       case IDENTITY_TRACKER_TOKEN_REVOKED -> tokenRevoked(before, event, count);
       case IDENTITY_TRACKER_TOKEN_USED -> tokenUsed(before, event, count);
-      default -> new State(count, before.users, before.tokens);
+      case USAGE_UPLOADED -> usageUploaded(before, event, count);
+      case FX_RATE_UPDATED -> fxRateUpdated(before, event, count);
+      default -> new State(count, before.users, before.tokens, before.usage, before.fxRate);
     };
   }
 
@@ -160,7 +210,7 @@ public final class Projection {
     var users = new HashMap<>(before.users);
     users.put(key, user);
     if (users.size() > USERS_MAX) throw new IllegalStateException("users exceed " + USERS_MAX);
-    return new State(count, Map.copyOf(users), before.tokens);
+    return new State(count, Map.copyOf(users), before.tokens, before.usage, before.fxRate);
   }
 
   private static State deactivated(State before, EventEnvelope event, int count) {
@@ -194,7 +244,7 @@ public final class Projection {
                 event.at()));
       }
     }
-    return new State(count, Map.copyOf(users), Map.copyOf(tokens));
+    return new State(count, Map.copyOf(users), Map.copyOf(tokens), before.usage, before.fxRate);
   }
 
   private static State tokenCreated(State before, EventEnvelope event, int count) {
@@ -215,7 +265,7 @@ public final class Projection {
             id, owner, string(event.data(), "label", 128), digest, event.at(), null, null));
     if (tokens.size() > TOKENS_MAX)
       throw new IllegalStateException("tracker tokens exceed " + TOKENS_MAX);
-    return new State(count, before.users, Map.copyOf(tokens));
+    return new State(count, before.users, Map.copyOf(tokens), before.usage, before.fxRate);
   }
 
   private static State tokenRevoked(State before, EventEnvelope event, int count) {
@@ -239,7 +289,7 @@ public final class Projection {
             token.createdAt,
             token.lastUsedAt,
             event.at()));
-    return new State(count, before.users, Map.copyOf(tokens));
+    return new State(count, before.users, Map.copyOf(tokens), before.usage, before.fxRate);
   }
 
   private static State tokenUsed(State before, EventEnvelope event, int count) {
@@ -253,10 +303,38 @@ public final class Projection {
         id,
         new TrackerToken(
             id, token.owner, token.label, token.digest, token.createdAt, event.at(), null));
-    return new State(count, before.users, Map.copyOf(tokens));
+    return new State(count, before.users, Map.copyOf(tokens), before.usage, before.fxRate);
   }
 
-  private static State snapshotState(EventEnvelope event) {
+  private static State usageUploaded(State before, EventEnvelope event, int count) {
+    UserKey owner = userKey(event.data());
+    if (!active(before, owner)) throw new IllegalStateException("usage owner is inactive");
+    Object value = event.data().get("upload");
+    if (!(value instanceof Map<?, ?> upload)) {
+      throw new IllegalStateException("usage upload is invalid");
+    }
+    UsageUpload parsed = UsageUpload.parse(upload, event.at());
+    UsageProjection usage = before.usage.apply(owner, parsed, event.at());
+    return new State(count, before.users, before.tokens, usage, before.fxRate);
+  }
+
+  private static State fxRateUpdated(State before, EventEnvelope event, int count) {
+    String date = string(event.data(), "date", 10);
+    BigDecimal eurPerUsd;
+    try {
+      LocalDate.parse(date);
+      eurPerUsd = new BigDecimal(string(event.data(), "eurPerUsd", 64));
+    } catch (RuntimeException exception) {
+      throw new IllegalStateException("FX rate is invalid", exception);
+    }
+    if (eurPerUsd.signum() <= 0 || eurPerUsd.compareTo(BigDecimal.TEN) > 0) {
+      throw new IllegalStateException("FX rate is invalid");
+    }
+    return new State(
+        count, before.users, before.tokens, before.usage, new FxRate(date, eurPerUsd, event.at()));
+  }
+
+  private static State snapshotState(State before, EventEnvelope event) {
     int count = exactInt(event.data().get("eventCount"));
     if (count < 0) throw new IllegalStateException("projection snapshot is corrupt");
     var users = new HashMap<UserKey, User>();
@@ -294,7 +372,7 @@ public final class Projection {
     if (users.size() > USERS_MAX || tokens.size() > TOKENS_MAX) {
       throw new IllegalStateException("projection snapshot exceeds collection limits");
     }
-    return new State(count, Map.copyOf(users), Map.copyOf(tokens));
+    return new State(count, Map.copyOf(users), Map.copyOf(tokens), before.usage, before.fxRate);
   }
 
   private static boolean active(State state, UserKey key) {
@@ -419,11 +497,17 @@ public final class Projection {
     return data;
   }
 
-  private record State(int eventCount, Map<UserKey, User> users, Map<UUID, TrackerToken> tokens) {
+  private record State(
+      int eventCount,
+      Map<UserKey, User> users,
+      Map<UUID, TrackerToken> tokens,
+      UsageProjection usage,
+      FxRate fxRate) {
     private State {
       assert eventCount >= 0;
       assert users != null && users.size() <= USERS_MAX;
       assert tokens != null && tokens.size() <= TOKENS_MAX;
+      assert usage != null;
     }
   }
 
@@ -481,6 +565,22 @@ public final class Projection {
       tokens = List.copyOf(tokens);
       if (tokens.size() > 100 || total < tokens.size() || page < 1 || pageCount < page) {
         throw new IllegalArgumentException("token page is invalid");
+      }
+    }
+  }
+
+  public record FxRate(String date, BigDecimal eurPerUsd, Instant updatedAt) {
+    public FxRate {
+      Objects.requireNonNull(date, "date");
+      Objects.requireNonNull(eurPerUsd, "eurPerUsd");
+      Objects.requireNonNull(updatedAt, "updatedAt");
+      try {
+        LocalDate.parse(date);
+      } catch (RuntimeException exception) {
+        throw new IllegalArgumentException("FX date is invalid", exception);
+      }
+      if (eurPerUsd.signum() <= 0 || eurPerUsd.compareTo(BigDecimal.TEN) > 0) {
+        throw new IllegalArgumentException("FX rate is invalid");
       }
     }
   }

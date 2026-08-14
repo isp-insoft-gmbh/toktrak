@@ -8,6 +8,8 @@ public final class EventTypes {
   public static final String IDENTITY_TRACKER_TOKEN_CREATED = "identity-tracker-token-created";
   public static final String IDENTITY_TRACKER_TOKEN_REVOKED = "identity-tracker-token-revoked";
   public static final String IDENTITY_TRACKER_TOKEN_USED = "identity-tracker-token-used";
+  public static final String USAGE_UPLOADED = "usage-uploaded";
+  public static final String FX_RATE_UPDATED = "fx-rate-updated";
 
   private EventTypes() {}
 }

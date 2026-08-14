@@ -17,6 +17,7 @@ public final class Writer implements AutoCloseable {
   private static final int QUEUE_CAPACITY = 1_024;
   private static final Duration DRAIN_TIMEOUT = Duration.ofSeconds(10);
   private static final Duration ABORT_TIMEOUT = Duration.ofSeconds(5);
+  private static final Duration WRITE_TIMEOUT = Duration.ofSeconds(10);
   private static final Duration TIMEOUT_MAX = Duration.ofMinutes(1);
   private static final long POLL_MILLIS = 100;
 
@@ -161,6 +162,25 @@ public final class Writer implements AutoCloseable {
 
   public CompletableFuture<WriteResult> submit(WriteCommand command) {
     return trySubmit(command).future();
+  }
+
+  public WriteResult write(WriteCommand command) {
+    Submission submission = trySubmit(command);
+    if (!submission.accepted()) throw new IllegalStateException("writer is unavailable");
+    try {
+      return submission.future().get(WRITE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("write interrupted", exception);
+    } catch (java.util.concurrent.ExecutionException
+        | java.util.concurrent.TimeoutException exception) {
+      Throwable cause =
+          exception instanceof java.util.concurrent.ExecutionException
+              ? exception.getCause()
+              : exception;
+      if (cause instanceof RuntimeException runtimeException) throw runtimeException;
+      throw new IllegalStateException("write failed", cause);
+    }
   }
 
   public Submission trySubmit(WriteCommand command) {

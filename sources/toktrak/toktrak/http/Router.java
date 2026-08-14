@@ -6,6 +6,9 @@ import io.jstach.jstachio.Template;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -16,14 +19,22 @@ import toktrak.auth.AuthService.Session;
 import toktrak.health.HealthState;
 import toktrak.identity.IdentityService.PreparedToken;
 import toktrak.json.Json;
+import toktrak.projection.Projection;
 import toktrak.projection.Projection.TokenPage;
 import toktrak.projection.Projection.TrackerToken;
+import toktrak.projection.Projection.UserKey;
+import toktrak.usage.UsageService;
+import toktrak.usage.UsageUpload;
+import toktrak.usage.UsageUpload.Report;
 
 public final class Router implements HttpHandler {
   private static final int PATH_BYTES_MAX = 2 * 1024;
   private static final int METHOD_CHARACTERS_MAX = 32;
   private static final int FORM_BYTES_MAX = 16 * 1024;
   private static final int TOKEN_PAGE_SIZE = 100;
+  private static final int USAGE_PAGE_SIZE_DEFAULT = 100;
+  private static final int USAGE_PAGE_SIZE_MAX = 1_000;
+  private static final Duration STREAM_WAIT = Duration.ofSeconds(5);
   private static final String URI_TOO_LONG_PATH = "URI exceeds 2048-byte limit";
   private static final String INVALID_METHOD = "(invalid method)";
 
@@ -32,13 +43,17 @@ public final class Router implements HttpHandler {
   private final Executor requestExecutor;
   private final Assets assets;
   private final AuthService auth;
+  private final UsageService usage;
+  private final Projection projection;
 
   public Router(
       HealthState health,
       boolean devAuth,
       Executor requestExecutor,
       Assets assets,
-      AuthService auth) {
+      AuthService auth,
+      UsageService usage,
+      Projection projection) {
     assert health != null;
     assert requestExecutor != null;
     this.health = health;
@@ -46,6 +61,8 @@ public final class Router implements HttpHandler {
     this.requestExecutor = requestExecutor;
     this.assets = Objects.requireNonNull(assets, "assets");
     this.auth = Objects.requireNonNull(auth, "auth");
+    this.usage = Objects.requireNonNull(usage, "usage");
+    this.projection = Objects.requireNonNull(projection, "projection");
   }
 
   @Override
@@ -192,6 +209,22 @@ public final class Router implements HttpHandler {
     }
     if (path.equals("/api/tracker/verify") && method.equals("POST")) {
       verifyTracker(exchange);
+      return;
+    }
+    if (path.equals("/api/usage") && method.equals("POST")) {
+      uploadUsage(exchange);
+      return;
+    }
+    if (path.equals("/api/analytics") && method.equals("GET")) {
+      analytics(exchange);
+      return;
+    }
+    if (path.startsWith("/api/usage/") && method.equals("GET")) {
+      usageRows(exchange, path);
+      return;
+    }
+    if (path.equals("/api/stream") && method.equals("GET")) {
+      stream(exchange);
       return;
     }
     if (path.equals("/") && method.equals("GET")) {
@@ -349,16 +382,125 @@ public final class Router implements HttpHandler {
   }
 
   private void verifyTracker(HttpExchange exchange) throws IOException {
-    String authorization = exchange.getRequestHeaders().getFirst("Authorization");
-    if (authorization == null || !authorization.startsWith("Bearer ")) {
-      apiError(exchange, 401, "invalid_token", "tracker token is invalid");
+    UserKey owner = trackerOwner(exchange);
+    if (owner == null) return;
+    HttpSupport.json(exchange, 200, Json.write(Map.of("status", "ok")));
+  }
+
+  private void uploadUsage(HttpExchange exchange) throws IOException {
+    UserKey owner = trackerOwner(exchange);
+    if (owner == null) return;
+    String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+    if (contentType == null || !contentType.equalsIgnoreCase("application/json")) {
+      apiError(exchange, 415, "unsupported_media_type", "application/json is required");
+      return;
+    }
+    byte[] body;
+    try {
+      body = HttpSupport.readLimited(exchange.getRequestBody(), HttpSupport.MAX_REQUEST_BODY_BYTES);
+    } catch (IllegalArgumentException exception) {
+      apiError(exchange, 413, "payload_too_large", "usage upload is too large");
       return;
     }
     try {
-      auth.identities().authenticateTrackerToken(authorization.substring("Bearer ".length()));
-      HttpSupport.json(exchange, 200, Json.write(Map.of("status", "ok")));
-    } catch (IllegalArgumentException | IllegalStateException exception) {
+      UsageUpload uploaded = usage.upload(owner, body);
+      HttpSupport.json(
+          exchange,
+          200,
+          Json.write(
+              Map.of(
+                  "status", "ok",
+                  "generatedAt", uploaded.generatedAt(),
+                  "partial", uploaded.partial(),
+                  "successfulReports", uploaded.successfulReports(),
+                  "failedReports", uploaded.failedReports())));
+    } catch (IllegalArgumentException exception) {
+      apiError(exchange, 400, "invalid_usage", "usage upload is invalid");
+    } catch (IllegalStateException exception) {
+      apiError(exchange, 503, "write_unavailable", "usage upload could not be stored");
+    }
+  }
+
+  private UserKey trackerOwner(HttpExchange exchange) throws IOException {
+    String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+    if (authorization == null || !authorization.startsWith("Bearer ")) {
       apiError(exchange, 401, "invalid_token", "tracker token is invalid");
+      return null;
+    }
+    try {
+      return auth.identities()
+          .authenticateTrackerToken(authorization.substring("Bearer ".length()));
+    } catch (IllegalArgumentException exception) {
+      apiError(exchange, 401, "invalid_token", "tracker token is invalid");
+      return null;
+    } catch (IllegalStateException exception) {
+      apiError(exchange, 503, "write_unavailable", "tracker verification is unavailable");
+      return null;
+    }
+  }
+
+  private void analytics(HttpExchange exchange) throws IOException {
+    if (apiSession(exchange) == null) return;
+    var body = new LinkedHashMap<String, Object>();
+    body.put("revision", projection.revision());
+    body.put("summary", projection.usageSummary());
+    body.put("ingestion", projection.ingestion());
+    body.put("fx", projection.fxRate().orElse(null));
+    HttpSupport.json(exchange, 200, Json.write(body));
+  }
+
+  private void usageRows(HttpExchange exchange, String path) throws IOException {
+    if (apiSession(exchange) == null) return;
+    Report report =
+        switch (path) {
+          case "/api/usage/daily" -> Report.DAILY;
+          case "/api/usage/session" -> Report.SESSION;
+          case "/api/usage/blocks" -> Report.BLOCKS;
+          default -> null;
+        };
+    if (report == null) {
+      apiError(exchange, 404, "not_found", "route not found");
+      return;
+    }
+    try {
+      Page page = page(exchange.getRequestURI().getRawQuery());
+      List<toktrak.usage.UsageProjection.Row> rows = projection.usageRows(report);
+      int pageCount = Math.max(1, Math.ceilDiv(rows.size(), page.pageSize));
+      if (page.page > pageCount) throw new IllegalArgumentException("page is out of range");
+      int from = Math.multiplyExact(page.page - 1, page.pageSize);
+      int to = Math.min(rows.size(), Math.addExact(from, page.pageSize));
+      HttpSupport.json(
+          exchange,
+          200,
+          Json.write(
+              Map.of(
+                  "report", report.reportName(),
+                  "total", rows.size(),
+                  "page", page.page,
+                  "pageCount", pageCount,
+                  "rows", rows.subList(from, to))));
+    } catch (IllegalArgumentException | ArithmeticException exception) {
+      apiError(exchange, 400, "invalid_query", "usage query is invalid");
+    }
+  }
+
+  private void stream(HttpExchange exchange) throws IOException {
+    if (apiSession(exchange) == null) return;
+    try {
+      long after = revision(exchange.getRequestURI().getRawQuery());
+      long observed = projection.awaitRevision(after, STREAM_WAIT);
+      String body =
+          observed > after
+              ? "event: datastar-patch-signals\ndata: signals "
+                  + Json.write(Map.of("usageRevision", observed))
+                  + "\n\n"
+              : ": keepalive\n\n";
+      HttpSupport.eventStream(exchange, body);
+    } catch (IllegalArgumentException exception) {
+      apiError(exchange, 400, "invalid_query", "stream query is invalid");
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      apiError(exchange, 503, "server_stopping", "server is stopping");
     }
   }
 
@@ -421,6 +563,50 @@ public final class Router implements HttpHandler {
         active);
   }
 
+  private static Page page(String query) {
+    Map<String, String> fields =
+        query == null ? Map.of() : toktrak.auth.OidcClient.parseForm(query);
+    if (!java.util.Set.of("page", "pageSize").containsAll(fields.keySet())) {
+      throw new IllegalArgumentException("query is invalid");
+    }
+    int page = positiveInt(fields.getOrDefault("page", "1"), Integer.MAX_VALUE);
+    int pageSize =
+        positiveInt(
+            fields.getOrDefault("pageSize", Integer.toString(USAGE_PAGE_SIZE_DEFAULT)),
+            USAGE_PAGE_SIZE_MAX);
+    return new Page(page, pageSize);
+  }
+
+  private static long revision(String query) {
+    if (query == null) return 0;
+    Map<String, String> fields = toktrak.auth.OidcClient.parseForm(query);
+    if (!fields.keySet().equals(java.util.Set.of("revision"))) {
+      throw new IllegalArgumentException("query is invalid");
+    }
+    String value = fields.get("revision");
+    if (!value.matches("0|[1-9][0-9]{0,18}")) {
+      throw new IllegalArgumentException("revision is invalid");
+    }
+    try {
+      return Long.parseLong(value);
+    } catch (NumberFormatException exception) {
+      throw new IllegalArgumentException("revision is invalid", exception);
+    }
+  }
+
+  private static int positiveInt(String value, int maximum) {
+    assert value != null;
+    assert maximum > 0;
+    if (!value.matches("[1-9][0-9]{0,9}")) throw new IllegalArgumentException("integer is invalid");
+    try {
+      int result = Integer.parseInt(value);
+      if (result > maximum) throw new NumberFormatException();
+      return result;
+    } catch (NumberFormatException exception) {
+      throw new IllegalArgumentException("integer is invalid", exception);
+    }
+  }
+
   private static int tokenPage(String query) {
     if (query == null) return 1;
     if (!query.matches("page=[1-9][0-9]{0,9}")) {
@@ -436,6 +622,13 @@ public final class Router implements HttpHandler {
   private static String tokenPageUrl(int page) {
     assert page >= 1;
     return "/tokens?page=" + page;
+  }
+
+  private record Page(int page, int pageSize) {
+    private Page {
+      assert page > 0;
+      assert pageSize > 0 && pageSize <= USAGE_PAGE_SIZE_MAX;
+    }
   }
 
   private static <T> byte[] render(
