@@ -59,6 +59,8 @@
 - Separate control and data planes; batch I/O and computation.
 - Follow Java naming conventions. Use precise nouns and verbs, suffix qualifiers
   such as `latencyMillisMax`, and avoid abbreviations.
+- Write Javadoc only with `///` Markdown documentation comments; never use
+  `/** ... */`.
 - Keep the tracker one plain Node `.mjs` using the standard library and native
   user schedulers. Do not add a JavaScript build system.
 - Keep production runtime configuration in environment variables.
