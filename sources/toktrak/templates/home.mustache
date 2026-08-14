@@ -1,13 +1,15 @@
 {{<base.mustache}}
 {{$content}}
-  <h1>TokTrak</h1>
+  <div class="scope-page">
+    <h1>TokTrak</h1>
 {{#signedIn}}
-  <p>Signed in · <a href="/tokens">My Tracker</a></p>
+    <p>Signed in · <a href="/tokens">My Tracker</a></p>
 {{/signedIn}}
 {{^signedIn}}
-  <form action="/login">
-    <button>Sign in</button>
-  </form>
+    <form action="/login">
+      <button>Sign in</button>
+    </form>
 {{/signedIn}}
+  </div>
 {{/content}}
 {{/base.mustache}}

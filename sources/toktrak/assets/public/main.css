@@ -13,16 +13,20 @@
   font: 15px/1.45 ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 html {
+  -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
+  tab-size: 4;
+  text-size-adjust: 100%;
 }
 
 body {
-  min-width: 20rem;
   margin: 0;
   background: var(--background);
   color: var(--text);
@@ -38,7 +42,9 @@ a:hover {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -147,8 +153,9 @@ p {
 
 h1 {
   margin-bottom: 0.35rem;
+  overflow-wrap: anywhere;
   font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
-  font-size: clamp(3.5rem, 10vw, 8rem);
+  font-size: clamp(2.5rem, 10vw, 8rem);
   font-weight: 900;
   line-height: 0.9;
   letter-spacing: -0.035em;
@@ -410,6 +417,7 @@ h3 {
   grid-template-columns: 7rem minmax(6rem, 1fr) auto minmax(8rem, auto);
   gap: 0.8rem;
   align-items: center;
+  border-bottom: 1px solid var(--line);
   border-bottom: 1px solid color-mix(in srgb, var(--line) 35%, transparent);
   padding: 0.3rem 0;
   font-variant-numeric: tabular-nums;
@@ -500,6 +508,15 @@ th {
 
 .scope-page {
   max-width: 72rem;
+}
+
+.scope-page code {
+  overflow-wrap: anywhere;
+}
+
+.scope-page pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .scope-page section {
@@ -672,14 +689,21 @@ button {
   }
 }
 
+@media (max-width: 20rem) {
+  .trend-row,
+  .metric-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
   }
 
-  *,
-  *::before,
-  *::after {
-    transition-duration: 0.001ms !important;
+  .wordmark,
+  .site-header nav a,
+  .currency-switch {
+    transition: none;
   }
 }

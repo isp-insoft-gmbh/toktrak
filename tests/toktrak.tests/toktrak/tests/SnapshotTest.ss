@@ -20,10 +20,12 @@
     </nav>
   </header>
   <main id="content">
-  <h1>Tracker token created</h1>
-  <p>Copy this token now. It will not be shown again.</p>
-  <pre>tt_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</pre>
-  <p><a href="/tokens">Return to My Tracker</a></p>
+  <div class="scope-page">
+    <h1>Tracker token created</h1>
+    <p>Copy this token now. It will not be shown again.</p>
+    <pre>tt_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</pre>
+    <p><a href="/tokens">Return to My Tracker</a></p>
+  </div>
 
   </main>
 </body>
@@ -43,8 +45,11 @@
   <a class="skip-link" href="#content">Skip to content</a>
   <div class="environment-banner" role="status">DEV AUTH</div>
   <main id="content">
-  <h1>TokTrak</h1>
-  <p>Signed in · <a href="/tokens">My Tracker</a></p>
+  <div class="scope-page">
+    <h1>TokTrak</h1>
+    <p>Signed in · <a href="/tokens">My Tracker</a></p>
+  </div>
+
   </main>
 </body>
 </html>
@@ -71,23 +76,25 @@
     </nav>
   </header>
   <main id="content">
-  <h1>My Tracker</h1>
-  <ul>
-    <li>No tracker tokens.</li>
-  </ul>
-  <form method="post" action="/tokens">
-    <input type="hidden" name="csrf" value="csrf-value">
-    <label>Label <input name="label" maxlength="128" required></label>
-    <button>Create token</button>
-  </form>
-  <form method="post" action="/account/deactivate">
-    <input type="hidden" name="csrf" value="csrf-value">
-    <button>Deactivate account</button>
-  </form>
-  <form method="post" action="/logout">
-    <input type="hidden" name="csrf" value="csrf-value">
-    <button>Sign out</button>
-  </form>
+  <div class="scope-page">
+    <h1>My Tracker</h1>
+    <ul>
+      <li>No tracker tokens.</li>
+    </ul>
+    <form method="post" action="/tokens">
+      <input type="hidden" name="csrf" value="csrf-value">
+      <label>Label <input name="label" maxlength="128" required></label>
+      <button>Create token</button>
+    </form>
+    <form method="post" action="/account/deactivate">
+      <input type="hidden" name="csrf" value="csrf-value">
+      <button>Deactivate account</button>
+    </form>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf" value="csrf-value">
+      <button>Sign out</button>
+    </form>
+  </div>
 
   </main>
 </body>
@@ -112,10 +119,13 @@
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
   <main id="content">
-  <h1>TokTrak</h1>
-  <form action="/login">
-    <button>Sign in</button>
-  </form>
+  <div class="scope-page">
+    <h1>TokTrak</h1>
+    <form action="/login">
+      <button>Sign in</button>
+    </form>
+  </div>
+
   </main>
 </body>
 </html>
@@ -143,40 +153,42 @@
     </nav>
   </header>
   <main id="content">
-  <h1>My Tracker</h1>
-  <ul>
-    <li>
-      <strong>Laptop &lt;primary&gt;</strong>
-      <code>00000000-0000-4000-8000-000000000001</code>
-      · active
-      <form method="post" action="/tokens/revoke">
-        <input type="hidden" name="csrf" value="csrf-value">
-        <input type="hidden" name="tokenId" value="00000000-0000-4000-8000-000000000001">
-        <button>Revoke</button>
-      </form>
-    </li>
-    <li>
-      <strong>Old workstation</strong>
-      <code>00000000-0000-4000-8000-000000000002</code>
-      · revoked
-      · last used <time>2026-07-10T12:00:00Z</time>
-    </li>
-  </ul>
-  <a href="/tokens?page&#x3D;1">Previous</a>
-  <a href="/tokens?page&#x3D;3">Next</a>
-  <form method="post" action="/tokens">
-    <input type="hidden" name="csrf" value="csrf-value">
-    <label>Label <input name="label" maxlength="128" required></label>
-    <button>Create token</button>
-  </form>
-  <form method="post" action="/account/deactivate">
-    <input type="hidden" name="csrf" value="csrf-value">
-    <button>Deactivate account</button>
-  </form>
-  <form method="post" action="/logout">
-    <input type="hidden" name="csrf" value="csrf-value">
-    <button>Sign out</button>
-  </form>
+  <div class="scope-page">
+    <h1>My Tracker</h1>
+    <ul>
+      <li>
+        <strong>Laptop &lt;primary&gt;</strong>
+        <code>00000000-0000-4000-8000-000000000001</code>
+        · active
+        <form method="post" action="/tokens/revoke">
+          <input type="hidden" name="csrf" value="csrf-value">
+          <input type="hidden" name="tokenId" value="00000000-0000-4000-8000-000000000001">
+          <button>Revoke</button>
+        </form>
+      </li>
+      <li>
+        <strong>Old workstation</strong>
+        <code>00000000-0000-4000-8000-000000000002</code>
+        · revoked
+        · last used <time>2026-07-10T12:00:00Z</time>
+      </li>
+    </ul>
+    <a href="/tokens?page&#x3D;1">Previous</a>
+    <a href="/tokens?page&#x3D;3">Next</a>
+    <form method="post" action="/tokens">
+      <input type="hidden" name="csrf" value="csrf-value">
+      <label>Label <input name="label" maxlength="128" required></label>
+      <button>Create token</button>
+    </form>
+    <form method="post" action="/account/deactivate">
+      <input type="hidden" name="csrf" value="csrf-value">
+      <button>Deactivate account</button>
+    </form>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf" value="csrf-value">
+      <button>Sign out</button>
+    </form>
+  </div>
 
   </main>
 </body>
