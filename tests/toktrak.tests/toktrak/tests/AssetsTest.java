@@ -23,7 +23,17 @@ final class AssetsTest {
     String url = assets.publicUrl("main.css");
     assertTrue(url.matches("/assets/main\\.[0-9a-f]{32}\\.css"), url);
     byte[] expected = Files.readAllBytes(Path.of("sources/toktrak/assets/public/main.css"));
+    String css = new String(expected, StandardCharsets.UTF_8);
+    assertTrue(css.contains("@media (prefers-reduced-motion: reduce)"));
+    assertTrue(css.contains("@media (max-width: 44rem)"));
+    assertTrue(css.contains(":focus-visible"));
     assertEquals("/assets/main." + sha256(expected).substring(0, 32) + ".css", url);
+    byte[] datastar = Files.readAllBytes(Path.of("sources/toktrak/assets/public/datastar.js"));
+    assertEquals(
+        "/assets/datastar." + sha256(datastar).substring(0, 32) + ".js",
+        assets.publicUrl("datastar.js"));
+    assertTrue(new String(datastar, StandardCharsets.UTF_8).startsWith("// Datastar v1.0.2\n"));
+    assertEquals(2, assets.publicCount());
     Assets inMemory =
         Assets.loadForTest(
             index("public", "main.css", CSS_MEDIA_TYPE, expected),

@@ -29,6 +29,7 @@ import toktrak.store.EventEnvelope;
 @Tag("snapshot")
 final class SnapshotTest {
   private static final String STYLESHEET = "/assets/main.0123456789abcdef0123456789abcdef.css";
+  private static final String DATASTAR = "/assets/datastar.0123456789abcdef0123456789abcdef.js";
 
   @Test
   void given_productionHomeView_when_renderingEncodedHtml_then_matchesApprovedDocument()
@@ -55,7 +56,14 @@ final class SnapshotTest {
       throws Exception {
     var view =
         new TokenListView(
-            base("My Tracker · TokTrak", false), "csrf-value", List.of(), 1, false, "", false, "");
+            trackerBase("My Tracker · TokTrak", false),
+            "csrf-value",
+            List.of(),
+            1,
+            false,
+            "",
+            false,
+            "");
     expectSelfie(decode(HttpSupport.renderEncoded(TokenListViewRenderer.of(), view))).toMatchDisk();
   }
 
@@ -80,7 +88,7 @@ final class SnapshotTest {
                 false));
     var view =
         new TokenListView(
-            base("My Tracker · TokTrak", true),
+            trackerBase("My Tracker · TokTrak", true),
             "csrf-value",
             rows,
             2,
@@ -96,7 +104,7 @@ final class SnapshotTest {
       throws Exception {
     var view =
         new CreatedTokenView(
-            base("Tracker token created · TokTrak", false), "tt_" + "A".repeat(43));
+            trackerBase("Tracker token created · TokTrak", false), "tt_" + "A".repeat(43));
     expectSelfie(decode(HttpSupport.renderEncoded(CreatedTokenViewRenderer.of(), view)))
         .toMatchDisk();
   }
@@ -148,8 +156,38 @@ final class SnapshotTest {
     expectSelfie(line).toMatchDisk();
   }
 
+  private static BaseView trackerBase(String title, boolean development) {
+    return new BaseView(
+        title,
+        STYLESHEET,
+        DATASTAR,
+        development,
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+        "",
+        "");
+  }
+
   private static BaseView base(String title, boolean development) {
-    return new BaseView(title, STYLESHEET, development);
+    return new BaseView(
+        title,
+        STYLESHEET,
+        DATASTAR,
+        development,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        "",
+        "");
   }
 
   private static String decode(byte[] bytes) throws Exception {

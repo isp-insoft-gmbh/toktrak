@@ -23,10 +23,26 @@ public final class Main {
     if (args.length == 1 && args[0].equals("--check-assets")) {
       Assets assets = Assets.load();
       String stylesheetUrl = assets.publicUrl("main.css");
+      String datastarUrl = assets.publicUrl("datastar.js");
       byte[] html =
           HttpSupport.renderEncoded(
               HomeViewRenderer.of(),
-              new HomeView(new BaseView("TokTrak", stylesheetUrl, false), false));
+              new HomeView(
+                  new BaseView(
+                      "TokTrak",
+                      stylesheetUrl,
+                      datastarUrl,
+                      false,
+                      false,
+                      false,
+                      false,
+                      false,
+                      false,
+                      false,
+                      true,
+                      "",
+                      ""),
+                  false));
       String document = new String(html, StandardCharsets.UTF_8);
       if (!document.contains("<h1>TokTrak</h1>") || document.contains("{{")) {
         throw new IllegalStateException("production renderer self-check failed");

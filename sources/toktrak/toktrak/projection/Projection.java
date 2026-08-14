@@ -56,6 +56,12 @@ public final class Projection {
     return user != null && user.active ? Optional.of(user) : Optional.empty();
   }
 
+  public synchronized List<User> users() {
+    return state.users.values().stream()
+        .sorted(Comparator.comparing(user -> user.key.toString()))
+        .toList();
+  }
+
   public synchronized List<TrackerToken> trackerTokens(UserKey owner) {
     Objects.requireNonNull(owner, "owner");
     return state.tokens.values().stream()

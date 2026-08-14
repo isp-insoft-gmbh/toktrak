@@ -19,7 +19,8 @@ import toktrak.*;
 
 final class HealthModeTest {
   private static final int RAW_RESPONSE_BYTES_MAX = 128 * 1024;
-  private static final Pattern STYLESHEET = Pattern.compile("href=\\\"([^\\\"]+)\\\"");
+  private static final Pattern STYLESHEET =
+      Pattern.compile("<link rel=\\\"stylesheet\\\" href=\\\"([^\\\"]+)\\\"");
   @TempDir Path directory;
 
   @Test
@@ -39,7 +40,10 @@ final class HealthModeTest {
       assertEquals(200, response.statusCode());
       assertTrue(response.body().contains("DEV AUTH"));
       assertTrue(stylesheetUrl(response).matches("/assets/main\\.[0-9a-f]{32}\\.css"));
-      assertTrue(response.body().contains("<div class=\"environment-banner\">DEV AUTH</div>"));
+      assertTrue(
+          response
+              .body()
+              .contains("<div class=\"environment-banner\" role=\"status\">DEV AUTH</div>"));
       assertFalse(response.body().contains("<div style="));
     }
   }

@@ -1,0 +1,23 @@
+{{<base.mustache}}
+{{$content}}
+  <article class="scope-page">
+    <header class="page-heading">
+      <div><p class="eyebrow">BOUNDARIES / TRUST</p><h1>Data scope</h1></div>
+      <p>Signed in as <strong>{{signedInName}}</strong></p>
+    </header>
+    <section>
+      <h2>What TokTrak sees</h2>
+      <p>Local coding-harness usage reported by <code>ccusage</code>: projected cost, token counts, models, sources, sessions, projects, and coding blocks.</p>
+    </section>
+    <section>
+      <h2>What TokTrak never sees</h2>
+      <p>Prompts, code, file contents, cloud usage, web usage, CI usage, or complete subscription bills.</p>
+    </section>
+    <section>
+      <h2>How to read totals</h2>
+      <p>USD is canonical. EUR values use the last successful exchange rate. Every total is an awareness estimate—not billing, accounting, or a performance measure.</p>
+    </section>
+    <a class="button-link" href="/">Back to overview</a>
+  </article>
+{{/content}}
+{{/base.mustache}}

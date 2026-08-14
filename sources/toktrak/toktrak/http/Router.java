@@ -37,6 +37,7 @@ public final class Router implements HttpHandler {
   private static final Duration STREAM_WAIT = Duration.ofSeconds(5);
   private static final String URI_TOO_LONG_PATH = "URI exceeds 2048-byte limit";
   private static final String INVALID_METHOD = "(invalid method)";
+  private static final String CURRENCY_COOKIE = "toktrak_currency";
 
   private final HealthState health;
   private final boolean devAuth;
@@ -227,6 +228,14 @@ public final class Router implements HttpHandler {
       stream(exchange);
       return;
     }
+    if (path.equals("/visualizations") && method.equals("GET")) {
+      visualizations(exchange);
+      return;
+    }
+    if (path.equals("/scope") && method.equals("GET")) {
+      scope(exchange);
+      return;
+    }
     if (path.equals("/") && method.equals("GET")) {
       home(exchange);
       return;
@@ -282,7 +291,7 @@ public final class Router implements HttpHandler {
       var rows = tokens.tokens().stream().map(Router::tokenRow).toList();
       var view =
           new TokenListView(
-              base("My Tracker · TokTrak"),
+              trackerBase("My Tracker · TokTrak"),
               session.csrf(),
               rows,
               page,
@@ -313,7 +322,8 @@ public final class Router implements HttpHandler {
       PreparedToken prepared =
           auth.identities().prepareTrackerToken(session.key(), form.get("label"));
       var view =
-          new CreatedTokenView(base("Tracker token created · TokTrak"), prepared.plaintext());
+          new CreatedTokenView(
+              trackerBase("Tracker token created · TokTrak"), prepared.plaintext());
       byte[] body =
           render(
               CreatedTokenViewRenderer.of(),
@@ -492,7 +502,7 @@ public final class Router implements HttpHandler {
       String body =
           observed > after
               ? "event: datastar-patch-signals\ndata: signals "
-                  + Json.write(Map.of("usageRevision", observed))
+                  + Json.write(Map.of("_usageRevision", observed))
                   + "\n\n"
               : ": keepalive\n\n";
       HttpSupport.eventStream(exchange, body);
@@ -505,22 +515,180 @@ public final class Router implements HttpHandler {
   }
 
   private void home(HttpExchange exchange) throws IOException {
-    boolean signedIn;
+    Session session;
     try {
-      auth.requireSession(exchange.getRequestHeaders().getFirst("Cookie"));
-      signedIn = true;
+      session = auth.requireSession(exchange.getRequestHeaders().getFirst("Cookie"));
     } catch (IllegalArgumentException exception) {
-      signedIn = false;
+      var view = new HomeView(base("TokTrak"), false);
+      HttpSupport.encodedHtml(
+          exchange,
+          200,
+          render(HomeViewRenderer.of(), view, "home.mustache", "HomeView", "HomeViewRenderer"));
+      return;
     }
-    var view = new HomeView(base("TokTrak"), signedIn);
+    DashboardCurrency currency = dashboardCurrency(exchange, "/");
+    if (currency == null) return;
+    DashboardCurrency effective = effectiveCurrency(currency);
+    var view =
+        new OverviewView(
+            dashboardBase("Overview · TokTrak", "/", true, false, effective),
+            projection.revision(),
+            session.user().displayName(),
+            DashboardFactory.create(projection, health, effective));
     HttpSupport.encodedHtml(
         exchange,
         200,
-        render(HomeViewRenderer.of(), view, "home.mustache", "HomeView", "HomeViewRenderer"));
+        render(
+            OverviewViewRenderer.of(),
+            view,
+            "overview.mustache",
+            "OverviewView",
+            "OverviewViewRenderer"));
+  }
+
+  private void visualizations(HttpExchange exchange) throws IOException {
+    Session session = browserSession(exchange);
+    if (session == null) return;
+    DashboardCurrency currency = dashboardCurrency(exchange, "/visualizations");
+    if (currency == null) return;
+    DashboardCurrency effective = effectiveCurrency(currency);
+    var view =
+        new VisualizationsView(
+            dashboardBase("Visualizations · TokTrak", "/visualizations", false, true, effective),
+            projection.revision(),
+            session.user().displayName(),
+            DashboardFactory.create(projection, health, effective));
+    HttpSupport.encodedHtml(
+        exchange,
+        200,
+        render(
+            VisualizationsViewRenderer.of(),
+            view,
+            "visualizations.mustache",
+            "VisualizationsView",
+            "VisualizationsViewRenderer"));
+  }
+
+  private void scope(HttpExchange exchange) throws IOException {
+    Session session = browserSession(exchange);
+    if (session == null) return;
+    DashboardCurrency currency = dashboardCurrency(exchange, "/scope");
+    if (currency == null) return;
+    DashboardCurrency effective = effectiveCurrency(currency);
+    var view =
+        new ScopeView(
+            dashboardBase("Data scope · TokTrak", "/scope", false, false, effective),
+            session.user().displayName());
+    HttpSupport.encodedHtml(
+        exchange,
+        200,
+        render(ScopeViewRenderer.of(), view, "scope.mustache", "ScopeView", "ScopeViewRenderer"));
+  }
+
+  private DashboardCurrency dashboardCurrency(HttpExchange exchange, String path)
+      throws IOException {
+    assert exchange != null;
+    assert path.equals("/") || path.equals("/visualizations") || path.equals("/scope");
+    String query = exchange.getRequestURI().getRawQuery();
+    if (query != null) {
+      try {
+        Map<String, String> fields = toktrak.auth.OidcClient.parseForm(query);
+        if (!fields.keySet().equals(java.util.Set.of("currency"))) {
+          throw new IllegalArgumentException("currency query is invalid");
+        }
+        DashboardCurrency currency = DashboardCurrency.valueOf(fields.get("currency"));
+        exchange
+            .getResponseHeaders()
+            .add(
+                "Set-Cookie",
+                CURRENCY_COOKIE
+                    + "="
+                    + currency
+                    + "; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax"
+                    + (devAuth ? "" : "; Secure"));
+        HttpSupport.redirect(exchange, 303, URI.create(path));
+        return null;
+      } catch (IllegalArgumentException exception) {
+        badRequest(exchange, "currency query is invalid");
+        return null;
+      }
+    }
+    return AuthService.cookie(exchange.getRequestHeaders().getFirst("Cookie"), CURRENCY_COOKIE)
+        .map(
+            value -> {
+              try {
+                return DashboardCurrency.valueOf(value);
+              } catch (IllegalArgumentException exception) {
+                return DashboardCurrency.USD;
+              }
+            })
+        .orElse(DashboardCurrency.USD);
+  }
+
+  private DashboardCurrency effectiveCurrency(DashboardCurrency currency) {
+    assert currency != null;
+    return currency == DashboardCurrency.EUR && projection.fxRate().isEmpty()
+        ? DashboardCurrency.USD
+        : currency;
+  }
+
+  private BaseView dashboardBase(
+      String title,
+      String path,
+      boolean overviewCurrent,
+      boolean visualizationsCurrent,
+      DashboardCurrency currency) {
+    assert path.equals("/") || path.equals("/visualizations") || path.equals("/scope");
+    DashboardCurrency alternative =
+        currency == DashboardCurrency.USD ? DashboardCurrency.EUR : DashboardCurrency.USD;
+    return new BaseView(
+        title,
+        assets.publicUrl("main.css"),
+        assets.publicUrl("datastar.js"),
+        devAuth,
+        true,
+        overviewCurrent,
+        visualizationsCurrent,
+        path.equals("/scope"),
+        false,
+        true,
+        currency == DashboardCurrency.USD,
+        path + "?currency=" + alternative,
+        alternative.name());
+  }
+
+  private BaseView trackerBase(String title) {
+    return new BaseView(
+        title,
+        assets.publicUrl("main.css"),
+        assets.publicUrl("datastar.js"),
+        devAuth,
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+        "",
+        "");
   }
 
   private BaseView base(String title) {
-    return new BaseView(title, assets.publicUrl("main.css"), devAuth);
+    return new BaseView(
+        title,
+        assets.publicUrl("main.css"),
+        assets.publicUrl("datastar.js"),
+        devAuth,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        "",
+        "");
   }
 
   private Session browserSession(HttpExchange exchange) throws IOException {

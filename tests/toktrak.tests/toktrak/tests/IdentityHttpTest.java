@@ -49,12 +49,13 @@ final class IdentityHttpTest {
       HttpResponse<String> signedInHome =
           send(client, base.resolve("/"), "GET", cookie, null, null);
       assertTrue(signedInHome.body().contains("Signed in"), signedInHome.body());
-      assertTrue(
-          signedInHome.body().contains("href=\"/tokens\">My Tracker</a>"), signedInHome.body());
+      assertNavigation(signedInHome.body(), "/", "Overview");
+      assertTrue(signedInHome.body().contains("EUR unavailable · showing USD"));
       assertFalse(signedInHome.body().contains(">Sign in</button>"), signedInHome.body());
 
       HttpResponse<String> page = send(client, base.resolve("/tokens"), "GET", cookie, null, null);
       assertEquals(200, page.statusCode());
+      assertNavigation(page.body(), "/tokens", "My Tracker");
       assertEquals(
           page.body().getBytes(StandardCharsets.UTF_8).length,
           Integer.parseInt(page.headers().firstValue("Content-Length").orElseThrow()));
@@ -86,6 +87,7 @@ final class IdentityHttpTest {
               form(Map.of("label", "Laptop", "csrf", csrf)),
               null);
       assertEquals(201, created.statusCode());
+      assertNavigation(created.body(), "/tokens", "My Tracker");
       String token = match(TOKEN, created.body());
       assertFalse(created.headers().firstValue("Cache-Control").orElseThrow().contains("public"));
 
@@ -176,6 +178,17 @@ final class IdentityHttpTest {
           .method(method, HttpRequest.BodyPublishers.ofString(form));
     }
     return client.send(request.build(), HttpResponse.BodyHandlers.ofString());
+  }
+
+  private static void assertNavigation(String html, String currentPath, String currentLabel) {
+    assertTrue(html.contains("href=\"/\""), html);
+    assertTrue(html.contains("href=\"/visualizations\""), html);
+    assertTrue(html.contains("href=\"/tokens\""), html);
+    assertTrue(html.contains("href=\"/scope\""), html);
+    assertTrue(
+        html.contains(
+            "href=\"" + currentPath + "\" aria-current=\"page\">" + currentLabel + "</a>"),
+        html);
   }
 
   private static String form(Map<String, String> fields) {

@@ -1,0 +1,91 @@
+{{<base.mustache}}
+{{$content}}
+  <div class="dashboard" data-signals="{_usageRevision: {{revision}} , _initialRevision: {{revision}} }" data-init="@get('/api/stream?revision=' + $_usageRevision)" data-on-interval__duration.6s="@get('/api/stream?revision=' + $_usageRevision)" data-effect="$_usageRevision > $_initialRevision && location.reload()">
+    <header class="page-heading">
+      <div>
+        <p class="eyebrow">TEAM USAGE / {{dashboard.period}}</p>
+        <h1>Overview</h1>
+      </div>
+      <p>Signed in as <strong>{{signedInName}}</strong></p>
+    </header>
+{{#dashboard.degraded}}
+    <aside class="warning" role="alert">
+      <strong>READ-ONLY MODE</strong>
+      Uploads are unavailable. Showing last stored usage.
+    </aside>
+{{/dashboard.degraded}}
+{{#dashboard.partial}}
+    <aside class="warning warning-partial" role="status">
+      <strong>PARTIAL REPORTS</strong>
+      Some workstation reports failed; preserved data remains visible.
+    </aside>
+{{/dashboard.partial}}
+    <section class="kpi-grid" aria-labelledby="month-heading">
+      <h2 id="month-heading" class="section-heading">Current period</h2>
+      <article class="kpi kpi-primary">
+        <span>Projected cost</span>
+        <strong>{{dashboard.cost}}</strong>
+        <small>{{dashboard.fx}}</small>
+      </article>
+      <article class="kpi">
+        <span>Tokens</span>
+        <strong>{{dashboard.tokens}}</strong>
+        <small>Canonical daily reports</small>
+      </article>
+      <article class="kpi">
+        <span>Active users</span>
+        <strong>{{dashboard.activeUsers}}</strong>
+        <small>Users with usage this period</small>
+      </article>
+      <article class="kpi">
+        <span>Average / user</span>
+        <strong>{{dashboard.averageCost}}</strong>
+        <small>Awareness estimate, not billing</small>
+      </article>
+    </section>
+    <div class="overview-grid">
+      <section aria-labelledby="leaderboard-heading">
+        <div class="section-heading-row">
+          <h2 id="leaderboard-heading">Period leaderboard</h2>
+          <span>COST / TOKENS</span>
+        </div>
+        <ol class="leaderboard">
+{{#dashboard.leaderboard}}
+          <li>
+            <span class="rank">{{rank}}</span>
+            <span class="avatar {{colorClass}}" aria-hidden="true">{{initials}}</span>
+            <span class="person"><strong>{{name}}</strong><span class="bar" aria-hidden="true">{{bar}}</span></span>
+            <span class="values"><strong>{{cost}}</strong><small>{{tokens}}</small></span>
+          </li>
+{{/dashboard.leaderboard}}
+{{^dashboard.leaderboard}}
+          <li class="empty">No usage in this period.</li>
+{{/dashboard.leaderboard}}
+        </ol>
+      </section>
+      <section aria-labelledby="ingestion-heading">
+        <div class="section-heading-row">
+          <h2 id="ingestion-heading">Ingestion health</h2>
+          <span>LATEST SNAPSHOT</span>
+        </div>
+        <ul class="ingestion-list">
+{{#dashboard.ingestion}}
+          <li>
+            <span class="avatar {{colorClass}}" aria-hidden="true">{{initials}}</span>
+            <span><strong>{{name}}</strong><small>{{generatedAt}}</small><small>{{detail}}</small></span>
+            <span class="status {{statusClass}}">{{status}}</span>
+          </li>
+{{/dashboard.ingestion}}
+{{^dashboard.ingestion}}
+          <li class="empty">No workstation uploads yet.</li>
+{{/dashboard.ingestion}}
+        </ul>
+      </section>
+    </div>
+    <footer class="page-footer">
+      <p>Local coding-harness usage only. Estimates are incomplete by design.</p>
+      <a href="/scope">Read data scope →</a>
+    </footer>
+  </div>
+{{/content}}
+{{/base.mustache}}

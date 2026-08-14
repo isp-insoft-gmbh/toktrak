@@ -1,10 +1,61 @@
 <!doctype html>
-<meta charset="utf-8">
-<title>{{base.title}}</title>
-<link rel="stylesheet" href="{{base.stylesheetUrl}}">
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{base.title}}</title>
+  <link rel="stylesheet" href="{{base.stylesheetUrl}}">
+  <script type="module" src="{{base.datastarUrl}}"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
 {{#base.development}}
-<div class="environment-banner">DEV AUTH</div>
+  <div class="environment-banner" role="status">DEV AUTH</div>
 {{/base.development}}
-<main>
+{{#base.navigation}}
+  <header class="site-header">
+    <a class="wordmark" href="/">TOKTRAK</a>
+    <nav aria-label="Primary navigation">
+{{#base.overviewCurrent}}
+      <a href="/" aria-current="page">Overview</a>
+{{/base.overviewCurrent}}
+{{^base.overviewCurrent}}
+      <a href="/">Overview</a>
+{{/base.overviewCurrent}}
+{{#base.visualizationsCurrent}}
+      <a href="/visualizations" aria-current="page">Visualizations</a>
+{{/base.visualizationsCurrent}}
+{{^base.visualizationsCurrent}}
+      <a href="/visualizations">Visualizations</a>
+{{/base.visualizationsCurrent}}
+{{#base.trackerCurrent}}
+      <a href="/tokens" aria-current="page">My Tracker</a>
+{{/base.trackerCurrent}}
+{{^base.trackerCurrent}}
+      <a href="/tokens">My Tracker</a>
+{{/base.trackerCurrent}}
+{{#base.scopeCurrent}}
+      <a href="/scope" aria-current="page">Data scope</a>
+{{/base.scopeCurrent}}
+{{^base.scopeCurrent}}
+      <a href="/scope">Data scope</a>
+{{/base.scopeCurrent}}
+    </nav>
+{{#base.currencySwitch}}
+    <a class="currency-switch" href="{{base.currencySwitchUrl}}" aria-label="Show values in {{base.currencySwitchLabel}}">
+{{#base.usd}}
+      USD → {{base.currencySwitchLabel}}
+{{/base.usd}}
+{{^base.usd}}
+      EUR → {{base.currencySwitchLabel}}
+{{/base.usd}}
+    </a>
+{{/base.currencySwitch}}
+  </header>
+{{/base.navigation}}
+  <main id="content">
 {{$content}}
-{{/content}}</main>
+{{/content}}
+  </main>
+</body>
+</html>

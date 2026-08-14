@@ -1,0 +1,155 @@
+{{<base.mustache}}
+{{$content}}
+  <div class="dashboard" data-signals="{_usageRevision: {{revision}} , _initialRevision: {{revision}} }" data-init="@get('/api/stream?revision=' + $_usageRevision)" data-on-interval__duration.6s="@get('/api/stream?revision=' + $_usageRevision)" data-effect="$_usageRevision > $_initialRevision && location.reload()">
+    <header class="page-heading">
+      <div>
+        <p class="eyebrow">FIXED NARRATIVE / ALL RETAINED USAGE</p>
+        <h1>Visualizations</h1>
+      </div>
+      <p>Signed in as <strong>{{signedInName}}</strong></p>
+    </header>
+{{#dashboard.degraded}}
+    <aside class="warning" role="alert"><strong>READ-ONLY MODE</strong> Showing last stored usage.</aside>
+{{/dashboard.degraded}}
+    <div class="narrative">
+      <section class="viz-section viz-hero" aria-labelledby="trend-heading">
+        <div class="section-number" aria-hidden="true">01</div>
+        <div>
+          <p class="eyebrow">TOTALS → TRENDS</p>
+          <h2 id="trend-heading">Daily projected cost</h2>
+          <p>Recent daily totals across the team. USD remains canonical; the selected currency is an estimate.</p>
+        </div>
+        <figure class="trend-chart">
+          <svg class="chart-rule" viewBox="0 0 100 2" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 1H100"/></svg>
+          <figcaption class="sr-only">Daily cost trend shown as proportional text bars.</figcaption>
+{{#dashboard.trends}}
+          <div class="trend-row">
+            <time>{{date}}</time>
+            <span class="bar" aria-hidden="true">{{bar}}</span>
+            <strong>{{cost}}</strong>
+            <small>{{tokens}} tokens</small>
+          </div>
+{{/dashboard.trends}}
+{{^dashboard.trends}}
+          <p class="empty">No daily usage yet.</p>
+{{/dashboard.trends}}
+        </figure>
+      </section>
+
+      <section class="viz-section" aria-labelledby="tokens-heading">
+        <div class="section-number" aria-hidden="true">02</div>
+        <div>
+          <p class="eyebrow">TOKEN TYPES → CACHE</p>
+          <h2 id="tokens-heading">Where tokens go</h2>
+        </div>
+        <div class="metric-list">
+{{#dashboard.tokenTypes}}
+          <div class="metric-row"><strong>{{label}}</strong><span class="bar" aria-hidden="true">{{bar}}</span><span>{{value}}</span><small>{{detail}}</small></div>
+{{/dashboard.tokenTypes}}
+        </div>
+      </section>
+
+      <section class="viz-section" aria-labelledby="rhythm-heading">
+        <div class="section-number" aria-hidden="true">03</div>
+        <div>
+          <p class="eyebrow">HEATMAP → RHYTHM</p>
+          <h2 id="rhythm-heading">Usage rhythm by UTC weekday</h2>
+        </div>
+        <div class="rhythm-grid" role="list">
+{{#dashboard.rhythm}}
+          <div role="listitem"><strong>{{label}}</strong><span class="heat" aria-hidden="true">{{bar}}</span><span>{{value}}</span><small>{{detail}}</small></div>
+{{/dashboard.rhythm}}
+        </div>
+      </section>
+
+      <section class="viz-section split" aria-labelledby="mix-heading">
+        <div class="section-number" aria-hidden="true">04</div>
+        <div>
+          <p class="eyebrow">MODELS → SOURCES</p>
+          <h2 id="mix-heading">Model and harness mix</h2>
+        </div>
+        <article>
+          <h3>Models</h3>
+          <div class="metric-list compact">
+{{#dashboard.models}}
+            <div class="metric-row"><strong>{{label}}</strong><span class="bar" aria-hidden="true">{{bar}}</span><span>{{value}}</span><small>{{detail}}</small></div>
+{{/dashboard.models}}
+          </div>
+        </article>
+        <article>
+          <h3>Sources</h3>
+          <div class="metric-list compact">
+{{#dashboard.sources}}
+            <div class="metric-row"><strong>{{label}}</strong><span class="bar" aria-hidden="true">{{bar}}</span><span>{{value}}</span><small>{{detail}}</small></div>
+{{/dashboard.sources}}
+          </div>
+        </article>
+      </section>
+
+      <section class="viz-section" aria-labelledby="streams-heading">
+        <div class="section-number" aria-hidden="true">05</div>
+        <div>
+          <p class="eyebrow">USER STREAMS → SPIKES</p>
+          <h2 id="streams-heading">Individual streams, shared context</h2>
+        </div>
+        <ol class="leaderboard streams">
+{{#dashboard.userStreams}}
+          <li><span class="avatar {{colorClass}}" aria-hidden="true">{{initials}}</span><span class="person"><strong>{{name}}</strong><span class="bar" aria-hidden="true">{{bar}}</span></span><span class="values"><strong>{{cost}}</strong><small>{{tokens}}</small></span></li>
+{{/dashboard.userStreams}}
+        </ol>
+        <div class="table-wrap">
+          <table>
+            <caption>Largest individual daily cost rows</caption>
+            <thead><tr><th>Date</th><th>User</th><th>Cost</th><th>Tokens</th></tr></thead>
+            <tbody>
+{{#dashboard.spikes}}
+              <tr><td>{{date}}</td><td>{{user}}</td><td>{{cost}}</td><td>{{tokens}}</td></tr>
+{{/dashboard.spikes}}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="viz-section" aria-labelledby="details-heading">
+        <div class="section-number" aria-hidden="true">06</div>
+        <div>
+          <p class="eyebrow">SESSIONS → PROJECT DETAILS</p>
+          <h2 id="details-heading">Costliest sessions</h2>
+          <p>Project labels are reduced to their final local path component.</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <caption>Top sessions by projected cost</caption>
+            <thead><tr><th>User</th><th>Project</th><th>Models</th><th>Cost</th><th>Tokens</th><th>Last activity</th></tr></thead>
+            <tbody>
+{{#dashboard.sessions}}
+              <tr><td>{{user}}</td><td>{{project}}</td><td>{{models}}</td><td>{{cost}}</td><td>{{tokens}}</td><td>{{lastActivity}}</td></tr>
+{{/dashboard.sessions}}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="viz-section" aria-labelledby="blocks-heading">
+        <div class="section-number" aria-hidden="true">07</div>
+        <div>
+          <p class="eyebrow">BLOCKS → DETAIL TABLE</p>
+          <h2 id="blocks-heading">Recent coding blocks</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <caption>Recent five-hour usage blocks</caption>
+            <thead><tr><th>Start UTC</th><th>Models</th><th>Cost</th><th>Tokens</th><th>Entries</th></tr></thead>
+            <tbody>
+{{#dashboard.blocks}}
+              <tr><td>{{start}}</td><td>{{models}}</td><td>{{cost}}</td><td>{{tokens}}</td><td>{{entries}}</td></tr>
+{{/dashboard.blocks}}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <footer class="page-footer"><p>Totals are projected subscription-equivalent usage, not invoices or performance measures.</p><a href="/scope">Read data scope →</a></footer>
+  </div>
+{{/content}}
+{{/base.mustache}}

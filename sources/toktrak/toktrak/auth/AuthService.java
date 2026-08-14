@@ -78,12 +78,14 @@ public final class AuthService {
 
   public Login beginLogin() {
     if (dev) {
+      var key = new UserKey("urn:toktrak:development", "viewer");
       User user =
-          identities.authenticateUser(
-              new UserKey("urn:toktrak:development", "viewer"),
-              "viewer@development.invalid",
-              "Development Viewer",
-              "#a8dadc");
+          projection
+              .activeUser(key)
+              .orElseGet(
+                  () ->
+                      identities.authenticateUser(
+                          key, "viewer@development.invalid", "Development Viewer", "#a8dadc"));
       return new Login(tokensUri(), null, issueSession(user.key()));
     }
     OidcClient.Authorization authorization = oidc.begin(callbackUri());

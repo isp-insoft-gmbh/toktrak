@@ -18,8 +18,22 @@ import toktrak.http.TokenListViewRenderer;
 
 final class RenderingTest {
   private static final String STYLESHEET = "/assets/main.0123456789abcdef0123456789abcdef.css";
+  private static final String DATASTAR = "/assets/datastar.0123456789abcdef0123456789abcdef.js";
   private static final BaseView TOKEN_BASE =
-      new BaseView("My Tracker · TokTrak", STYLESHEET, false);
+      new BaseView(
+          "My Tracker · TokTrak",
+          STYLESHEET,
+          DATASTAR,
+          false,
+          true,
+          false,
+          false,
+          false,
+          true,
+          false,
+          true,
+          "",
+          "");
 
   @Test
   void given_encodedOutputBoundary_when_rendering_then_acceptsLimitAndRejectsOverflow()
@@ -107,7 +121,21 @@ final class RenderingTest {
   void given_unvalidatedUrls_when_constructingViews_then_rejectsThem() {
     assertThrows(
         IllegalArgumentException.class,
-        () -> new BaseView("TokTrak", "https://evil.example/x.css", false));
+        () ->
+            new BaseView(
+                "TokTrak",
+                "https://evil.example/x.css",
+                DATASTAR,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                true,
+                "",
+                ""));
     assertThrows(
         IllegalArgumentException.class,
         () ->
