@@ -1,9 +1,9 @@
 [tools]
-dprint = "latest"
-google-java-format = "latest"
-java = "latest"
-markdownlint-cli2 = "latest"
-watchexec = "latest"
+dprint = "0.55.1"
+google-java-format = "1.35.0"
+java = "temurin-26.0.1+8"
+markdownlint-cli2 = "0.22.1"
+watchexec = "2.5.1"
 
 [tasks.clean]
 description = "Remove generated modules, dependencies, argument files, and runtimes"
