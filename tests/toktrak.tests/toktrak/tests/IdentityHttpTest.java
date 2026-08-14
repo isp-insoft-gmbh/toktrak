@@ -34,6 +34,9 @@ final class IdentityHttpTest {
                 "TOKTRAK_PORT", "0"))) {
       URI base = URI.create("http://127.0.0.1:" + app.port());
       var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      HttpResponse<String> signedOutHome = send(client, base.resolve("/"), "GET", null, null, null);
+      assertTrue(signedOutHome.body().contains(">Sign in</button>"), signedOutHome.body());
+      assertFalse(signedOutHome.body().contains("Signed in"), signedOutHome.body());
       assertEquals(
           302, send(client, base.resolve("/tokens"), "GET", null, null, null).statusCode());
       assertEquals(
@@ -43,9 +46,31 @@ final class IdentityHttpTest {
       assertEquals(
           base.resolve("/tokens").toString(), login.headers().firstValue("Location").orElseThrow());
       String cookie = login.headers().firstValue("Set-Cookie").orElseThrow().split(";", 2)[0];
+      HttpResponse<String> signedInHome =
+          send(client, base.resolve("/"), "GET", cookie, null, null);
+      assertTrue(signedInHome.body().contains("Signed in"), signedInHome.body());
+      assertTrue(
+          signedInHome.body().contains("href=\"/tokens\">My Tracker</a>"), signedInHome.body());
+      assertFalse(signedInHome.body().contains(">Sign in</button>"), signedInHome.body());
 
       HttpResponse<String> page = send(client, base.resolve("/tokens"), "GET", cookie, null, null);
       assertEquals(200, page.statusCode());
+      assertEquals(
+          page.body().getBytes(StandardCharsets.UTF_8).length,
+          Integer.parseInt(page.headers().firstValue("Content-Length").orElseThrow()));
+      assertEquals(
+          200,
+          send(client, base.resolve("/tokens?page=1"), "GET", cookie, null, null).statusCode());
+      assertEquals(
+          400,
+          send(client, base.resolve("/tokens?page=0"), "GET", cookie, null, null).statusCode());
+      assertEquals(
+          400,
+          send(client, base.resolve("/tokens?page=2"), "GET", cookie, null, null).statusCode());
+      assertEquals(
+          400,
+          send(client, base.resolve("/tokens?page=1&page=2"), "GET", cookie, null, null)
+              .statusCode());
       String csrf = match(CSRF, page.body());
       assertEquals(
           400,
@@ -97,6 +122,11 @@ final class IdentityHttpTest {
           401,
           send(client, base.resolve("/api/tracker/verify"), "POST", null, "", "Bearer " + token)
               .statusCode());
+      HttpResponse<String> revokedPage =
+          send(client, base.resolve("/tokens"), "GET", cookie, null, null);
+      assertTrue(revokedPage.body().contains("· revoked"), revokedPage.body());
+      assertFalse(
+          revokedPage.body().contains("name=\"tokenId\" value=\"" + tokenId), revokedPage.body());
       assertEquals(
           400,
           send(client, base.resolve("/logout"), "POST", cookie, form(Map.of("csrf", "wrong")), null)

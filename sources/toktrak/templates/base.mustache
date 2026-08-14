@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>{{base.title}}</title>
+<link rel="stylesheet" href="{{base.stylesheetUrl}}">
+{{#base.development}}
+<div class="environment-banner">DEV AUTH</div>
+{{/base.development}}
+<main>
+{{$content}}
+{{/content}}</main>

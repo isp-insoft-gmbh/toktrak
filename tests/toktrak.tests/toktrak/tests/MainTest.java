@@ -1,6 +1,7 @@
 package toktrak.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -20,7 +21,7 @@ final class MainTest {
   void given_checkAssetsOption_when_runningMain_then_verifiesPackagedAssets() throws Exception {
     String output = captureOutput(() -> Main.main(new String[] {"--check-assets"}));
 
-    assertEquals("TokTrak assets ok: 1" + System.lineSeparator(), output);
+    assertTrue(output.matches("TokTrak assets and rendering ok: 1, [1-9][0-9]* bytes\\R"), output);
   }
 
   private static String captureOutput(ThrowingAction action) throws Exception {

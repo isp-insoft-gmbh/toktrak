@@ -2,6 +2,10 @@ package toktrak.http;
 
 import java.util.Objects;
 
+/// Independently renders bounded browser errors without templates or generated code.
+///
+/// This Java-only boundary prevents a template, renderer, or encoded-output failure from breaking
+/// its own fallback response.
 public final class ErrorPage {
   private static final int CODE_CHARACTERS_MAX = 128;
   private static final int MESSAGE_CHARACTERS_MAX = 1024;

@@ -1,9 +1,12 @@
 package toktrak.http;
 
 import com.sun.net.httpserver.HttpExchange;
+import io.jstach.jstachio.Output;
+import io.jstach.jstachio.Template;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
@@ -11,6 +14,7 @@ public final class HttpSupport {
   public static final int MAX_REQUEST_BODY_BYTES = 5 * 1024 * 1024;
   private static final int BUFFER_BYTES = 8 * 1024;
   private static final int RESPONSE_BODY_BYTES_MAX = 5 * 1024 * 1024;
+  public static final int ENCODED_HTML_BYTES_MAX = 4 * 1024 * 1024;
 
   private HttpSupport() {}
 
@@ -51,6 +55,27 @@ public final class HttpSupport {
     send(exchange, status, "text/html; charset=utf-8", body.getBytes(StandardCharsets.UTF_8));
   }
 
+  public static <T> byte[] renderEncoded(Template.EncodedTemplate<T> renderer, T model)
+      throws IOException {
+    assert renderer != null;
+    assert model != null;
+    var output = new BoundedOutputStream(ENCODED_HTML_BYTES_MAX);
+    renderer.write(model, Output.of(output, StandardCharsets.UTF_8));
+    byte[] result = output.toByteArray();
+    assert result.length <= ENCODED_HTML_BYTES_MAX;
+    return result;
+  }
+
+  public static void encodedHtml(HttpExchange exchange, int status, byte[] body)
+      throws IOException {
+    assert body != null;
+    if (body.length > ENCODED_HTML_BYTES_MAX) {
+      throw new IllegalArgumentException(
+          "encoded HTML exceeds " + ENCODED_HTML_BYTES_MAX + " bytes");
+    }
+    send(exchange, status, "text/html; charset=utf-8", body.clone());
+  }
+
   public static void redirect(HttpExchange exchange, int status, URI location) throws IOException {
     assert exchange != null;
     assert status == 302 || status == 303;
@@ -67,6 +92,50 @@ public final class HttpSupport {
     exchange.getResponseHeaders().set("Cache-Control", "public, max-age=31536000, immutable");
     exchange.getResponseHeaders().set("Cross-Origin-Resource-Policy", "same-origin");
     send(exchange, 200, contentType, body);
+  }
+
+  private static final class BoundedOutputStream extends OutputStream {
+    private final int limit;
+    private final ByteArrayOutputStream output;
+
+    private BoundedOutputStream(int limit) {
+      this.limit = limit;
+      output = new ByteArrayOutputStream(Math.min(limit, BUFFER_BYTES));
+    }
+
+    @Override
+    public void write(int value) throws IOException {
+      requireCapacity(1);
+      output.write(value);
+    }
+
+    @Override
+    public void write(byte[] bytes, int offset, int length) throws IOException {
+      if (bytes == null) throw new NullPointerException("bytes");
+      if (offset < 0 || length < 0 || offset > bytes.length - length) {
+        throw new IndexOutOfBoundsException();
+      }
+      requireCapacity(length);
+      output.write(bytes, offset, length);
+    }
+
+    private void requireCapacity(int additional) throws IOException {
+      if (additional > limit - output.size()) {
+        throw new EncodedHtmlTooLargeException();
+      }
+    }
+
+    private byte[] toByteArray() {
+      return output.toByteArray();
+    }
+  }
+
+  static final class EncodedHtmlTooLargeException extends IOException {
+    private static final long serialVersionUID = 1L;
+
+    private EncodedHtmlTooLargeException() {
+      super("encoded HTML exceeds " + ENCODED_HTML_BYTES_MAX + " bytes", null);
+    }
   }
 
   private static void send(HttpExchange exchange, int status, String contentType, byte[] body)

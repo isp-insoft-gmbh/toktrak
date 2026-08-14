@@ -1,0 +1,46 @@
+{{<base.mustache}}
+{{$content}}
+  <h1>My Tracker</h1>
+  <ul>
+{{#tokens}}
+    <li>
+      <strong>{{label}}</strong>
+      <code>{{id}}</code>
+      · {{status}}
+{{#hasLastUsed}}
+      · last used <time>{{lastUsed}}</time>
+{{/hasLastUsed}}
+{{#active}}
+      <form method="post" action="/tokens/revoke">
+        <input type="hidden" name="csrf" value="{{csrf}}">
+        <input type="hidden" name="tokenId" value="{{id}}">
+        <button>Revoke</button>
+      </form>
+{{/active}}
+    </li>
+{{/tokens}}
+{{^tokens}}
+    <li>No tracker tokens.</li>
+{{/tokens}}
+  </ul>
+{{#hasPrevious}}
+  <a href="{{previousUrl}}">Previous</a>
+{{/hasPrevious}}
+{{#hasNext}}
+  <a href="{{nextUrl}}">Next</a>
+{{/hasNext}}
+  <form method="post" action="/tokens">
+    <input type="hidden" name="csrf" value="{{csrf}}">
+    <label>Label <input name="label" maxlength="128" required></label>
+    <button>Create token</button>
+  </form>
+  <form method="post" action="/account/deactivate">
+    <input type="hidden" name="csrf" value="{{csrf}}">
+    <button>Deactivate account</button>
+  </form>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf" value="{{csrf}}">
+    <button>Sign out</button>
+  </form>
+{{/content}}
+{{/base.mustache}}

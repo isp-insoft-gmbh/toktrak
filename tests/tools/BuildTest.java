@@ -43,6 +43,7 @@ public final class BuildTest {
     given_oversizedFile_when_hashing_then_rejectsInput();
     given_oversizedTree_when_listingPaths_then_rejectsInput();
     given_invalidArguments_when_writingArgumentFile_then_rejectsInput();
+    given_templateInputs_when_validating_then_acceptsOnlyBoundedCanonicalUtf8();
     given_projectSources_when_generatingEclipseProjects_then_writesValidMetadata();
     given_projectSources_when_generatingIntellijProjects_then_writesValidMetadata();
     given_testPaths_when_selectingTests_then_returnsExpectedClasses();
@@ -133,6 +134,45 @@ public final class BuildTest {
         "argument contains a line break");
   }
 
+  private static void given_templateInputs_when_validating_then_acceptsOnlyBoundedCanonicalUtf8()
+      throws Exception {
+    Path root = Files.createTempDirectory("toktrak-build-templates-");
+    try {
+      Path template = root.resolve("home.mustache");
+      Files.writeString(template, "<h1>{{title}}</h1>\n");
+      if (!Build.templateSourcesForTest(root).equals(List.of(template))) {
+        throw new AssertionError("valid template inventory mismatch");
+      }
+      Files.writeString(
+          root.resolve("base.mustache"), "<main>\n{{$content}}\n{{/content}}\n</main>\n");
+      Files.writeString(
+          template,
+          """
+          {{<base.mustache}}
+          {{$content}}
+            <h1>{{title}}</h1>
+          {{/content}}
+          {{/base.mustache}}
+          """);
+      Build.validateTemplateLayoutsForTest(root);
+      Files.writeString(template, "{{<other}}\n{{$content}}x{{/content}}\n{{/other}}\n");
+      expectFailure(
+          () -> Build.validateTemplateLayoutsForTest(root),
+          "template requires one {{<base.mustache}}: home.mustache");
+      Files.writeString(template, "{{{raw}}}\n");
+      expectFailure(() -> Build.templateSourcesForTest(root), "forbidden Mustache syntax {{{");
+      Files.writeString(template, "line\r\n");
+      expectFailure(() -> Build.templateSourcesForTest(root), "must use LF line endings");
+      Files.delete(template);
+      Files.writeString(root.resolve("Home.mustache"), "safe\n");
+      expectFailure(
+          () -> Build.templateSourcesForTest(root),
+          "template path must be lowercase relative .mustache");
+    } finally {
+      deleteTestTree(root);
+    }
+  }
+
   private static void given_projectSources_when_generatingEclipseProjects_then_writesValidMetadata()
       throws Exception {
     Path root = Files.createTempDirectory("toktrak-ide-");
@@ -172,9 +212,12 @@ public final class BuildTest {
           throw new AssertionError("missing Eclipse settings: " + project);
         }
       }
+      parser.parse(output.resolve("toktrak/.factorypath").toFile());
       String generated =
           Files.readString(output.resolve("toktrak/.project"))
               + Files.readString(output.resolve("toktrak/.classpath"))
+              + Files.readString(output.resolve("toktrak/.factorypath"))
+              + Files.readString(output.resolve("toktrak/.settings/org.eclipse.jdt.apt.core.prefs"))
               + Files.readString(output.resolve("toktrak.tests/.project"))
               + Files.readString(output.resolve("toktrak.tests/.classpath"))
               + Files.readString(output.resolve("toktrak.build/.project"))
@@ -190,7 +233,10 @@ public final class BuildTest {
               "JavaSE-26",
               "src/tools",
               "test/tools",
-              "error_prone_refaster-2.50.0.jar")) {
+              "error_prone_refaster-2.50.0.jar",
+              "excluding=\"templates/**\"",
+              "jstache.resourcesPath",
+              "io.jstach.apt.jar")) {
         if (!generated.contains(expected)) {
           throw new AssertionError("missing Eclipse metadata: " + expected);
         }
@@ -270,7 +316,11 @@ public final class BuildTest {
               "module-name=\"toktrak\"",
               "ADDITIONAL_OPTIONS_OVERRIDE",
               "--add-exports=toktrak/toktrak.dev=toktrak.tests",
-              "output/ide/intellij")) {
+              "output/ide/intellij",
+              "TokTrak JStachio",
+              "jstache.resourcesPath",
+              "io.jstach.apt.jar",
+              "excludeFolder url=\"file://$PROJECT_DIR$/sources/toktrak/templates\"")) {
         if (!generated.contains(expected)) {
           throw new AssertionError("missing IntelliJ metadata: " + expected);
         }
@@ -333,7 +383,8 @@ public final class BuildTest {
         || all.history()
         || all.pitHelp()
         || !all.forwardedArguments().isEmpty()
-        || !all.targetClasses().equals(List.of("toktrak.*"))) {
+        || !all.targetClasses().contains("toktrak.http.Router")
+        || all.targetClasses().stream().anyMatch(name -> name.endsWith("ViewRenderer"))) {
       throw new AssertionError("unexpected full PIT selection: " + all);
     }
     Build.PitSelection eventEnvelope =
@@ -586,6 +637,11 @@ public final class BuildTest {
         throw new AssertionError("changed artifact length matched inventory");
       }
       Build.rebuildArtifactForTest(artifact, "expected", BuildTest::writeArtifact, null);
+      Files.writeString(artifact.resolve("classes/Outer$Nested.class"), "corrupt!");
+      if (Build.artifactMatchesForTest(artifact, "expected")) {
+        throw new AssertionError("same-length corruption matched inventory");
+      }
+      Build.rebuildArtifactForTest(artifact, "expected", BuildTest::writeArtifact, null);
       Files.writeString(artifact.resolve("extra.class"), "extra");
       if (Build.artifactMatchesForTest(artifact, "expected")) {
         throw new AssertionError("unlisted artifact matched inventory");
@@ -603,7 +659,15 @@ public final class BuildTest {
   private static void given_artifactFailpoints_when_rebuilding_then_nextRunPublishesCompleteTree()
       throws Exception {
     for (String failpoint :
-        List.of("stage", "validation", "marker", "invalidation", "deletion", "publish")) {
+        List.of(
+            "stage",
+            "validation",
+            "marker",
+            "invalidation",
+            "deletion",
+            "publish",
+            "published",
+            "cleanup")) {
       Path parent = Files.createTempDirectory("toktrak-build-failpoint-");
       Path artifact = parent.resolve("cache");
       try {

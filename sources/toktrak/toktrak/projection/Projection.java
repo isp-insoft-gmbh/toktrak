@@ -55,6 +55,25 @@ public final class Projection {
         .toList();
   }
 
+  public synchronized TokenPage trackerTokenPage(UserKey owner, int page, int pageSize) {
+    Objects.requireNonNull(owner, "owner");
+    if (page < 1) throw new IllegalArgumentException("page is invalid");
+    if (pageSize < 1 || pageSize > 100) throw new IllegalArgumentException("pageSize is invalid");
+    List<TrackerToken> tokens =
+        state.tokens.values().stream()
+            .filter(token -> token.owner.equals(owner))
+            .sorted(
+                Comparator.comparing(TrackerToken::createdAt)
+                    .reversed()
+                    .thenComparing(TrackerToken::id))
+            .toList();
+    int pageCount = Math.max(1, Math.ceilDiv(tokens.size(), pageSize));
+    if (page > pageCount) throw new IllegalArgumentException("page is out of range");
+    int from = Math.multiplyExact(page - 1, pageSize);
+    int to = Math.min(tokens.size(), Math.addExact(from, pageSize));
+    return new TokenPage(tokens.subList(from, to), tokens.size(), page, pageCount);
+  }
+
   public synchronized Optional<TrackerToken> trackerToken(UUID id) {
     Objects.requireNonNull(id, "id");
     return Optional.ofNullable(state.tokens.get(id));
@@ -454,6 +473,15 @@ public final class Projection {
       Objects.requireNonNull(displayName, "displayName");
       Objects.requireNonNull(color, "color");
       Objects.requireNonNull(authenticatedAt, "authenticatedAt");
+    }
+  }
+
+  public record TokenPage(List<TrackerToken> tokens, int total, int page, int pageCount) {
+    public TokenPage {
+      tokens = List.copyOf(tokens);
+      if (tokens.size() > 100 || total < tokens.size() || page < 1 || pageCount < page) {
+        throw new IllegalArgumentException("token page is invalid");
+      }
     }
   }
 

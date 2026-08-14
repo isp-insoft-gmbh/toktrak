@@ -1,0 +1,13 @@
+{{<base.mustache}}
+{{$content}}
+  <h1>TokTrak</h1>
+{{#signedIn}}
+  <p>Signed in · <a href="/tokens">My Tracker</a></p>
+{{/signedIn}}
+{{^signedIn}}
+  <form action="/login">
+    <button>Sign in</button>
+  </form>
+{{/signedIn}}
+{{/content}}
+{{/base.mustache}}

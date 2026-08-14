@@ -3,6 +3,8 @@ module toktrak {
   requires com.fasterxml.jackson.core;
   requires com.fasterxml.jackson.databind;
   requires com.nimbusds.jose.jwt;
+  requires io.jstach.jstache;
+  requires io.jstach.jstachio;
   requires java.logging;
   requires java.net.http;
   requires jdk.httpserver;

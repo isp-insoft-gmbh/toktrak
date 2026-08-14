@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import toktrak.projection.Projection;
+import toktrak.projection.Projection.TokenPage;
 import toktrak.projection.Projection.TrackerToken;
 import toktrak.projection.Projection.User;
 import toktrak.projection.Projection.UserKey;
@@ -66,27 +67,39 @@ public final class IdentityService {
     assert projection.activeUser(key).isEmpty();
   }
 
-  public CreatedToken createTrackerToken(UserKey owner, String label) {
+  public PreparedToken prepareTrackerToken(UserKey owner, String label) {
     Objects.requireNonNull(owner, "owner");
+    requireActive(owner);
     String validLabel =
         required(label == null ? null : label.strip(), LABEL_CHARACTERS_MAX, "label");
     byte[] secret = new byte[TOKEN_BYTES];
     random.nextBytes(secret);
     String plaintext = "tt_" + Base64.getUrlEncoder().withoutPadding().encodeToString(secret);
-    byte[] digest = digest(plaintext);
-    UUID id = UUID.randomUUID();
-    write(WriteCommand.trackerTokenCreated(owner, id, validLabel, digest));
+    return new PreparedToken(owner, UUID.randomUUID(), validLabel, digest(plaintext), plaintext);
+  }
+
+  public CreatedToken commitTrackerToken(PreparedToken prepared) {
+    Objects.requireNonNull(prepared, "prepared");
+    write(
+        WriteCommand.trackerTokenCreated(
+            prepared.owner(), prepared.id(), prepared.label(), prepared.digest()));
     TrackerToken token =
         projection
-            .trackerToken(id)
+            .trackerToken(prepared.id())
             .orElseThrow(() -> new IllegalStateException("created tracker token missing"));
-    return new CreatedToken(token, plaintext);
+    return new CreatedToken(token, prepared.plaintext());
   }
 
   public List<TrackerToken> trackerTokens(UserKey owner) {
     Objects.requireNonNull(owner, "owner");
     requireActive(owner);
     return projection.trackerTokens(owner);
+  }
+
+  public TokenPage trackerTokenPage(UserKey owner, int page, int pageSize) {
+    Objects.requireNonNull(owner, "owner");
+    requireActive(owner);
+    return projection.trackerTokenPage(owner, page, pageSize);
   }
 
   public void revokeTrackerToken(UserKey owner, UUID tokenId) {
@@ -161,6 +174,44 @@ public final class IdentityService {
   private static String requiredColor(String value) {
     if (!value.matches("#[0-9a-f]{6}")) throw new IllegalArgumentException("color is invalid");
     return value;
+  }
+
+  public static final class PreparedToken {
+    private final UserKey owner;
+    private final UUID id;
+    private final String label;
+    private final byte[] digest;
+    private final String plaintext;
+
+    private PreparedToken(UserKey owner, UUID id, String label, byte[] digest, String plaintext) {
+      this.owner = Objects.requireNonNull(owner, "owner");
+      this.id = Objects.requireNonNull(id, "id");
+      this.label = Objects.requireNonNull(label, "label");
+      Objects.requireNonNull(digest, "digest");
+      this.plaintext = Objects.requireNonNull(plaintext, "plaintext");
+      if (digest.length != 32) throw new IllegalArgumentException("digest must contain 32 bytes");
+      this.digest = digest.clone();
+    }
+
+    public UserKey owner() {
+      return owner;
+    }
+
+    public UUID id() {
+      return id;
+    }
+
+    public String label() {
+      return label;
+    }
+
+    public byte[] digest() {
+      return digest.clone();
+    }
+
+    public String plaintext() {
+      return plaintext;
+    }
   }
 
   public record CreatedToken(TrackerToken token, String plaintext) {

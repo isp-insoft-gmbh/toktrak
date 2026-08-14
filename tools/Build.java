@@ -1,5 +1,10 @@
 package tools;
 
+import com.sun.source.tree.AnnotationTree;
+import com.sun.source.tree.AssignmentTree;
+import com.sun.source.tree.LiteralTree;
+import com.sun.source.util.JavacTask;
+import com.sun.source.util.TreeScanner;
 import java.io.ByteArrayInputStream;
 import java.io.Console;
 import java.io.IOException;
@@ -33,8 +38,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
+import java.util.jar.JarFile;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import javax.tools.ToolProvider;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Element;
@@ -47,8 +54,12 @@ public final class Build {
   private static final Path BUILD_LOCK = OUTPUT.resolve(".build.lock");
   private static final Path DEV_DATA_DIRECTORY = OUTPUT.resolve("toktrak-dev/data");
   private static final Path MODULES = OUTPUT.resolve("modules");
-  private static final Path APP_MODULE = MODULES.resolve("toktrak");
-  private static final Path TEST_MODULE = MODULES.resolve("toktrak.tests");
+  private static final Path MODULE_CLASSES = MODULES.resolve("target/classes");
+  private static final Path GENERATED_SOURCES =
+      MODULES.resolve("target/generated-sources/annotations");
+  private static final Path TEMPLATE_INPUT = MODULES.resolve("target/template-input");
+  private static final Path APP_MODULE = MODULE_CLASSES.resolve("toktrak");
+  private static final Path TEST_MODULE = MODULE_CLASSES.resolve("toktrak.tests");
   private static final Path MAIN_DEPS = OUTPUT.resolve("deps/main");
   private static final Path TEST_DEPS = OUTPUT.resolve("deps/test");
   private static final Path SNAPSHOT_DEPS = OUTPUT.resolve("deps/snapshot");
@@ -77,9 +88,18 @@ public final class Build {
   private static final Path REFASTER_SOURCE = ROOT.resolve("tools/refaster/Rules.java");
   private static final Path APP_SOURCES = ROOT.resolve("sources/toktrak");
   private static final Path ASSET_SOURCES = APP_SOURCES.resolve("assets");
+  private static final Path TEMPLATE_SOURCES = APP_SOURCES.resolve("templates");
+  private static final int TEMPLATE_COUNT_MAX = 64;
+  private static final int TEMPLATE_BYTES_MAX = 256 * 1024;
+  private static final int TEMPLATE_BYTES_TOTAL_MAX = 1024 * 1024;
+  private static final Pattern TEMPLATE_PATH =
+      Pattern.compile("[a-z0-9][a-z0-9-]*(?:/[a-z0-9][a-z0-9-]*)*\\.mustache");
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
   private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
+  private static final List<Path> REPOSITORY_SKILLS =
+      List.of(
+          ROOT.resolve(".claude/skills/mustache"), ROOT.resolve(".claude/skills/toktrak-jstachio"));
   private static final long FILE_BYTES_MAX = 512L * 1024 * 1024;
   private static final int TREE_ENTRIES_MAX = 100_000;
   private static final int ASSET_COUNT_MAX = 64;
@@ -551,7 +571,8 @@ public final class Build {
     }
     boolean dryRun = dryRun(forwarded);
     boolean pitHelp = forwarded.contains("-h") || forwarded.contains("-?");
-    List<String> targets = sources.isEmpty() ? List.of("toktrak.*") : pitTargets(sources);
+    List<String> targets =
+        sources.isEmpty() ? pitTargets(List.of(APP_SOURCES.toString())) : pitTargets(sources);
     return new PitSelection(List.copyOf(forwarded), targets, dryRun, history, pitHelp);
   }
 
@@ -792,6 +813,9 @@ public final class Build {
       updateDigestFromFile(digest, path);
     }
     updateDigestFromFile(digest, refaster);
+    updateDigestFromFile(digest, ROOT.resolve("tools/Build.java"));
+    for (Path path : jarPaths(List.of(BUILD_DEPS))) updateDigestFromFile(digest, path);
+    updateTree(digest, TEMPLATE_SOURCES, ".mustache");
     return HexFormat.of().formatHex(digest.digest());
   }
 
@@ -855,6 +879,18 @@ public final class Build {
         app,
         eclipseProject("toktrak", "", eclipseLink("src", "sources/toktrak")),
         eclipseAppClasspath(mainJars));
+    writeIdeFile(
+        output,
+        app.resolve(".settings/org.eclipse.jdt.apt.core.prefs"),
+        "eclipse.preferences.version=1\n"
+            + "org.eclipse.jdt.apt.aptEnabled=true\n"
+            + "org.eclipse.jdt.apt.genSrcDir=.apt_generated\n"
+            + "org.eclipse.jdt.apt.processorOptions/jstache.resourcesPath="
+            + root.resolve("sources/toktrak/templates").toString().replace('\\', '/')
+            + "\norg.eclipse.jdt.apt.processorOptions/jstache.incremental=true\n"
+            + "org.eclipse.jdt.apt.processorOptions/jstache.claim_annotations=true\n");
+    writeIdeFile(
+        output, app.resolve(".factorypath"), eclipseFactoryPath(jarPaths(List.of(BUILD_DEPS))));
     writeEclipseProject(
         output,
         tests,
@@ -915,14 +951,12 @@ public final class Build {
     allTestJars.addAll(testJars);
     writeIdeFile(idea, idea.resolve("modules.xml"), intellijModules());
     writeIdeFile(idea, idea.resolve("misc.xml"), intellijMisc());
-    writeIdeFile(idea, idea.resolve("compiler.xml"), intellijCompiler());
+    writeIdeFile(
+        idea, idea.resolve("compiler.xml"), intellijCompiler(root, jarPaths(List.of(BUILD_DEPS))));
     writeIdeFile(
         idea,
         idea.resolve("modules/toktrak.iml"),
-        intellijModule(
-            "toktrak",
-            intellijContent("sources/toktrak", false, null),
-            intellijLibrary(root, mainJars, false)));
+        intellijModule("toktrak", intellijAppContent(), intellijLibrary(root, mainJars, false)));
     writeIdeFile(
         idea,
         idea.resolve("modules/toktrak.tests.iml"),
@@ -978,16 +1012,42 @@ public final class Build {
     """;
   }
 
-  private static String intellijCompiler() {
+  private static String intellijCompiler(Path root, List<Path> processorJars) {
     var options = new StringBuilder();
     for (String export : TEST_EXPORTS) {
       if (!options.isEmpty()) options.append(' ');
       options.append("--add-exports=").append(export);
     }
+    var processorPath = new StringBuilder();
+    for (Path jar : processorJars) {
+      processorPath
+          .append("            <entry name=\"")
+          .append(xml(jar.toAbsolutePath().normalize().toString().replace('\\', '/')))
+          .append("\"/>\n");
+    }
+    String templates =
+        root.resolve("sources/toktrak/templates")
+            .toAbsolutePath()
+            .normalize()
+            .toString()
+            .replace('\\', '/');
     return """
     <?xml version="1.0" encoding="UTF-8"?>
     <project version="4">
       <component name="CompilerConfiguration">
+        <annotationProcessing>
+          <profile default="false" name="TokTrak JStachio" enabled="true">
+            <sourceOutputDir name="output/ide/intellij/generated"/>
+            <sourceTestOutputDir name="output/ide/intellij/generated-test"/>
+            <processorPath useClasspath="false">
+    %s        </processorPath>
+            <processor name="io.jstach.apt.GenerateRendererProcessor"/>
+            <option name="jstache.resourcesPath" value="%s"/>
+            <option name="jstache.incremental" value="true"/>
+            <option name="jstache.claim_annotations" value="true"/>
+            <module name="toktrak"/>
+          </profile>
+        </annotationProcessing>
         <bytecodeTargetLevel target="26"/>
       </component>
       <component name="JavacSettings">
@@ -997,7 +1057,7 @@ public final class Build {
       </component>
     </project>
     """
-        .formatted(xml(options.toString()));
+        .formatted(processorPath, xml(templates), xml(options.toString()));
   }
 
   private static String intellijModule(String name, String content, String dependencies) {
@@ -1017,6 +1077,15 @@ public final class Build {
     </module>
     """
         .formatted(xml(name), xml(name), content, dependencies);
+  }
+
+  private static String intellijAppContent() {
+    return """
+        <content url="file://$PROJECT_DIR$/sources/toktrak">
+          <sourceFolder url="file://$PROJECT_DIR$/sources/toktrak" isTestSource="false"/>
+          <excludeFolder url="file://$PROJECT_DIR$/sources/toktrak/templates"/>
+        </content>
+    """;
   }
 
   private static String intellijContent(String path, boolean test, String packagePrefix) {
@@ -1119,9 +1188,22 @@ public final class Build {
         .formatted(xml(name), xml(target));
   }
 
+  private static String eclipseFactoryPath(List<Path> jars) {
+    var entries = new StringBuilder("<factorypath>\n");
+    for (Path jar : jars) {
+      entries
+          .append("  <factorypathentry kind=\"EXTJAR\" id=\"")
+          .append(xml(jar.toAbsolutePath().normalize().toString().replace('\\', '/')))
+          .append("\" enabled=\"true\" runInBatchMode=\"false\"/>\n");
+    }
+    return entries.append("</factorypath>\n").toString();
+  }
+
   private static String eclipseAppClasspath(List<Path> jars) {
     var entries = new StringBuilder();
-    entries.append("  <classpathentry kind=\"src\" path=\"src\" output=\"bin/main\"/>\n");
+    entries.append(
+        "  <classpathentry excluding=\"templates/**\" kind=\"src\" path=\"src\""
+            + " output=\"bin/main\"/>\n");
     entries.append(eclipseJre(true));
     for (Path jar : jars) entries.append(eclipseLibrary(jar, true, false));
     return eclipseClasspath(entries);
@@ -1855,39 +1937,328 @@ public final class Build {
 
   private static void check() throws Exception {
     format(false, List.of());
+    validateRepositorySkills();
     compile();
+  }
+
+  private static void validateRepositorySkills() throws IOException {
+    for (Path skill : REPOSITORY_SKILLS) {
+      String name = skill.getFileName().toString();
+      Path instructions = skill.resolve("SKILL.md");
+      if (!Files.isRegularFile(instructions)) {
+        throw new IllegalStateException("skill instructions are missing: " + instructions);
+      }
+      String source = Files.readString(instructions, StandardCharsets.UTF_8);
+      if (!source.startsWith("---\nname: " + name + "\ndescription: \"")
+          || !source.contains("\n---\n")
+          || source.length() > 16 * 1024) {
+        throw new IllegalStateException("skill frontmatter is invalid: " + instructions);
+      }
+      for (Path path : treePaths(skill, 32)) {
+        if (Files.isSymbolicLink(path)) {
+          throw new IllegalStateException("skill contains symbolic link: " + path);
+        }
+      }
+    }
+    Path mustacheReference = REPOSITORY_SKILLS.get(0).resolve("references/spec.md");
+    Path jstachioReference = REPOSITORY_SKILLS.get(1).resolve("references/integration.md");
+    requireFile(mustacheReference);
+    requireFile(jstachioReference);
+    String references =
+        Files.readString(mustacheReference, StandardCharsets.UTF_8)
+            + Files.readString(jstachioReference, StandardCharsets.UTF_8);
+    for (String required :
+        List.of(
+            "https://mustache.github.io/mustache.5.html",
+            "https://github.com/mustache/spec",
+            "https://jstach.io/doc/jstachio/1.3.7/apidocs/")) {
+      if (!references.contains(required)) {
+        throw new IllegalStateException("skill official reference is missing: " + required);
+      }
+    }
+  }
+
+  static List<Path> templateSourcesForTest(Path root) throws IOException {
+    return templateSources(root);
+  }
+
+  private static List<Path> templateSources(Path root) throws IOException {
+    if (!Files.isDirectory(root) || Files.isSymbolicLink(root)) {
+      throw new IllegalStateException("template root is not a regular directory: " + root);
+    }
+    var templates = new ArrayList<Path>();
+    int totalBytes = 0;
+    for (Path path : treePaths(root, TEMPLATE_COUNT_MAX * 4)) {
+      if (path.equals(root) || Files.isDirectory(path)) continue;
+      if (Files.isSymbolicLink(path) || !Files.isRegularFile(path)) {
+        throw new IllegalStateException("template is not a regular file: " + path);
+      }
+      String relative = root.relativize(path).toString().replace('\\', '/');
+      if (!TEMPLATE_PATH.matcher(relative).matches()) {
+        throw new IllegalStateException(
+            "template path must be lowercase relative .mustache: " + relative);
+      }
+      if (templates.size() >= TEMPLATE_COUNT_MAX) {
+        throw new IllegalStateException("templates exceed " + TEMPLATE_COUNT_MAX + " files");
+      }
+      byte[] bytes = Files.readAllBytes(path);
+      if (bytes.length > TEMPLATE_BYTES_MAX) {
+        throw new IllegalStateException(
+            "template exceeds " + TEMPLATE_BYTES_MAX + " bytes: " + relative);
+      }
+      totalBytes = Math.addExact(totalBytes, bytes.length);
+      if (totalBytes > TEMPLATE_BYTES_TOTAL_MAX) {
+        throw new IllegalStateException(
+            "templates exceed " + TEMPLATE_BYTES_TOTAL_MAX + " total bytes");
+      }
+      String source;
+      try {
+        source =
+            StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString();
+      } catch (CharacterCodingException exception) {
+        throw new IllegalStateException("template is not strict UTF-8: " + relative, exception);
+      }
+      if (source.startsWith("\uFEFF")) {
+        throw new IllegalStateException("template has a UTF-8 BOM: " + relative);
+      }
+      if (source.indexOf('\r') >= 0) {
+        throw new IllegalStateException("template must use LF line endings: " + relative);
+      }
+      for (String forbidden : List.of("{{{", "{{&", "{{=", "{{>")) {
+        if (source.contains(forbidden)) {
+          throw new IllegalStateException(
+              "template contains forbidden Mustache syntax " + forbidden + ": " + relative);
+        }
+      }
+      templates.add(path);
+    }
+    templates.sort(Comparator.comparing(path -> root.relativize(path).toString()));
+    return List.copyOf(templates);
+  }
+
+  static void validateTemplateLayoutsForTest(Path root) throws IOException {
+    validateTemplateLayouts(root, templateSources(root));
+  }
+
+  private static void validateTemplateLayouts(Path root, List<Path> templates) throws IOException {
+    var sources = new java.util.TreeMap<String, String>();
+    for (Path template : templates) {
+      sources.put(
+          root.relativize(template).toString().replace('\\', '/'),
+          Files.readString(template, StandardCharsets.UTF_8));
+    }
+    String base = sources.get("base.mustache");
+    if (base == null) throw new IllegalStateException("base.mustache is required");
+    requireLayoutTokens(base, "base.mustache", false);
+    for (var entry : sources.entrySet()) {
+      if (!entry.getKey().equals("base.mustache")) {
+        requireLayoutTokens(entry.getValue(), entry.getKey(), true);
+      }
+    }
+  }
+
+  private static void requireLayoutTokens(String source, String path, boolean child) {
+    String remaining = source;
+    for (String token : List.of("{{$content}}", "{{/content}}")) {
+      if (tokenCount(remaining, token) != 1) {
+        throw new IllegalStateException("template requires one " + token + ": " + path);
+      }
+      remaining = remaining.replace(token, "");
+    }
+    if (child) {
+      for (String token : List.of("{{<base.mustache}}", "{{/base.mustache}}")) {
+        if (tokenCount(remaining, token) != 1) {
+          throw new IllegalStateException("template requires one " + token + ": " + path);
+        }
+        remaining = remaining.replace(token, "");
+      }
+    }
+    if (remaining.contains("{{<")
+        || remaining.contains("{{$")
+        || (!child && remaining.contains("{{/base.mustache}}"))) {
+      throw new IllegalStateException("template contains unsupported layout syntax: " + path);
+    }
+  }
+
+  private static int tokenCount(String source, String token) {
+    int count = 0;
+    for (int offset = 0; (offset = source.indexOf(token, offset)) >= 0; offset += token.length()) {
+      count = Math.addExact(count, 1);
+    }
+    return count;
+  }
+
+  private static void validateTemplateModels(List<Path> templates) throws IOException {
+    var expected = new TreeSet<String>();
+    for (Path template : templates) {
+      expected.add(TEMPLATE_SOURCES.relativize(template).toString().replace('\\', '/'));
+    }
+    if (!expected.remove("base.mustache")) {
+      throw new IllegalStateException("base.mustache is required");
+    }
+    List<Path> sources =
+        treePaths(APP_SOURCES, TREE_ENTRIES_MAX).stream()
+            .filter(Files::isRegularFile)
+            .filter(path -> path.getFileName().toString().endsWith(".java"))
+            .toList();
+    var compiler = ToolProvider.getSystemJavaCompiler();
+    if (compiler == null) throw new IllegalStateException("system Java compiler is unavailable");
+    var actual = new TreeSet<String>();
+    try (var files = compiler.getStandardFileManager(null, Locale.ROOT, StandardCharsets.UTF_8)) {
+      var units = files.getJavaFileObjectsFromPaths(sources);
+      var task =
+          (JavacTask) compiler.getTask(null, files, null, List.of("-proc:none"), null, units);
+      for (var unit : task.parse()) {
+        new TreeScanner<Void, Void>() {
+          @Override
+          public Void visitAnnotation(AnnotationTree annotation, Void unused) {
+            String type = annotation.getAnnotationType().toString();
+            if (!type.equals("JStache") && !type.endsWith(".JStache")) {
+              return super.visitAnnotation(annotation, null);
+            }
+            if (annotation.getArguments().size() != 1
+                || !(annotation.getArguments().getFirst() instanceof AssignmentTree assignment)
+                || !assignment.getVariable().toString().equals("path")
+                || !(assignment.getExpression() instanceof LiteralTree literal)
+                || !(literal.getValue() instanceof String path)
+                || !TEMPLATE_PATH.matcher(path).matches()) {
+              throw new IllegalStateException("@JStache requires one canonical literal path");
+            }
+            if (!actual.add(path)) {
+              throw new IllegalStateException("duplicate @JStache template path: " + path);
+            }
+            return super.visitAnnotation(annotation, null);
+          }
+        }.scan(unit, null);
+      }
+    }
+    if (!actual.equals(expected)) {
+      throw new IllegalStateException("@JStache paths do not match templates: " + actual);
+    }
+  }
+
+  private static void copyTemplates(Path root, List<Path> templates, Path destination)
+      throws IOException {
+    Files.createDirectories(destination);
+    for (Path template : templates) {
+      Path relative = root.relativize(template);
+      Path target = destination.resolve(relative);
+      Files.createDirectories(target.getParent());
+      Files.copy(template, target);
+    }
+  }
+
+  private static void validateJstachioProcessor() throws IOException {
+    List<Path> processors =
+        jarPaths(List.of(BUILD_DEPS)).stream()
+            .filter(path -> path.getFileName().toString().equals("io.jstach.apt.jar"))
+            .toList();
+    if (processors.size() != 1) {
+      throw new IllegalStateException("expected one JStachio processor JAR: " + processors);
+    }
+    Path processor = processors.getFirst();
+    try (var jar = new JarFile(processor.toFile())) {
+      String release = jar.getManifest().getMainAttributes().getValue("Implementation-Version");
+      if (!"1.3.7".equals(release)) {
+        throw new IllegalStateException("JStachio processor release must be 1.3.7: " + release);
+      }
+    }
+    String moduleVersion =
+        ModuleFinder.of(processor)
+            .find("io.jstach.apt")
+            .flatMap(reference -> reference.descriptor().rawVersion())
+            .orElse("");
+    if (!moduleVersion.equals("1.4.0-SNAPSHOT")) {
+      throw new IllegalStateException(
+          "JStachio 1.3.7 processor module version changed: " + moduleVersion);
+    }
+  }
+
+  private static void validateGeneratedRendering(Path staging) throws IOException {
+    Path generated = staging.resolve("target/generated-sources/annotations/toktrak/toktrak/http");
+    Path classes = staging.resolve("target/classes/toktrak/toktrak/http");
+    for (String renderer :
+        List.of("HomeViewRenderer", "TokenListViewRenderer", "CreatedTokenViewRenderer")) {
+      Path source = generated.resolve(renderer + ".java");
+      requireFile(source);
+      requireFile(classes.resolve(renderer + ".class"));
+      String generatedSource = Files.readString(source, StandardCharsets.UTF_8);
+      if (!generatedSource.contains("Template.EncodedTemplate<")
+          || !generatedSource.contains("StandardCharsets.UTF_8")) {
+        throw new IllegalStateException("renderer is not pre-encoded UTF-8: " + renderer);
+      }
+    }
+    Path app = staging.resolve("target/classes/toktrak");
+    for (Path path : treePaths(app, TREE_ENTRIES_MAX)) {
+      String relative = app.relativize(path).toString().replace('\\', '/');
+      if (relative.endsWith(".mustache")
+          || relative.endsWith(".java")
+          || relative.equals("META-INF/services/io.jstach.jstachio.spi.TemplateProvider")) {
+        throw new IllegalStateException("forbidden runtime template output: " + relative);
+      }
+    }
   }
 
   private static void compile() throws Exception {
     deps();
     compileRefaster();
     AssetBundle assetBundle = assetBundle(ASSET_SOURCES);
-    List<String> arguments = new ArrayList<>();
-    arguments.add("-Xlint:all");
-    arguments.add("-Werror");
-    arguments.add("-g");
-    addErrorProne(arguments);
-    addModuleSourcePaths(arguments);
-    arguments.add("--module-path");
-    arguments.add(modulePath(List.of(MAIN_DEPS, TEST_DEPS)));
-    arguments.add("--class-path");
-    arguments.add(modulePath(List.of(SNAPSHOT_DEPS)));
-    arguments.add("--add-reads");
-    arguments.add("toktrak.tests=ALL-UNNAMED");
-    addExports(arguments);
-    arguments.add("-d");
-    arguments.add(MODULES.toString());
-    arguments.add("--module");
-    arguments.add("toktrak,toktrak.tests");
-    Path argFile = writeArgFile("compile-toktrak-and-test-modules", arguments);
-    List<String> fingerprintArguments = new ArrayList<>(arguments);
+    List<Path> templates = templateSources(TEMPLATE_SOURCES);
+    validateTemplateLayouts(TEMPLATE_SOURCES, templates);
+    validateTemplateModels(templates);
+    validateJstachioProcessor();
+
+    List<String> appArguments = new ArrayList<>();
+    appArguments.add("-Xlint:all");
+    appArguments.add("-Werror");
+    appArguments.add("-g");
+    addErrorProne(appArguments);
+    appArguments.add("-s");
+    appArguments.add(GENERATED_SOURCES.toString());
+    appArguments.add("-Ajstache.resourcesPath=" + TEMPLATE_INPUT);
+    appArguments.add("-Ajstache.incremental=true");
+    appArguments.add("-Ajstache.claim_annotations=true");
+    appArguments.add("--module-source-path");
+    appArguments.add("toktrak=" + APP_SOURCES);
+    appArguments.add("--module-path");
+    appArguments.add(modulePath(List.of(MAIN_DEPS)));
+    appArguments.add("-d");
+    appArguments.add(MODULE_CLASSES.toString());
+    appArguments.add("--module");
+    appArguments.add("toktrak");
+
+    List<String> testArguments = new ArrayList<>();
+    testArguments.add("-Xlint:all");
+    testArguments.add("-Werror");
+    testArguments.add("-g");
+    addErrorProne(testArguments);
+    testArguments.add("-proc:none");
+    testArguments.add("--module-source-path");
+    testArguments.add("toktrak.tests=" + JUNIT_TEST_SOURCES);
+    testArguments.add("--module-path");
+    testArguments.add(modulePath(List.of(MAIN_DEPS, TEST_DEPS, MODULE_CLASSES)));
+    testArguments.add("--class-path");
+    testArguments.add(modulePath(List.of(SNAPSHOT_DEPS)));
+    testArguments.add("--add-reads");
+    testArguments.add("toktrak.tests=ALL-UNNAMED");
+    addExports(testArguments);
+    testArguments.add("-d");
+    testArguments.add(MODULE_CLASSES.toString());
+    testArguments.add("--module");
+    testArguments.add("toktrak.tests");
+
+    Path argFile = writeArgFile("compile-toktrak-module", appArguments);
+    List<String> fingerprintArguments = new ArrayList<>(appArguments);
+    fingerprintArguments.addAll(testArguments);
     fingerprintArguments.addAll(errorProneJvmArguments());
     String fingerprint =
         applicationCompilationFingerprint(
-            List.of(
-                ROOT.resolve("sources/toktrak"),
-                ROOT.resolve("tests/toktrak.tests"),
-                ERROR_PRONE_CONFIG),
+            List.of(APP_SOURCES, JUNIT_TEST_SOURCES, ERROR_PRONE_CONFIG),
             List.of(MAIN_DEPS, TEST_DEPS, SNAPSHOT_DEPS, BUILD_DEPS),
             fingerprintArguments,
             assetBundle);
@@ -1900,18 +2271,27 @@ public final class Build {
         MODULES,
         fingerprint,
         staging -> {
-          Path stagingArgFile =
+          copyTemplates(TEMPLATE_SOURCES, templates, staging.resolve("target/template-input"));
+          Path stagingClasses = staging.resolve("target/classes");
+          Path stagingApp = stagingClasses.resolve("toktrak");
+          copyTemplates(TEMPLATE_SOURCES, templates, stagingApp);
+          runJavacArgFile(
               writeArgFile(
-                  "compile-toktrak-and-test-modules", remapArguments(arguments, MODULES, staging));
-          runJavacArgFile(stagingArgFile);
-          Path stagingApp = staging.resolve("toktrak");
-          Path stagingTests = staging.resolve("toktrak.tests");
+                  "compile-toktrak-module", remapArguments(appArguments, MODULES, staging)));
+          for (Path template : templates) {
+            Files.delete(stagingApp.resolve(TEMPLATE_SOURCES.relativize(template)));
+          }
+          runJavacArgFile(
+              writeArgFile(
+                  "compile-toktrak-test-module", remapArguments(testArguments, MODULES, staging)));
+          Path stagingTests = stagingClasses.resolve("toktrak.tests");
           writeAssets(assetBundle, stagingApp);
           requireFile(stagingApp.resolve("module-info.class"));
           requireFile(stagingTests.resolve("module-info.class"));
           if (!assetsMatch(assetBundle, stagingApp)) {
             throw new IllegalStateException("compiled runtime assets are incomplete");
           }
+          validateGeneratedRendering(staging);
         });
   }
 
@@ -1979,8 +2359,7 @@ public final class Build {
   }
 
   private static void refactor() throws Exception {
-    deps();
-    compileRefaster();
+    compile();
     applyRefasterToModules();
     applyRefasterToBuildTool();
     format(true, List.of());
@@ -1989,9 +2368,12 @@ public final class Build {
   private static void applyRefasterToModules() throws Exception {
     var arguments = new ArrayList<String>();
     arguments.addAll(refasterPatchArguments());
+    arguments.add("-proc:none");
     addModuleSourcePaths(arguments);
     arguments.add("--module-path");
-    arguments.add(modulePath(List.of(MAIN_DEPS, TEST_DEPS)));
+    arguments.add(modulePath(List.of(MAIN_DEPS, TEST_DEPS, MODULE_CLASSES)));
+    arguments.add("--patch-module");
+    arguments.add("toktrak=" + APP_MODULE);
     arguments.add("--class-path");
     arguments.add(modulePath(List.of(SNAPSHOT_DEPS)));
     arguments.add("--add-reads");
@@ -2135,6 +2517,8 @@ public final class Build {
           if (!Files.isRegularFile(executionData) || Files.size(executionData) == 0) {
             throw new IllegalStateException("JaCoCo execution data is missing or empty");
           }
+          Path authoredClasses = staging.resolve("authored-classes");
+          copyAuthoredClasses(authoredClasses);
           runArgFile(
               javaExecutable(),
               "generate-jacoco-coverage-report",
@@ -2145,7 +2529,7 @@ public final class Build {
                   "report",
                   executionData.toString(),
                   "--classfiles",
-                  APP_MODULE.toString(),
+                  authoredClasses.toString(),
                   "--sourcefiles",
                   APP_SOURCES.toString(),
                   "--html",
@@ -2159,6 +2543,31 @@ public final class Build {
           requireFile(staging.resolve("report/index.html"));
           enforceCoverage(staging.resolve("jacoco.csv"));
         });
+  }
+
+  private static void copyAuthoredClasses(Path destination) throws IOException {
+    Files.createDirectories(destination);
+    for (Path source : treePaths(APP_SOURCES, TREE_ENTRIES_MAX)) {
+      String name = source.getFileName().toString();
+      if (!Files.isRegularFile(source)
+          || !name.endsWith(".java")
+          || name.equals("module-info.java")
+          || name.equals("package-info.java")) continue;
+      Path relative = APP_SOURCES.relativize(source);
+      Path classDirectory = APP_MODULE.resolve(relative).getParent();
+      if (!Files.isDirectory(classDirectory)) {
+        throw new IllegalStateException("authored class directory is missing: " + source);
+      }
+      String base = name.substring(0, name.length() - ".java".length());
+      for (Path compiled : directoryEntries(classDirectory, TREE_ENTRIES_MAX)) {
+        String compiledName = compiled.getFileName().toString();
+        if (!compiledName.equals(base + ".class")
+            && !(compiledName.startsWith(base + "$") && compiledName.endsWith(".class"))) continue;
+        Path targetDirectory = destination.resolve(APP_MODULE.relativize(classDirectory));
+        Files.createDirectories(targetDirectory);
+        Files.copy(compiled, targetDirectory.resolve(compiledName));
+      }
+    }
   }
 
   private static void enforceCoverage(Path csv) throws IOException {
@@ -2351,7 +2760,7 @@ public final class Build {
     arguments.add("-ea");
     if (javaAgent != null) arguments.add(javaAgent);
     arguments.add("--module-path");
-    arguments.add(MODULES.toString());
+    arguments.add(MODULE_CLASSES.toString());
     arguments.add("--add-modules");
     arguments.add("toktrak.tests,toktrak," + String.join(",", moduleNames(TEST_DEPS)));
     arguments.add("--class-path");
@@ -2411,6 +2820,7 @@ public final class Build {
     fingerprintSources.add(ERROR_PRONE_CONFIG);
     fingerprintSources.add(REFASTER_SOURCE);
     fingerprintSources.add(REFASTER_RULE);
+    fingerprintSources.addAll(REPOSITORY_SKILLS);
     String compileFingerprint =
         compilationFingerprint(
             "build-tool-tests",
@@ -2470,7 +2880,7 @@ public final class Build {
     List<String> arguments = new ArrayList<>();
     arguments.add("-ea");
     arguments.add("--module-path");
-    arguments.add(MODULES.toString());
+    arguments.add(MODULE_CLASSES.toString());
     arguments.add("-m");
     arguments.add("toktrak/toktrak.Main");
     arguments.addAll(args.stream().filter(arg -> !arg.equals("--")).toList());
@@ -2506,7 +2916,7 @@ public final class Build {
     Path image = RUNTIMES.resolve(name);
     List<String> modulePath = new ArrayList<>();
     modulePath.add(Path.of(System.getProperty("java.home"), "jmods").toString());
-    modulePath.addAll(jarPaths(dependencyDirectories).stream().map(Path::toString).toList());
+    modulePath.addAll(runtimeJarPaths(dependencyDirectories).stream().map(Path::toString).toList());
     if (includeApp) modulePath.add(APP_MODULE.toString());
     List<String> arguments =
         List.of(
@@ -2605,7 +3015,9 @@ public final class Build {
     if (!Files.isDirectory(directory)) {
       throw new IllegalStateException("dependency directory missing: " + directory);
     }
-    for (Path jar : jarPaths(List.of(directory))) moduleName(jar);
+    for (Path jar : jarPaths(List.of(directory))) {
+      if (!compileOnlyJdtAnnotations(jar)) moduleName(jar);
+    }
   }
 
   private static List<String> moduleNames(List<Path> directories, List<String> additional)
@@ -2614,6 +3026,7 @@ public final class Build {
     requireCollectionSize(additional, "additional modules");
     var names = new ArrayList<String>();
     for (Path jar : jarPaths(directories)) {
+      if (compileOnlyJdtAnnotations(jar)) continue;
       if (names.size() >= COLLECTION_ENTRIES_MAX) {
         throw new IllegalStateException(
             "module names exceed " + COLLECTION_ENTRIES_MAX + " entries");
@@ -2628,7 +3041,18 @@ public final class Build {
   }
 
   private static List<String> moduleNames(Path directory) throws IOException {
-    return jarPaths(List.of(directory)).stream().map(Build::moduleName).toList();
+    return jarPaths(List.of(directory)).stream()
+        .filter(path -> !compileOnlyJdtAnnotations(path))
+        .map(Build::moduleName)
+        .toList();
+  }
+
+  private static boolean compileOnlyJdtAnnotations(Path jar) {
+    return jar.getFileName().toString().equals("org.eclipse.jdt.annotation.jar");
+  }
+
+  private static List<Path> runtimeJarPaths(List<Path> directories) throws IOException {
+    return jarPaths(directories).stream().filter(path -> !compileOnlyJdtAnnotations(path)).toList();
   }
 
   private static String moduleName(Path jar) {
@@ -2700,7 +3124,10 @@ public final class Build {
         "--should-stop=ifError=FLOW",
         "-processorpath",
         modulePath(List.of(BUILD_DEPS)),
-        "-Xplugin:ErrorProne @" + ERROR_PRONE_CONFIG + pluginArguments);
+        "-Xplugin:ErrorProne @"
+            + ERROR_PRONE_CONFIG
+            + " -XepExcludedPaths:.+[\\\\/]generated-sources[\\\\/].+"
+            + pluginArguments);
   }
 
   private static void addModuleSourcePaths(List<String> command) {
@@ -2715,7 +3142,7 @@ public final class Build {
     requireCollectionSize(entries, "module path entries");
     var paths = new ArrayList<String>();
     for (Path entry : entries) {
-      if (Files.isDirectory(entry) && !entry.equals(MODULES)) {
+      if (Files.isDirectory(entry) && !entry.equals(MODULE_CLASSES)) {
         List<String> jars = jarPaths(List.of(entry)).stream().map(Path::toString).toList();
         if (jars.size() > COLLECTION_ENTRIES_MAX - paths.size()) {
           throw new IllegalStateException(
@@ -2748,7 +3175,18 @@ public final class Build {
   private static void cleanGeneratedTree(Path path) throws IOException {
     assert path != null;
     deleteStaleStaging(path);
+    deleteStaleBackups(path);
     deleteGeneratedTree(path);
+  }
+
+  private static void deleteStaleBackups(Path output) throws IOException {
+    Path normalized = output.toAbsolutePath().normalize();
+    Path parent = normalized.getParent();
+    if (!Files.isDirectory(parent)) return;
+    String prefix = "." + normalized.getFileName() + ".backup-";
+    for (Path path : directoryEntries(parent, TREE_ENTRIES_MAX)) {
+      if (path.getFileName().toString().startsWith(prefix)) deleteGeneratedTree(path);
+    }
   }
 
   private static void deleteGeneratedTree(Path path) throws IOException {
@@ -2966,23 +3404,28 @@ public final class Build {
     var expected = new java.util.TreeMap<String, String>();
     for (int index = 2; index < lines.length - 1; index++) {
       String[] fields = lines[index].split("\t", -1);
-      if (fields.length != 3 || !canonicalArtifactPath(fields[2])) return false;
+      String path;
       String signature;
-      if (fields[0].equals("file")) {
+      if (fields.length == 4 && fields[0].equals("file")) {
         long length;
         try {
           length = Long.parseLong(fields[1]);
         } catch (NumberFormatException exception) {
           return false;
         }
-        if (length < 0 || length > FILE_BYTES_MAX) return false;
-        signature = "file\t" + length;
-      } else if (fields[0].equals("link") && canonicalSymbolicLinkTarget(fields[1])) {
+        if (length < 0 || length > FILE_BYTES_MAX || !fields[2].matches("[0-9a-f]{64}"))
+          return false;
+        path = fields[3];
+        signature = "file\t" + length + "\t" + fields[2];
+      } else if (fields.length == 3
+          && fields[0].equals("link")
+          && canonicalSymbolicLinkTarget(fields[1])) {
+        path = fields[2];
         signature = "link\t" + fields[1];
       } else {
         return false;
       }
-      if (expected.put(fields[2], signature) != null) return false;
+      if (!canonicalArtifactPath(path) || expected.put(path, signature) != null) return false;
     }
     var actual = new java.util.TreeMap<String, String>();
     List<Path> paths;
@@ -3012,22 +3455,41 @@ public final class Build {
     assert builder != null;
     requireArtifactFingerprint(fingerprint);
     Files.createDirectories(output.toAbsolutePath().normalize().getParent());
+    recoverArtifactBackup(output);
     deleteStaleStaging(output);
-    Path staging = stagingPath(output);
+    Path staging = stagingPath(output, "stage");
+    Path backup = stagingPath(output, "backup");
     Files.createDirectory(staging);
     failArtifactBuild(failpoint, "stage");
     builder.build(staging);
     failArtifactBuild(failpoint, "validation");
     writeArtifactMarker(staging, fingerprint);
     failArtifactBuild(failpoint, "marker");
-    Path marker = output.resolve(ARTIFACT_MARKER);
-    if (!Files.isSymbolicLink(output)) Files.deleteIfExists(marker);
     failArtifactBuild(failpoint, "invalidation");
-    deleteGeneratedTree(output);
-    failArtifactBuild(failpoint, "deletion");
-    failArtifactBuild(failpoint, "publish");
-    Files.move(staging, output, StandardCopyOption.ATOMIC_MOVE);
-    assert artifactMatches(output, fingerprint);
+    boolean backedUp = Files.exists(output);
+    try {
+      if (backedUp) Files.move(output, backup, StandardCopyOption.ATOMIC_MOVE);
+      failArtifactBuild(failpoint, "deletion");
+      failArtifactBuild(failpoint, "publish");
+      Files.move(staging, output, StandardCopyOption.ATOMIC_MOVE);
+      failArtifactBuild(failpoint, "published");
+      if (!artifactMatches(output, fingerprint)) {
+        throw new IllegalStateException("published artifact failed integrity validation");
+      }
+      if (backedUp) deleteGeneratedTree(backup);
+      failArtifactBuild(failpoint, "cleanup");
+    } catch (Exception exception) {
+      try {
+        if (backedUp && Files.exists(backup)) {
+          if (Files.exists(output)) deleteGeneratedTree(output);
+          failArtifactBuild(failpoint, "restoration");
+          Files.move(backup, output, StandardCopyOption.ATOMIC_MOVE);
+        }
+      } catch (Exception restoreException) {
+        exception.addSuppressed(restoreException);
+      }
+      throw exception;
+    }
   }
 
   private static void failArtifactBuild(String configured, String reached) {
@@ -3083,7 +3545,13 @@ public final class Build {
     if (length > FILE_BYTES_MAX) {
       throw new IllegalStateException("generated artifact file exceeds limit: " + path);
     }
-    return "file\t" + length;
+    try {
+      var digest = MessageDigest.getInstance("SHA-256");
+      updateDigestFromFile(digest, path);
+      return "file\t" + length + "\t" + HexFormat.of().formatHex(digest.digest());
+    } catch (java.security.NoSuchAlgorithmException exception) {
+      throw new IllegalStateException("SHA-256 unavailable", exception);
+    }
   }
 
   private static boolean canonicalSymbolicLinkTarget(String value) {
@@ -3138,12 +3606,38 @@ public final class Build {
         && path.normalize().toString().replace('\\', '/').equals(relative);
   }
 
-  private static Path stagingPath(Path output) {
+  private static Path stagingPath(Path output, String kind) {
     Path normalized = output.toAbsolutePath().normalize();
     String name = normalized.getFileName().toString();
     long sequence = STAGING_SEQUENCE.incrementAndGet();
     return normalized.resolveSibling(
-        "." + name + ".stage-" + ProcessHandle.current().pid() + "-" + sequence);
+        "." + name + "." + kind + "-" + ProcessHandle.current().pid() + "-" + sequence);
+  }
+
+  private static void recoverArtifactBackup(Path output) throws IOException {
+    Path normalized = output.toAbsolutePath().normalize();
+    Path parent = normalized.getParent();
+    if (!Files.isDirectory(parent)) return;
+    String prefix = "." + normalized.getFileName() + ".backup-";
+    List<Path> backups =
+        directoryEntries(parent, TREE_ENTRIES_MAX).stream()
+            .filter(path -> path.getFileName().toString().startsWith(prefix))
+            .toList();
+    if (Files.exists(output)) {
+      for (Path backup : backups) deleteGeneratedTree(backup);
+      return;
+    }
+    if (backups.size() > 1) {
+      throw new IllegalStateException(
+          "multiple artifact backups require manual recovery: " + output);
+    }
+    if (backups.size() == 1) {
+      Path backup = backups.getFirst();
+      if (!Files.isRegularFile(backup.resolve(ARTIFACT_MARKER))) {
+        throw new IllegalStateException("artifact backup is incomplete: " + backup);
+      }
+      Files.move(backup, output, StandardCopyOption.ATOMIC_MOVE);
+    }
   }
 
   private static void deleteStaleStaging(Path output) throws IOException {

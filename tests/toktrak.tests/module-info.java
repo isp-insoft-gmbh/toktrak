@@ -1,5 +1,6 @@
 module toktrak.tests {
   requires com.nimbusds.jose.jwt;
+  requires io.jstach.jstachio;
   requires java.logging;
   requires java.net.http;
   requires jdk.httpserver;

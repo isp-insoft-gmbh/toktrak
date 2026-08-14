@@ -2,10 +2,10 @@ package toktrak.http;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import io.jstach.jstachio.Template;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -14,14 +14,16 @@ import java.util.concurrent.RejectedExecutionException;
 import toktrak.auth.AuthService;
 import toktrak.auth.AuthService.Session;
 import toktrak.health.HealthState;
-import toktrak.identity.IdentityService.CreatedToken;
+import toktrak.identity.IdentityService.PreparedToken;
 import toktrak.json.Json;
+import toktrak.projection.Projection.TokenPage;
 import toktrak.projection.Projection.TrackerToken;
 
 public final class Router implements HttpHandler {
   private static final int PATH_BYTES_MAX = 2 * 1024;
   private static final int METHOD_CHARACTERS_MAX = 32;
   private static final int FORM_BYTES_MAX = 16 * 1024;
+  private static final int TOKEN_PAGE_SIZE = 100;
   private static final String URI_TOO_LONG_PATH = "URI exceeds 2048-byte limit";
   private static final String INVALID_METHOD = "(invalid method)";
 
@@ -241,8 +243,32 @@ public final class Router implements HttpHandler {
   private void tokens(HttpExchange exchange) throws IOException {
     Session session = browserSession(exchange);
     if (session == null) return;
-    List<TrackerToken> tokens = auth.identities().trackerTokens(session.key());
-    HttpSupport.html(exchange, 200, tokensPage(session, tokens));
+    try {
+      int page = tokenPage(exchange.getRequestURI().getRawQuery());
+      TokenPage tokens = auth.identities().trackerTokenPage(session.key(), page, TOKEN_PAGE_SIZE);
+      var rows = tokens.tokens().stream().map(Router::tokenRow).toList();
+      var view =
+          new TokenListView(
+              base("My Tracker · TokTrak"),
+              session.csrf(),
+              rows,
+              page,
+              page > 1,
+              page > 1 ? tokenPageUrl(page - 1) : "",
+              page < tokens.pageCount(),
+              page < tokens.pageCount() ? tokenPageUrl(page + 1) : "");
+      HttpSupport.encodedHtml(
+          exchange,
+          200,
+          render(
+              TokenListViewRenderer.of(),
+              view,
+              "tokens.mustache",
+              "TokenListView",
+              "TokenListViewRenderer"));
+    } catch (IllegalArgumentException exception) {
+      badRequest(exchange, exception.getMessage());
+    }
   }
 
   private void createToken(HttpExchange exchange) throws IOException {
@@ -251,8 +277,19 @@ public final class Router implements HttpHandler {
     try {
       Map<String, String> form = form(exchange);
       auth.requireCsrf(session, form.get("csrf"));
-      CreatedToken created = auth.identities().createTrackerToken(session.key(), form.get("label"));
-      HttpSupport.html(exchange, 201, createdTokenPage(created));
+      PreparedToken prepared =
+          auth.identities().prepareTrackerToken(session.key(), form.get("label"));
+      var view =
+          new CreatedTokenView(base("Tracker token created · TokTrak"), prepared.plaintext());
+      byte[] body =
+          render(
+              CreatedTokenViewRenderer.of(),
+              view,
+              "created-token.mustache",
+              "CreatedTokenView",
+              "CreatedTokenViewRenderer");
+      auth.identities().commitTrackerToken(prepared);
+      HttpSupport.encodedHtml(exchange, 201, body);
     } catch (IllegalArgumentException | IllegalStateException exception) {
       badRequest(exchange, exception.getMessage());
     }
@@ -326,17 +363,22 @@ public final class Router implements HttpHandler {
   }
 
   private void home(HttpExchange exchange) throws IOException {
-    String strip = devAuth ? "<div class=\"environment-banner\">DEV AUTH</div>" : "";
-    HttpSupport.html(
+    boolean signedIn;
+    try {
+      auth.requireSession(exchange.getRequestHeaders().getFirst("Cookie"));
+      signedIn = true;
+    } catch (IllegalArgumentException exception) {
+      signedIn = false;
+    }
+    var view = new HomeView(base("TokTrak"), signedIn);
+    HttpSupport.encodedHtml(
         exchange,
         200,
-        "<!doctype html><meta charset=\"utf-8\"><title>TokTrak</title>"
-            + "<link rel=\"stylesheet\" href=\""
-            + assets.publicUrl("main.css")
-            + "\">"
-            + strip
-            + "<main><h1>TokTrak</h1><form action=\"/login\"><button>Sign"
-            + " in</button></form></main>");
+        render(HomeViewRenderer.of(), view, "home.mustache", "HomeView", "HomeViewRenderer"));
+  }
+
+  private BaseView base(String title) {
+    return new BaseView(title, assets.publicUrl("main.css"), devAuth);
   }
 
   private Session browserSession(HttpExchange exchange) throws IOException {
@@ -366,79 +408,49 @@ public final class Router implements HttpHandler {
     return toktrak.auth.OidcClient.parseForm(new String(bytes, StandardCharsets.UTF_8));
   }
 
-  private String tokensPage(Session session, List<TrackerToken> tokens) {
-    assert session != null;
-    assert tokens != null;
-    var rows = new StringBuilder();
-    for (TrackerToken token : tokens) {
-      rows.append("<li><strong>")
-          .append(escape(token.label()))
-          .append("</strong> <code>")
-          .append(token.id())
-          .append("</code> · ")
-          .append(token.revokedAt() == null ? "active" : "revoked");
-      if (token.lastUsedAt() != null) {
-        rows.append(" · last used <time>")
-            .append(escape(token.lastUsedAt().toString()))
-            .append("</time>");
-      }
-      if (token.revokedAt() == null) {
-        rows.append(
-                "<form method=\"post\" action=\"/tokens/revoke\">"
-                    + "<input type=\"hidden\" name=\"csrf\" value=\"")
-            .append(escape(session.csrf()))
-            .append("\"><input type=\"hidden\" name=\"tokenId\" value=\"")
-            .append(token.id())
-            .append("\"><button>Revoke</button></form>");
-      }
-      rows.append("</li>");
+  private static TokenListView.TokenRow tokenRow(TrackerToken token) {
+    assert token != null;
+    boolean active = token.revokedAt() == null;
+    String lastUsed = token.lastUsedAt() == null ? "" : token.lastUsedAt().toString();
+    return new TokenListView.TokenRow(
+        token.label(),
+        token.id().toString(),
+        active ? "active" : "revoked",
+        !lastUsed.isEmpty(),
+        lastUsed,
+        active);
+  }
+
+  private static int tokenPage(String query) {
+    if (query == null) return 1;
+    if (!query.matches("page=[1-9][0-9]{0,9}")) {
+      throw new IllegalArgumentException("page query is invalid");
     }
-    return document(
-        "My Tracker",
-        "<h1>My Tracker</h1><ul>"
-            + rows
-            + "</ul><form method=\"post\" action=\"/tokens\">"
-            + "<input type=\"hidden\" name=\"csrf\" value=\""
-            + escape(session.csrf())
-            + "\"><label>Label <input name=\"label\" maxlength=\"128\" required></label>"
-            + "<button>Create token</button></form>"
-            + actionForm("/account/deactivate", "Deactivate account", session.csrf())
-            + actionForm("/logout", "Sign out", session.csrf()));
+    try {
+      return Integer.parseInt(query.substring("page=".length()));
+    } catch (NumberFormatException exception) {
+      throw new IllegalArgumentException("page query is invalid", exception);
+    }
   }
 
-  private String createdTokenPage(CreatedToken created) {
-    assert created != null;
-    return document(
-        "Tracker token created",
-        "<h1>Tracker token created</h1><p>Copy this token now. It will not be shown again.</p>"
-            + "<pre>"
-            + escape(created.plaintext())
-            + "</pre><p><a href=\"/tokens\">Return to My Tracker</a></p>");
+  private static String tokenPageUrl(int page) {
+    assert page >= 1;
+    return "/tokens?page=" + page;
   }
 
-  private String document(String title, String body) {
-    assert title != null;
-    assert body != null;
-    String banner = devAuth ? "<div class=\"environment-banner\">DEV AUTH</div>" : "";
-    return "<!doctype html><meta charset=\"utf-8\"><title>"
-        + escape(title)
-        + " · TokTrak</title><link rel=\"stylesheet\" href=\""
-        + assets.publicUrl("main.css")
-        + "\">"
-        + banner
-        + "<main>"
-        + body
-        + "</main>";
-  }
-
-  private static String actionForm(String action, String label, String csrf) {
-    return "<form method=\"post\" action=\""
-        + action
-        + "\"><input type=\"hidden\" name=\"csrf\" value=\""
-        + escape(csrf)
-        + "\"><button>"
-        + escape(label)
-        + "</button></form>";
+  private static <T> byte[] render(
+      Template.EncodedTemplate<T> renderer,
+      T model,
+      String templateName,
+      String modelName,
+      String rendererName) {
+    try {
+      return HttpSupport.renderEncoded(renderer, model);
+    } catch (HttpSupport.EncodedHtmlTooLargeException exception) {
+      throw new RenderFailure(templateName, modelName, rendererName, "output_limit");
+    } catch (IOException | RuntimeException exception) {
+      throw new RenderFailure(templateName, modelName, rendererName, "renderer_failure");
+    }
   }
 
   private void authFailure(HttpExchange exchange, RuntimeException exception) throws IOException {
@@ -539,15 +551,5 @@ public final class Router implements HttpHandler {
     if (value == null) return false;
     if (value.length() > PATH_BYTES_MAX) return true;
     return value.getBytes(StandardCharsets.UTF_8).length > PATH_BYTES_MAX;
-  }
-
-  private static String escape(String value) {
-    assert value != null;
-    return value
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&#39;");
   }
 }

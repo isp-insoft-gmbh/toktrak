@@ -29,7 +29,7 @@ final class IdentityServiceTest {
       var identities = new IdentityService(writer, projection, new byte[32]);
       identities.authenticateUser(USER, "user@example.com", "Example User", null);
 
-      var created = identities.createTrackerToken(USER, "Laptop");
+      var created = create(identities, "Laptop");
       assertTrue(created.plaintext().startsWith("tt_"));
       assertFalse(projection.snapshotData().toString().contains(created.plaintext()));
       byte[] digest = java.util.Base64.getUrlDecoder().decode(created.token().digest());
@@ -55,7 +55,7 @@ final class IdentityServiceTest {
           () -> identities.authenticateTrackerToken(created.plaintext()));
       identities.deactivate(USER);
       assertTrue(projection.activeUser(USER).isEmpty());
-      assertThrows(IllegalStateException.class, () -> identities.createTrackerToken(USER, "Other"));
+      assertThrows(IllegalStateException.class, () -> create(identities, "Other"));
     }
   }
 
@@ -75,15 +75,23 @@ final class IdentityServiceTest {
           IllegalArgumentException.class,
           () -> identities.authenticateUser(USER, "user@example.com", "Example User", "red"));
       identities.authenticateUser(USER, "user@example.com", "Example User", null);
-      assertThrows(IllegalArgumentException.class, () -> identities.createTrackerToken(USER, " "));
+      assertThrows(IllegalArgumentException.class, () -> create(identities, " "));
       assertThrows(
           IllegalArgumentException.class,
           () -> identities.authenticateTrackerToken("x".repeat(257)));
-      var token = identities.createTrackerToken(USER, "Before deactivation");
+      var token = create(identities, "Before deactivation");
+      assertEquals(1, identities.trackerTokenPage(USER, 1, 100).tokens().size());
+      assertThrows(IllegalArgumentException.class, () -> identities.trackerTokenPage(USER, 0, 100));
+      assertThrows(IllegalArgumentException.class, () -> identities.trackerTokenPage(USER, 1, 0));
+      assertThrows(IllegalArgumentException.class, () -> identities.trackerTokenPage(USER, 1, 101));
+      assertThrows(IllegalArgumentException.class, () -> identities.trackerTokenPage(USER, 2, 100));
       identities.deactivate(USER);
       assertEquals(NOW, projection.trackerToken(token.token().id()).orElseThrow().revokedAt());
       assertThrows(IllegalStateException.class, () -> identities.deactivate(USER));
       assertThrows(IllegalStateException.class, () -> identities.trackerTokens(USER));
+      assertThrows(IllegalStateException.class, () -> identities.trackerTokenPage(USER, 1, 100));
+      assertThrows(
+          IllegalStateException.class, () -> identities.prepareTrackerToken(USER, "Other"));
       identities.authenticateUser(USER, "user@example.com", "Example User", null);
       assertThrows(
           IllegalArgumentException.class,
@@ -100,7 +108,7 @@ final class IdentityServiceTest {
         var writer = writer(log, projection)) {
       var identities = new IdentityService(writer, projection, new byte[32]);
       identities.authenticateUser(USER, "user@example.com", "Example User", "#a8dadc");
-      tokenId = identities.createTrackerToken(USER, "Laptop").token().id();
+      tokenId = create(identities, "Laptop").token().id();
       writer.submit(toktrak.store.WriteCommand.snapshot("system")).join();
     }
 
@@ -123,15 +131,17 @@ final class IdentityServiceTest {
       identities.authenticateUser(USER, "user@example.com", "Example User", null);
       var futures =
           java.util.stream.IntStream.range(0, 16)
-              .mapToObj(
-                  index ->
-                      executor.submit(() -> identities.createTrackerToken(USER, "Token " + index)))
+              .mapToObj(index -> executor.submit(() -> create(identities, "Token " + index)))
               .toList();
       var plaintext = new HashSet<String>();
       for (var future : futures) plaintext.add(future.get().plaintext());
       assertEquals(16, plaintext.size());
       assertEquals(16, identities.trackerTokens(USER).size());
     }
+  }
+
+  private static IdentityService.CreatedToken create(IdentityService identities, String label) {
+    return identities.commitTrackerToken(identities.prepareTrackerToken(USER, label));
   }
 
   private static Writer writer(EventLog log, Projection projection) {
