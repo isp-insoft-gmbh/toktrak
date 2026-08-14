@@ -33,9 +33,9 @@ public final class TestLauncher {
           "junit.jupiter.execution.parallel.enabled", "true",
           "junit.jupiter.execution.parallel.mode.default", "same_thread",
           "junit.jupiter.execution.parallel.mode.classes.default", "concurrent",
+          "junit.jupiter.execution.parallel.config.executor-service", "WORKER_THREAD_POOL",
           "junit.jupiter.execution.parallel.config.strategy", "fixed",
-          "junit.jupiter.execution.parallel.config.fixed.parallelism", "4",
-          "junit.jupiter.execution.parallel.config.fixed.max-pool-size", "4");
+          "junit.jupiter.execution.parallel.config.fixed.parallelism", "4");
   private static final Pattern TEST_NAME =
       Pattern.compile("given_[a-z][A-Za-z0-9]*_when_[a-z][A-Za-z0-9]*_then_[a-z][A-Za-z0-9]*");
 
