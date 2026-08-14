@@ -1,0 +1,15 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^sources\\/[^/]+-deps\\.txt$/"],
+      "matchStrings": [
+        "pkg:maven/(?<groupId>[^/\\s]+)/(?<artifactId>[^@\\s]+)@(?<currentValue>[^?\\s]+)"
+      ],
+      "datasourceTemplate": "maven",
+      "packageNameTemplate": "{{{groupId}}}:{{{artifactId}}}"
+    }
+  ]
+}
