@@ -6,7 +6,7 @@ COPY tools tools
 COPY vendored vendored
 RUN java -ea tools/Build.java prod
 
-FROM docker.io/library/debian@sha256:362e64223cc0da95422b3b13c045186fc0a81250e765d31c025fbddf257f6143
+FROM docker.io/library/debian@sha256:d8f17b92dc7ff10f9c1fdecab0ad21103d1d24aed823c3a0359e4f50adfab3eb
 ARG VERSION
 ARG REVISION
 LABEL org.opencontainers.image.title="TokTrak" \
