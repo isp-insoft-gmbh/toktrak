@@ -82,11 +82,10 @@ threads, then rerun the same task. Never repair failure by pushing `trunk`,
 merging the pull request, or editing `.system`, `.github/golems`, `.claude`,
 `.agents`, `.codex`, or `.pi` from a golem branch.
 
-Optional public review evidence uses only the seeded development corpus. Set
-`GATEBRIDGE_R2_ACCESS_KEY_ID`, `GATEBRIDGE_R2_SECRET_ACCESS_KEY`, and
-`GATEBRIDGE_R2_ENDPOINT` in the parent environment. The harness cannot read
-these credentials; the parent uploads files from `output/golem-evidence` after
-it exits.
+Optional public review evidence uses only the seeded development corpus. The
+harness may place small safe diagrams, screenshots, or videos under
+`output/golem-evidence` and reference them in pull-request prose as
+`[evidence:<filename>]`; the parent uploads them after the harness exits.
 
 To change or add a task, edit one lowercase kebab-case `.md` file, run
 `mise run check`, then `mise run golem-check`. Tracked `.claude/skills` are

@@ -85,8 +85,8 @@ Maintain TokTrak after its initial release through reviewable CI agent runs.
 - Every maintenance pull request has separate `golem`, `golem:<task-id>`,
   `harness:<value>`, `model:<value>`, `thinking:<value>`, and `weekday:<value>`
   labels.
-- The pull-request body records prompt revision and remaining effective
-  parameters.
+- Run metadata lives in labels; the pull-request body keeps only human-facing
+  prose and one hidden run-link footer.
 
 ## Maintenance compatibility
 
@@ -159,13 +159,13 @@ versions fail safely. Silent loss, corruption, or reinterpretation is forbidden.
   self-contained HTML, diagrams, audio, terminal recordings, and documents.
 - Application evidence uses only the seeded development corpus.
 - A post-harness step uses bucket-scoped Gatebridge R2 S3 credentials and the
-  tracked `file-upload` skill to publish evidence for one year and embed its
-  public URL in the pull request; the harness never receives upload credentials.
+  tracked `file-upload` skill to publish evidence for one year and replace
+  `[evidence:<filename>]` pull-request prose placeholders with public URLs; the
+  harness never receives upload credentials.
 - Commits use a deterministic identity derived from the GitHub App, without
   signing, AI attribution, or AI trailers.
-- Deterministic orchestration owns maintenance labels and a delimited
-  pull-request body footer containing task ID, prompt revision, effective
-  parameters, and run URL.
+- Deterministic orchestration owns maintenance labels and a hidden pull-request
+  body footer containing only the run URL.
 - Harness CLIs execute directly rather than through provider-specific workflow
   actions.
 - Each harness uses its official, version-pinned distribution; installation need

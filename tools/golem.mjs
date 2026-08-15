@@ -30,8 +30,9 @@ const SECRET_ENVIRONMENT = [
   "GOLEM_AUTH_SEED",
   "TOKTRAK_AGENT_APP_PRIVATE_KEY",
 ];
-const METADATA_START = "<!-- golem-metadata:start -->";
-const METADATA_END = "<!-- golem-metadata:end -->";
+const RUN_DETAILS_START = "<!-- golem-run:start -->";
+const RUN_DETAILS_END = "<!-- golem-run:end -->";
+const OLD_METADATA_START = "<!-- golem-metadata:start -->";
 const COMMAND_OUTPUT_BYTES_MAX = 4 * 1024 * 1024;
 const HARNESS_TIMEOUT_MILLIS = 45 * 60 * 1000;
 const CHECK_TIMEOUT_MILLIS = 20 * 60 * 1000;
@@ -358,23 +359,25 @@ const gitLines = (args, cwd) => git(args, cwd).split("\n").map((line) => line.tr
 
 export const protectedChanges = (paths) => paths.filter((path) => PROTECTED.some((prefix) => path === prefix.slice(0, -1) || path.startsWith(prefix)));
 
-export const metadataBody = (body, task, revision, runUrl, evidence = []) => {
-  const before = body.includes(METADATA_START) ? body.slice(0, body.indexOf(METADATA_START)).trimEnd() : body.trimEnd();
+export const runDetailsBody = (body, runUrl) => {
+  let before = body.includes(RUN_DETAILS_START) ? body.slice(0, body.indexOf(RUN_DETAILS_START)).trimEnd() : body.trimEnd();
+  if (before.includes(OLD_METADATA_START)) before = before.slice(0, before.indexOf(OLD_METADATA_START)).trimEnd();
   const lines = [
-    METADATA_START,
-    "## Golem metadata",
+    RUN_DETAILS_START,
+    "<details>",
+    "<summary>Golem run</summary>",
     "",
-    `- Task: \`${task.id}\``,
-    `- Prompt revision: \`${revision}\``,
-    `- Harness: \`${task.harness}\``,
-    `- Model: \`${task.model}\``,
-    `- Thinking: \`${task.thinking}\``,
-    `- Weekday: \`${task.weekday}\``,
-    `- Run: ${runUrl}`,
+    runUrl,
+    "</details>",
+    RUN_DETAILS_END,
   ];
-  if (evidence.length) lines.push(`- Evidence: ${evidence.join(", ")}`);
-  lines.push(METADATA_END);
   return `${before}${before ? "\n\n" : ""}${lines.join("\n")}\n`;
+};
+
+export const evidenceBody = (body, evidence) => {
+  let result = body;
+  for (const [name, url] of evidence) result = result.replaceAll(`[evidence:${name}]`, url);
+  return result;
 };
 
 const promptFor = (task, target, branch, pullRequestContext) => {
@@ -382,7 +385,7 @@ const promptFor = (task, target, branch, pullRequestContext) => {
     .map((name) => `# .system/${name}\n\n${strictSource(join(ROOT, ".system", name)).trim()}`)
     .join("\n\n");
   const common = strictSource(join(GOLEMS, "_golem.md")).trim();
-  return `${documents}\n\n# .github/golems/_golem.md\n\n${common}\n\n# Deterministic run context\n\nTask: ${task.id}\nTarget: ${target}\nDedicated branch: ${branch}\nTask revision: ${git(["rev-parse", `HEAD:.github/golems/${task.id}.md`])}\n\nThe parent process owns branch publication, pull-request creation, labels, metadata, evidence upload, and final checks. Commit every useful repository change with a human title and explanatory body. Leave no uncommitted changes. Do not push or merge. A no-change result must leave HEAD, the worktree, and GitHub unchanged. Evidence, only when useful and publicly safe, goes under output/golem-evidence and uses only the seeded development corpus.\n\n${pullRequestContext}\n\n# Task prompt\n\n${task.body}\n`;
+  return `${documents}\n\n# .github/golems/_golem.md\n\n${common}\n\n# Deterministic run context\n\nTask: ${task.id}\nTarget: ${target}\nDedicated branch: ${branch}\nTask revision: ${git(["rev-parse", `HEAD:.github/golems/${task.id}.md`])}\n\nThe parent process owns branch publication, pull-request creation, labels, hidden run link, evidence upload, and final checks. Commit every useful repository change with a human title and explanatory body. Leave no uncommitted changes. Do not push or merge. A no-change result must leave HEAD, the worktree, and GitHub unchanged. Evidence, only when useful and publicly safe, goes under output/golem-evidence and is referenced in pull-request prose as [evidence:<filename>].\n\n${pullRequestContext}\n\n# Task prompt\n\n${task.body}\n`;
 };
 
 const targetHead = (target) => git(["ls-remote", "--exit-code", "origin", `refs/heads/${target}`]).split(/\s+/)[0];
@@ -460,16 +463,16 @@ const ensureLabels = (task, pullRequest, cwd) => {
 
 const uploadEvidence = (worktree) => {
   const directory = join(worktree, "output", "golem-evidence");
-  if (!existsSync(directory)) return [];
+  if (!existsSync(directory)) return new Map();
   const entries = readdirSync(directory).sort();
   if (entries.length > 16) fail("golem evidence exceeds 16 files");
-  const urls = [];
+  const urls = new Map();
   for (const name of entries) {
     const path = join(directory, name);
     const stat = lstatSync(path);
     if (!stat.isFile() || stat.isSymbolicLink()) fail(`golem evidence is not a regular file: ${name}`);
     if (stat.size > 315 * 1024 * 1024) fail(`golem evidence exceeds 315 MiB: ${name}`);
-    urls.push(captured("node", [join(ROOT, ".claude", "skills", "file-upload", "scripts", "upload.mjs"), path, "1y"], { cwd: ROOT, operation: `upload evidence ${name}`, timeout: 10 * 60 * 1000 }));
+    urls.set(name, captured("node", [join(ROOT, ".claude", "skills", "file-upload", "scripts", "upload.mjs"), path, "1y"], { cwd: ROOT, operation: `upload evidence ${name}`, timeout: 10 * 60 * 1000 }));
   }
   return urls;
 };
@@ -595,15 +598,14 @@ const publishRun = async (run) => {
     const url = gh(["pr", "create", "--head", run.branch, "--base", run.target, "--title", title.trim(), "--body", body], run.worktree, "create golem pull request");
     pullRequest = JSON.parse(gh(["pr", "view", url, "--json", "number"]));
   }
-  const revision = git(["rev-parse", `HEAD:.github/golems/${run.id}.md`], run.worktree);
   const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
     ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : "local";
   ensureLabels(run.task, pullRequest.number, run.worktree);
   const evidence = uploadEvidence(run.worktree);
   const currentBody = JSON.parse(gh(["pr", "view", String(pullRequest.number), "--json", "body"], run.worktree)).body;
-  const body = metadataBody(currentBody, run.task, revision, runUrl, evidence);
-  gh(["pr", "edit", String(pullRequest.number), "--body", body], run.worktree, "update golem pull-request metadata");
+  const body = runDetailsBody(evidenceBody(currentBody, evidence), runUrl);
+  gh(["pr", "edit", String(pullRequest.number), "--body", body], run.worktree, "update golem pull-request run link");
   if (unresolvedReviewThreads(run.repository, pullRequest.number) !== 0) fail(`pull request #${pullRequest.number} has unresolved review threads`);
   const finalRemoteHead = branchHead(run.branch);
   if (finalRemoteHead !== remoteHead) fail(`remote ${run.branch} changed concurrently`);

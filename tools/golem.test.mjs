@@ -6,8 +6,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
+  evidenceBody,
   harnessArguments,
-  metadataBody,
+  runDetailsBody,
   parseTask,
   protectedChanges,
   runLifecycle,
@@ -252,18 +253,26 @@ test("detects every protected control-plane prefix", () => {
   assert.deepEqual(protectedChanges(paths), paths.slice(0, 6));
 });
 
-test("replaces deterministic pull-request metadata without duplicating it", () => {
-  const task = {
-    id: "bugs",
-    harness: "pi",
-    model: "openai-codex/gpt-5.5",
-    thinking: "max",
-    weekday: "monday",
-  };
-  const once = metadataBody("Reason.\n", task, "abc123", "local", ["https://gatebridge.link/1y/a"]);
-  const twice = metadataBody(once, task, "def456", "local");
-  assert.equal(twice.match(/golem-metadata:start/g)?.length, 1);
-  assert.match(twice, /Prompt revision: `def456`/);
-  assert.doesNotMatch(twice, /abc123|gatebridge/);
+test("replaces hidden pull-request run link without metadata", () => {
+  const old = `Reason.\n\n<!-- golem-metadata:start -->\n## Golem metadata\n\n- Task: \`bugs\`\n- Run: old\n<!-- golem-metadata:end -->\n`;
+  const once = runDetailsBody(old, "https://github.com/owner/repo/actions/runs/1");
+  const twice = runDetailsBody(once, "https://github.com/owner/repo/actions/runs/2");
+  assert.equal(twice.match(/golem-run:start/g)?.length, 1);
+  assert.match(twice, /<details>/);
+  assert.match(twice, /https:\/\/github\.com\/owner\/repo\/actions\/runs\/2/);
+  assert.doesNotMatch(twice, /Golem metadata|Task:|golem-metadata|runs\/1/);
   assert.match(twice, /^Reason\./);
+});
+
+test("replaces evidence placeholders without footer metadata", () => {
+  const body = "See ![diagram]([evidence:flow.svg]) and [demo]([evidence:demo.webm]).";
+  const evidence = new Map([
+    ["flow.svg", "https://gatebridge.link/1y/flow.svg"],
+    ["demo.webm", "https://gatebridge.link/1y/demo.webm"],
+  ]);
+
+  assert.equal(
+    evidenceBody(body, evidence),
+    "See ![diagram](https://gatebridge.link/1y/flow.svg) and [demo](https://gatebridge.link/1y/demo.webm).",
+  );
 });
