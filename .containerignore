@@ -1,0 +1,9 @@
+**
+!sources/
+!sources/**
+!tests/
+!tests/**
+!tools/
+!tools/**
+!vendored/
+!vendored/**

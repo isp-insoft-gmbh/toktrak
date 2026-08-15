@@ -75,6 +75,18 @@ final class ConfigTest {
   }
 
   @Test
+  void given_developmentMode_when_readingBindAddress_then_usesLoopback() {
+    var config = Config.from(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true"));
+    assertTrue(config.bindAddress().isLoopbackAddress());
+  }
+
+  @Test
+  void given_productionMode_when_readingBindAddress_then_usesContainerInterface() {
+    var config = Config.from(new String[] {}, productionEnvironment("https://toktrak.example"));
+    assertTrue(config.bindAddress().isAnyLocalAddress());
+  }
+
+  @Test
   void given_nonLocalHttpsProductionUrl_when_parsingConfig_then_acceptsBaseUrl() {
     var config = Config.from(new String[] {}, productionEnvironment("https://toktrak.example"));
     assertEquals("https://toktrak.example", config.baseUrl());

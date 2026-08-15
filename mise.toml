@@ -78,3 +78,16 @@ run = "java -ea tools/Build.java dev -- --corpus tests/corpus/dev.jsonl"
 [tasks.prod]
 description = "Build and verify the self-contained production runtime"
 run = "java -ea tools/Build.java prod"
+
+[tasks.image]
+description = "Build and inspect the immutable TokTrak container image"
+run = "java -ea tools/Build.java image"
+
+[tasks.container-verify]
+description = "Build and verify the image with rootless Podman"
+run = "java -ea tools/Build.java container-verify"
+
+[tasks.release]
+description = "Verify and publish the next immutable integer release"
+raw_args = true
+run = "java -ea tools/Build.java release"

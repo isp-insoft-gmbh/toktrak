@@ -38,6 +38,16 @@ public final class BuildTest {
       }
       throw new IllegalArgumentException("unexpected argument: " + args[0]);
     }
+    if (args.length == 4 && args[0].equals("fake-tool")) {
+      Files.writeString(
+          Path.of(args[1]),
+          args[2] + System.lineSeparator(),
+          StandardOpenOption.CREATE,
+          StandardOpenOption.APPEND);
+      System.out.print(args[2] + "-output");
+      if (args[3].equals("fail")) throw new IllegalStateException("controlled failure");
+      return;
+    }
     if (args.length != 0) throw new IllegalArgumentException("unexpected arguments");
     requireTestNames(BuildTest.class.getDeclaredMethods());
     given_oversizedFile_when_hashing_then_rejectsInput();
@@ -74,6 +84,12 @@ public final class BuildTest {
     given_commandAboveLengthLimit_when_buildingCommand_then_rejectsInput();
     given_windowsOsNamePattern_when_applyingRefaster_then_rewritesOnlyOsCheck();
     given_gitTreeWithUntrackedFile_when_checkingStatus_then_reportsDirty();
+    given_releaseTags_when_selectingNextVersion_then_requiresConsecutiveIntegers();
+    given_dirtyOrDivergedTree_when_checkingRelease_then_rejectsPreflight();
+    given_changelogSections_when_checkingRelease_then_requiresExactNonemptySection();
+    given_podmanImageIds_when_canonicalizing_then_acceptsOnlySha256();
+    given_productionRuntime_when_selectingRoots_then_includesManagementAndDiagnostics();
+    given_controlledGitAndPodman_when_runningReleaseMutations_then_preservesOrderAndRedactsFailure();
     given_testGroups_when_selectingTimeouts_then_returnsConfiguredDurations();
     given_runningProcess_when_timeoutUsesForceOption_then_reportsTimeoutAndStopsProcess();
     given_runningProcess_when_timeoutExpires_then_terminatesProcess();
@@ -1182,6 +1198,106 @@ public final class BuildTest {
       for (int index = paths.size() - 1; index >= 0; index--)
         Files.deleteIfExists(paths.get(index));
     }
+  }
+
+  private static void
+      given_releaseTags_when_selectingNextVersion_then_requiresConsecutiveIntegers() {
+    if (Build.nextVersionForTest("") != 0
+        || Build.nextVersionForTest("v0\nv1\n") != 2
+        || !Build.releaseVersionsForTest("abc refs/tags/v0\nabc refs/tags/v0^{}\n")
+            .equals(List.of(0))) {
+      throw new AssertionError("release version selection mismatch");
+    }
+    expectFailure(() -> Build.nextVersionForTest("v1\n"), "release version gap before v1");
+    expectFailure(() -> Build.nextVersionForTest("v00\n"), "invalid release tag: v00");
+    expectFailure(
+        () -> Build.nextVersionForTest("v2147483648\n"), "release version exceeds integer range");
+  }
+
+  private static void given_dirtyOrDivergedTree_when_checkingRelease_then_rejectsPreflight() {
+    String revision = "a".repeat(40);
+    Build.requireReleaseTreeForTest("trunk", "", revision, revision);
+    expectFailure(
+        () -> Build.requireReleaseTreeForTest("feature", "", revision, revision),
+        "release requires branch trunk");
+    expectFailure(
+        () -> Build.requireReleaseTreeForTest("trunk", "?? file", revision, revision),
+        "release requires a clean working tree");
+    expectFailure(
+        () -> Build.requireReleaseTreeForTest("trunk", "", revision, "b".repeat(40)),
+        "trunk must be synchronized with origin/trunk");
+  }
+
+  private static void
+      given_changelogSections_when_checkingRelease_then_requiresExactNonemptySection() {
+    Build.requireChangelogForTest(2, "# Changelog\n\n## v2\n\n- Done.\n\n## v1\n\n- Old.\n");
+    expectFailure(
+        () -> Build.requireChangelogForTest(2, "# Changelog\n"),
+        "CHANGELOG.md requires exactly one ## v2 section");
+    expectFailure(
+        () -> Build.requireChangelogForTest(2, "# Changelog\n\n## v2\n"), "## v2 section is empty");
+  }
+
+  private static void given_podmanImageIds_when_canonicalizing_then_acceptsOnlySha256() {
+    String digest = "a".repeat(64);
+    if (!Build.canonicalImageIdForTest(digest).equals("sha256:" + digest)
+        || !Build.canonicalImageIdForTest("sha256:" + digest).equals("sha256:" + digest)) {
+      throw new AssertionError("Podman image ID canonicalization mismatch");
+    }
+    expectFailure(
+        () -> Build.canonicalImageIdForTest("sha512:" + digest),
+        "Podman returned invalid image ID");
+  }
+
+  private static void
+      given_productionRuntime_when_selectingRoots_then_includesManagementAndDiagnostics() {
+    if (!Build.productionRuntimeRootsForTest()
+        .equals(List.of("toktrak", "jdk.jcmd", "jdk.management.agent", "jdk.management.jfr"))) {
+      throw new AssertionError("production management module roots mismatch");
+    }
+  }
+
+  private static void
+      given_controlledGitAndPodman_when_runningReleaseMutations_then_preservesOrderAndRedactsFailure()
+          throws Exception {
+    Path directory = Files.createTempDirectory("toktrak-release-tools-");
+    Path log = directory.resolve("commands.log");
+    try {
+      Build.ToolResult git = runFakeTool(directory, log, "git-tag", "ok");
+      Build.ToolResult podman = runFakeTool(directory, log, "podman-push", "ok");
+      if (!git.output().equals("git-tag-output")
+          || !podman.output().equals("podman-push-output")
+          || !Files.readAllLines(log).equals(List.of("git-tag", "podman-push"))) {
+        throw new AssertionError("controlled release command ordering mismatch");
+      }
+      try {
+        runFakeTool(directory, log, "git-push-super-secret", "fail");
+        throw new AssertionError("failed external mutation accepted");
+      } catch (IllegalStateException exception) {
+        if (exception.getMessage().contains("super-secret")) {
+          throw new AssertionError("tool failure disclosed secret", exception);
+        }
+      }
+    } finally {
+      deleteTestTree(directory);
+    }
+  }
+
+  private static Build.ToolResult runFakeTool(
+      Path directory, Path log, String operation, String result) throws Exception {
+    return Build.runToolForTest(
+        javaExecutable(),
+        List.of(
+            "-ea",
+            "-cp",
+            Path.of(BuildTest.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+                .toString(),
+            BuildTest.class.getName(),
+            "fake-tool",
+            log.toString(),
+            operation,
+            result),
+        directory);
   }
 
   private static void runGit(Path directory, String... arguments) throws Exception {

@@ -18,6 +18,20 @@ final class HttpServerTest {
   @TempDir Path directory;
 
   @Test
+  void given_developmentApp_when_startingServer_then_bindsLoopback() {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
+      assertTrue(app.bindAddress().isLoopbackAddress());
+    }
+  }
+
+  @Test
+  void given_productionApp_when_startingServer_then_bindsContainerInterface() {
+    try (var app = App.start(new String[] {}, productionEnvironment(directory))) {
+      assertTrue(app.bindAddress().isAnyLocalAddress());
+    }
+  }
+
+  @Test
   void given_healthyApp_when_requestingHealth_then_returnsJsonAndSecurityHeaders()
       throws Exception {
     try (var app = App.start(new String[] {}, devEnvironment())) {

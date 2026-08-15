@@ -106,8 +106,7 @@ public final class App implements AutoCloseable {
               new ThreadPoolExecutor.AbortPolicy());
       server =
           HttpServer.create(
-              new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), config.port()),
-              HTTP_BACKLOG);
+              new InetSocketAddress(config.bindAddress(), config.port()), HTTP_BACKLOG);
       URI baseUri = baseUri(config, server.getAddress().getPort());
       AuthService auth = auth(config, projection, writer, baseUri);
       var usage = new UsageService(writer, config.clock());
@@ -121,7 +120,7 @@ public final class App implements AutoCloseable {
       int port = server.getAddress().getPort();
       if (port < 0 || port > 65_535)
         throw new IllegalStateException("HTTP server returned invalid port");
-      LOG.info("TokTrak ready at http://127.0.0.1:" + port + "/");
+      LOG.info("TokTrak ready on " + config.bindAddress().getHostAddress() + ":" + port);
       var app = new App(server, executor, dataLock, eventLog, writer, projection, fxService, port);
       assert app.port == port;
       return app;
@@ -193,6 +192,12 @@ public final class App implements AutoCloseable {
   public int port() {
     assert port >= 0 && port <= 65_535;
     return port;
+  }
+
+  public InetAddress bindAddress() {
+    InetAddress address = server.getAddress().getAddress();
+    assert address != null;
+    return address;
   }
 
   public Writer writer() {

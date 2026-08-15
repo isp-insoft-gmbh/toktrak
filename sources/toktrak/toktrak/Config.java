@@ -1,5 +1,6 @@
 package toktrak;
 
+import java.net.InetAddress;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -139,6 +140,10 @@ public record Config(
         allowedDomain,
         sessionSecret,
         tokenPepper);
+  }
+
+  public InetAddress bindAddress() {
+    return InetAddress.ofLiteral(devAuth ? "127.0.0.1" : "0.0.0.0");
   }
 
   public byte[] sessionSecretBytes() {

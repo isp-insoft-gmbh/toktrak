@@ -169,20 +169,26 @@ local usage data once.
 
 ## How to deploy server + dashboard
 
-Version numbers are monotonically increasing integers starting from `0`.
+Use rootless Podman. The image runs as container UID `0`; rootless
+user-namespace mapping keeps that user unprivileged on the host. Create a
+user-owned volume and keep `/data` writable by the mapped container root.
 
-1. Make sure `CHANGELOG.md` is up to date
-2. Run `mise run release`
+```sh
+podman volume create toktrak-data
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+podman run -d --name toktrak --replace --restart=always \
+  --env-file=$HOME/.config/toktrak/server.env \
+  --volume=toktrak-data:/data \
+  --publish=127.0.0.1:8080:8080 \
+  registry.isp-insoft.de/toktrak:v0
+```
 
-`release` bumps version, checks changelog, creates a tag, builds, tests, builds
-container and pushes it to registry.
-
-Runtime config is via env vars:
+Protect the env file as owner-readable only. It must contain:
 
 ```sh
 TOKTRAK_BASE_URL=https://toktrak.isp-insoft.de
 TOKTRAK_PORT=8080
-TOKTRAK_DATA_DIR=/data/toktrak
+TOKTRAK_DATA_DIR=/data
 TOKTRAK_OIDC_DISCOVERY_URL=https://accounts.google.com/.well-known/openid-configuration
 TOKTRAK_OIDC_CLIENT_ID=...
 TOKTRAK_OIDC_CLIENT_SECRET=...
@@ -191,17 +197,63 @@ TOKTRAK_SESSION_SECRET=...
 TOKTRAK_TOKEN_PEPPER=...
 ```
 
-Generate secrets with NodeJS:
+Generate `TOKTRAK_SESSION_SECRET` and `TOKTRAK_TOKEN_PEPPER` separately.
+Preserve the pepper: changing it invalidates every tracker token. Never set
+`TOKTRAK_DEV_AUTH` in production.
+
+The reverse proxy owns public TLS and compression; TokTrak serves plain HTTP on
+loopback port `8080`. Back up the complete volume while TokTrak is stopped, and
+test restoration. Deployment owns backup retention and monitoring.
+
+### Temporary JVM diagnostics
+
+The linked runtime includes JMX, JFR, `jcmd`, and `jfr`; remote management stays
+disabled unless explicitly configured. For a short diagnostic run, add this
+single line to the protected env file and publish the same fixed port on host
+loopback:
 
 ```sh
-node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+JDK_JAVA_OPTIONS=-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=9010 -Dcom.sun.management.jmxremote.rmi.port=9010 -Djava.rmi.server.hostname=127.0.0.1 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false
+podman run ... --publish=127.0.0.1:9010:9010 ...
 ```
 
-`TOKTRAK_SESSION_SECRET` signs login cookies. `TOKTRAK_TOKEN_PEPPER` hashes
-tracker tokens and must stay stable; changing it invalidates all tracker tokens.
+Connect VisualVM or JMC to
+`service:jmx:rmi:///jndi/rmi://127.0.0.1:9010/jmxrmi`. For a remote host, keep
+Podman bound to loopback and first run `ssh -L 9010:127.0.0.1:9010 HOST`.
+Unauthenticated JMX permits code execution: never publish it beyond loopback,
+and remove the options immediately after diagnosis.
 
-Deploy behind a reverse proxy for TLS/compression. Back up the mounted
-`TOKTRAK_DATA_DIR` volume. Rootless Podman is recommended.
+Shell-free diagnostics remain available directly:
+
+```sh
+podman exec toktrak /opt/toktrak/bin/jcmd 1 VM.version
+podman exec toktrak /opt/toktrak/bin/jcmd 1 JFR.start name=toktrak settings=profile duration=60s filename=/data/toktrak.jfr
+podman cp toktrak:/data/toktrak.jfr .
+```
+
+### Release
+
+Versions are consecutive integers with matching Git/image tags: `v0`, `v1`, and
+so on. Add the exact next `## vN` section to `CHANGELOG.md`, then use a clean
+`trunk` synchronized with `origin/trunk`:
+
+```sh
+mise run release --dry-run
+mise run release
+```
+
+The dry run performs verification, runtime/image builds, and a rootless
+restart/persistence check without tags or remote writes. A release pushes only
+`registry.isp-insoft.de/toktrak:vN`; no `latest` tag exists.
+
+Upgrade by pulling the new immutable tag, stopping the old container, backing up
+the volume, and replacing the container with the new tag. Roll back by replacing
+it with the previous `vN` tag against the same restored compatible volume.
+
+If image or Git-tag push fails, retain the local candidate tag and image, fix
+auth/networking, and rerun `mise run release`; recovery republishes that exact
+candidate. If either local artifact was removed, stop and inspect registry/Git
+state before retrying.
 
 ## How to use
 
