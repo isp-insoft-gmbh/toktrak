@@ -137,9 +137,9 @@ public final class WriteCommand {
         Projection.TrackerToken token =
             projection
                 .trackerToken(tokenId)
-                .orElseThrow(() -> new IllegalStateException("tracker token cannot be revoked"));
+                .orElseThrow(() -> rejected("tracker token cannot be revoked"));
         if (!token.owner().equals(owner) || token.revokedAt() != null) {
-          throw new IllegalStateException("tracker token cannot be revoked");
+          throw rejected("tracker token cannot be revoked");
         }
         assert token.id().equals(tokenId);
         yield EventEnvelope.create(EventTypes.IDENTITY_TRACKER_TOKEN_REVOKED, at, actor, data);
@@ -149,9 +149,9 @@ public final class WriteCommand {
         Projection.TrackerToken token =
             projection
                 .activeTrackerToken(digest)
-                .orElseThrow(() -> new IllegalStateException("tracker token is inactive"));
+                .orElseThrow(() -> rejected("tracker token is inactive"));
         if (!token.id().equals(tokenId)) {
-          throw new IllegalStateException("tracker token is inactive");
+          throw rejected("tracker token is inactive");
         }
         yield EventEnvelope.create(EventTypes.IDENTITY_TRACKER_TOKEN_USED, at, actor, data);
       }
@@ -167,7 +167,20 @@ public final class WriteCommand {
     assert projection != null;
     assert data != null;
     if (projection.activeUser(key(data)).isEmpty()) {
-      throw new IllegalStateException("user is inactive");
+      throw rejected("user is inactive");
+    }
+  }
+
+  private static RejectedException rejected(String message) {
+    assert message != null && !message.isBlank();
+    return new RejectedException(message);
+  }
+
+  static final class RejectedException extends IllegalStateException {
+    private static final long serialVersionUID = 1L;
+
+    private RejectedException(String message) {
+      super(message);
     }
   }
 
