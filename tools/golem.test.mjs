@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -8,6 +8,8 @@ import {
   metadataBody,
   parseTask,
   protectedChanges,
+  runLifecycle,
+  streamed,
   validateDefinitions,
 } from "./golem.mjs";
 
@@ -93,6 +95,70 @@ test("rejects missing definition directory and common instructions", () => {
     writeFileSync(join(directory, "_golem.md"), "Common.\n");
     assert.throws(() => validateDefinitions(directory), /must be a regular non-symbolic file/);
   } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("preserves preflight, harness, and publication command order", async () => {
+  const commands = [];
+  const result = await runLifecycle(
+    "bugs",
+    async (id) => {
+      commands.push("git fetch", "gh pr list", "git worktree add");
+      return { id };
+    },
+    async (run) => {
+      commands.push("pi --print");
+      return run;
+    },
+    async (run) => {
+      commands.push("git push", "gh pr create", "gh pr checks");
+      return run.id;
+    },
+  );
+  assert.equal(result, "bugs");
+  assert.deepEqual(commands, [
+    "git fetch",
+    "gh pr list",
+    "git worktree add",
+    "pi --print",
+    "git push",
+    "gh pr create",
+    "gh pr checks",
+  ]);
+});
+
+test("terminates the complete process tree on timeout", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "toktrak-golem-process-"));
+  const pidFile = join(directory, "descendant.pid");
+  let descendant;
+  try {
+    const script = `
+      const { spawn } = require("node:child_process");
+      const { writeFileSync } = require("node:fs");
+      const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+      writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+      setInterval(() => {}, 1000);
+    `;
+    await assert.rejects(
+      streamed(process.execPath, ["-e", script], {
+        timeout: 500,
+        operation: "controlled process tree",
+      }),
+      /controlled process tree timed out/,
+    );
+    assert.equal(existsSync(pidFile), true);
+    descendant = Number(readFileSync(pidFile, "utf8"));
+    await new Promise((accept) => setTimeout(accept, 100));
+    assert.throws(() => process.kill(descendant, 0), /ESRCH/);
+  } finally {
+    if (descendant) {
+      try {
+        process.kill(descendant, "SIGKILL");
+      } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    }
     rmSync(directory, { recursive: true, force: true });
   }
 });

@@ -178,7 +178,7 @@ const invocation = (command, args) => {
   return { command: process.execPath, args: [cli, ...args] };
 };
 
-const captured = (command, args, options = {}) => {
+const capture = (command, args, options = {}) => {
   const resolved = invocation(command, args);
   const result = spawnSync(resolved.command, resolved.args, {
     cwd: options.cwd ?? ROOT,
@@ -190,6 +190,11 @@ const captured = (command, args, options = {}) => {
     windowsHide: true,
   });
   if (result.error) fail(`${options.operation ?? command} failed: ${result.error.message}`);
+  return result;
+};
+
+const captured = (command, args, options = {}) => {
+  const result = capture(command, args, options);
   if (!(options.allowedStatuses ?? [0]).includes(result.status)) {
     const details = `${result.stderr ?? ""}${result.stdout ?? ""}`.trim().slice(0, 4096);
     fail(`${options.operation ?? command} failed${details ? `: ${details}` : ""}`);
@@ -197,23 +202,57 @@ const captured = (command, args, options = {}) => {
   return `${result.stdout ?? ""}${options.includeStderr ? (result.stderr ?? "") : ""}`.trim();
 };
 
-const streamed = (command, args, { cwd = ROOT, env = process.env, input, timeout = HARNESS_TIMEOUT_MILLIS, operation = command } = {}) =>
+const terminateProcessTree = (child) => {
+  if (!child.pid) return;
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch (error) {
+      if (error.code !== "ESRCH") throw error;
+    }
+    return;
+  }
+  const result = capture("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+    operation: "terminate process tree",
+    timeout: 5_000,
+  });
+  if (result.status !== 0 && child.exitCode === null) fail("terminate process tree failed");
+};
+
+export const streamed = (command, args, { cwd = ROOT, env = process.env, input, timeout = HARNESS_TIMEOUT_MILLIS, operation = command } = {}) =>
   new Promise((accept, reject) => {
     const resolved = invocation(command, args);
-    const child = spawn(resolved.command, resolved.args, { cwd, env, stdio: ["pipe", "inherit", "inherit"], windowsHide: true });
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error(`${operation} timed out after ${Math.floor(timeout / 60_000)} minutes`));
-    }, timeout);
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(new Error(`${operation} failed: ${error.message}`));
+    const child = spawn(resolved.command, resolved.args, {
+      cwd,
+      env,
+      stdio: ["pipe", "inherit", "inherit"],
+      windowsHide: true,
+      detached: process.platform !== "win32",
     });
+    let settled = false;
+    const rejectOnce = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    };
+    const timer = setTimeout(() => {
+      try {
+        terminateProcessTree(child);
+        rejectOnce(new Error(`${operation} timed out after ${Math.floor(timeout / 60_000)} minutes`));
+      } catch (error) {
+        rejectOnce(new Error(`${operation} timed out and could not terminate: ${error.message}`));
+      }
+    }, timeout);
+    child.on("error", (error) => rejectOnce(new Error(`${operation} failed: ${error.message}`)));
     child.on("exit", (code, signal) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       if (code === 0) accept();
       else reject(new Error(`${operation} failed with ${signal ? `signal ${signal}` : `exit ${code}`}`));
     });
+    child.stdin.on("error", (error) => rejectOnce(new Error(`${operation} input failed: ${error.message}`)));
     child.stdin.end(input ?? "");
   });
 
@@ -329,9 +368,16 @@ const promptFor = (task, target, branch, pullRequestContext) => {
 
 const targetHead = (target) => git(["ls-remote", "--exit-code", "origin", `refs/heads/${target}`]).split(/\s+/)[0];
 const branchHead = (branch) => {
-  const result = spawnSync("git", ["ls-remote", "--exit-code", "origin", `refs/heads/${branch}`], { cwd: ROOT, encoding: "utf8", maxBuffer: COMMAND_OUTPUT_BYTES_MAX });
+  const result = capture("git", ["ls-remote", "--exit-code", "origin", `refs/heads/${branch}`], {
+    cwd: ROOT,
+    operation: `inspect remote branch ${branch}`,
+    timeout: 10 * 60 * 1000,
+  });
   if (result.status === 2) return null;
-  if (result.status !== 0) fail(`cannot inspect remote branch ${branch}`);
+  if (result.status !== 0) {
+    const details = `${result.stderr ?? ""}${result.stdout ?? ""}`.trim().slice(0, 4096);
+    fail(`inspect remote branch ${branch} failed${details ? `: ${details}` : ""}`);
+  }
   return result.stdout.trim().split(/\s+/)[0];
 };
 
@@ -360,7 +406,14 @@ const pullRequestContext = (pullRequest, cwd) => {
 
 const prepareWorktree = (task, target, remoteBranchHead) => {
   const worktree = join(ROOT, "output", "golems", task.id);
-  spawnSync("git", ["worktree", "remove", "--force", worktree], { cwd: ROOT, stdio: "ignore" });
+  const registered = git(["worktree", "list", "--porcelain"])
+    .split("\n")
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => resolve(line.slice("worktree ".length)));
+  const expected = process.platform === "win32" ? worktree.toLowerCase() : worktree;
+  if (registered.some((path) => (process.platform === "win32" ? path.toLowerCase() : path) === expected)) {
+    git(["worktree", "remove", "--force", worktree], ROOT, "remove prior golem worktree");
+  }
   rmSync(worktree, { recursive: true, force: true });
   mkdirSync(join(ROOT, "output", "golems"), { recursive: true });
   git(["worktree", "prune"]);
@@ -431,7 +484,10 @@ const waitForChecks = async (pullRequest, expectedHead, cwd) => {
   fail(`pull request #${pullRequest} did not complete CI / ci within 20 minutes`);
 };
 
-const runTask = async (id) => {
+export const runLifecycle = async (id, prepare, execute, publish) =>
+  publish(await execute(await prepare(id)));
+
+const prepareRun = async (id) => {
   const tasks = validateDefinitions();
   const task = tasks.get(id);
   if (!task) fail(`unknown golem task ${id}; choose one of ${[...tasks.keys()].join(", ")}`);
@@ -448,7 +504,7 @@ const runTask = async (id) => {
     fail(`run golems from the clean, current ${target} branch`);
   }
   const branch = `golem/${task.id}`;
-  let pullRequest = openPullRequest(branch, target);
+  const pullRequest = openPullRequest(branch, target);
   let remoteHead = branchHead(branch);
   if (!pullRequest && remoteHead) {
     git(["push", "origin", "--delete", branch, `--force-with-lease=refs/heads/${branch}:${remoteHead}`], ROOT, "remove stale golem branch");
@@ -460,62 +516,84 @@ const runTask = async (id) => {
   remoteHead = prepared.remoteBranchHead;
   requireProtectedClean(worktree, target);
   if (targetHead(target) !== targetSnapshot) fail(`target branch ${target} changed during branch preparation; rerun from its current head`);
-  const targetBefore = targetSnapshot;
   const headBefore = git(["rev-parse", "HEAD"], worktree);
   const contextData = pullRequestContext(pullRequest, worktree);
-  await streamed(task.harness, harnessArguments(task), {
-    cwd: worktree,
+  return {
+    id,
+    task,
+    repository,
+    target,
+    branch,
+    pullRequest,
+    remoteHead,
+    worktree,
+    targetBefore: targetSnapshot,
+    headBefore,
+    contextData,
+  };
+};
+
+const executeRun = async (run) => {
+  await streamed(run.task.harness, harnessArguments(run.task), {
+    cwd: run.worktree,
     env: cleanHarnessEnvironment(),
-    input: promptFor(task, target, branch, contextData),
-    operation: `${task.file}: ${task.harness} maintenance run`,
+    input: promptFor(run.task, run.target, run.branch, run.contextData),
+    operation: `${run.task.file}: ${run.task.harness} maintenance run`,
   });
-  if (targetHead(target) !== targetBefore) fail(`target branch ${target} changed during the harness run; inspect it manually`);
-  if (branchHead(branch) !== remoteHead) fail(`remote ${branch} changed during the harness run; inspect it manually`);
-  if (git(["status", "--porcelain=v1", "--untracked-files=all"], worktree)) fail("harness left uncommitted or untracked repository changes");
-  requireProtectedClean(worktree, target);
-  const headAfter = git(["rev-parse", "HEAD"], worktree);
-  if (headAfter !== headBefore) {
-    captured("git", ["merge-base", "--is-ancestor", headBefore, headAfter], {
-      cwd: worktree,
+  if (targetHead(run.target) !== run.targetBefore) fail(`target branch ${run.target} changed during the harness run; inspect it manually`);
+  if (branchHead(run.branch) !== run.remoteHead) fail(`remote ${run.branch} changed during the harness run; inspect it manually`);
+  if (git(["status", "--porcelain=v1", "--untracked-files=all"], run.worktree)) fail("harness left uncommitted or untracked repository changes");
+  requireProtectedClean(run.worktree, run.target);
+  const headAfter = git(["rev-parse", "HEAD"], run.worktree);
+  if (headAfter !== run.headBefore) {
+    captured("git", ["merge-base", "--is-ancestor", run.headBefore, headAfter], {
+      cwd: run.worktree,
       operation: "verify harness preserved existing branch history",
     });
   }
-  if (headAfter === headBefore && !pullRequest) {
-    console.log(`golem ${id}: no useful change`);
-    return;
-  }
-  if (headAfter !== headBefore && changedPaths(worktree, target).length === 0) {
+  if (headAfter !== run.headBefore && changedPaths(run.worktree, run.target).length === 0) {
     fail("harness created commits without a useful repository change");
   }
-  if (headAfter !== headBefore) {
-    const lease = remoteHead ? [`--force-with-lease=refs/heads/${branch}:${remoteHead}`] : [];
-    git(["push", "origin", `HEAD:refs/heads/${branch}`, ...lease], worktree, "publish golem branch");
-    remoteHead = headAfter;
+  return { ...run, headAfter };
+};
+
+const publishRun = async (run) => {
+  let { pullRequest, remoteHead } = run;
+  if (run.headAfter === run.headBefore && !pullRequest) {
+    console.log(`golem ${run.id}: no useful change`);
+    return;
+  }
+  if (run.headAfter !== run.headBefore) {
+    const lease = remoteHead ? [`--force-with-lease=refs/heads/${run.branch}:${remoteHead}`] : [];
+    git(["push", "origin", `HEAD:refs/heads/${run.branch}`, ...lease], run.worktree, "publish golem branch");
+    remoteHead = run.headAfter;
   }
   if (!pullRequest) {
-    const message = git(["log", "-1", "--pretty=%B"], worktree);
+    const message = git(["log", "-1", "--pretty=%B"], run.worktree);
     const [title, ...bodyLines] = message.split("\n");
     const body = bodyLines.join("\n").trim();
     if (!title.trim() || !body) fail("new golem commit requires a human title and explanatory body for pull-request prose");
-    const url = gh(["pr", "create", "--head", branch, "--base", target, "--title", title.trim(), "--body", body], worktree, "create golem pull request");
+    const url = gh(["pr", "create", "--head", run.branch, "--base", run.target, "--title", title.trim(), "--body", body], run.worktree, "create golem pull request");
     pullRequest = JSON.parse(gh(["pr", "view", url, "--json", "number"]));
   }
-  const revision = git(["rev-parse", `HEAD:.github/golems/${id}.md`], worktree);
+  const revision = git(["rev-parse", `HEAD:.github/golems/${run.id}.md`], run.worktree);
   const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
     ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : "local";
-  ensureLabels(task, pullRequest.number, worktree);
-  const evidence = uploadEvidence(worktree);
-  const currentBody = JSON.parse(gh(["pr", "view", String(pullRequest.number), "--json", "body"], worktree)).body;
-  const body = metadataBody(currentBody, task, revision, runUrl, evidence);
-  gh(["pr", "edit", String(pullRequest.number), "--body", body], worktree, "update golem pull-request metadata");
-  if (unresolvedReviewThreads(repository, pullRequest.number) !== 0) fail(`pull request #${pullRequest.number} has unresolved review threads`);
-  const finalRemoteHead = branchHead(branch);
-  if (finalRemoteHead !== remoteHead) fail(`remote ${branch} changed concurrently`);
-  await waitForChecks(pullRequest.number, finalRemoteHead, worktree);
-  if (targetHead(target) !== targetBefore) fail(`target branch ${target} changed during final verification; inspect it manually`);
-  console.log(`golem ${id}: ${gh(["pr", "view", String(pullRequest.number), "--json", "url", "--jq", ".url"], worktree)}`);
+  ensureLabels(run.task, pullRequest.number, run.worktree);
+  const evidence = uploadEvidence(run.worktree);
+  const currentBody = JSON.parse(gh(["pr", "view", String(pullRequest.number), "--json", "body"], run.worktree)).body;
+  const body = metadataBody(currentBody, run.task, revision, runUrl, evidence);
+  gh(["pr", "edit", String(pullRequest.number), "--body", body], run.worktree, "update golem pull-request metadata");
+  if (unresolvedReviewThreads(run.repository, pullRequest.number) !== 0) fail(`pull request #${pullRequest.number} has unresolved review threads`);
+  const finalRemoteHead = branchHead(run.branch);
+  if (finalRemoteHead !== remoteHead) fail(`remote ${run.branch} changed concurrently`);
+  await waitForChecks(pullRequest.number, finalRemoteHead, run.worktree);
+  if (targetHead(run.target) !== run.targetBefore) fail(`target branch ${run.target} changed during final verification; inspect it manually`);
+  console.log(`golem ${run.id}: ${gh(["pr", "view", String(pullRequest.number), "--json", "url", "--jq", ".url"], run.worktree)}`);
 };
+
+const runTask = (id) => runLifecycle(id, prepareRun, executeRun, publishRun);
 
 const main = async () => {
   const [command, id, ...extra] = process.argv.slice(2);
