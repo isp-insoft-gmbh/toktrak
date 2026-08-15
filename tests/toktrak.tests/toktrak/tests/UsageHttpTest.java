@@ -32,18 +32,7 @@ final class UsageHttpTest {
       URI base = URI.create("http://127.0.0.1:" + app.port());
       var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
       String cookie = login(client, base);
-      HttpResponse<String> tokens =
-          send(client, base.resolve("/tokens"), "GET", null, cookie, null);
-      String csrf = match(CSRF, tokens.body());
-      HttpResponse<String> created =
-          send(
-              client,
-              base.resolve("/tokens"),
-              "POST",
-              "application/x-www-form-urlencoded",
-              cookie,
-              form(Map.of("label", "Workstation", "csrf", csrf)));
-      token = match(TOKEN, created.body());
+      token = createTrackerToken(client, base, cookie);
 
       assertEquals(
           401, send(client, base.resolve("/api/analytics"), "GET", null, null, null).statusCode());
@@ -149,6 +138,36 @@ final class UsageHttpTest {
     }
   }
 
+  @Test
+  void given_dailyUsageWithAgentOnly_when_renderingVisualizations_then_labelsSourceFromAgent()
+      throws Exception {
+    try (var app = start()) {
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      String cookie = login(client, base);
+      String token = createTrackerToken(client, base, cookie);
+
+      HttpResponse<String> uploaded =
+          send(
+              client,
+              base.resolve("/api/usage"),
+              "POST",
+              "application/json",
+              null,
+              usage("2026-07-14T23:00:00Z", "1", true),
+              token);
+      assertEquals(200, uploaded.statusCode(), uploaded.body());
+
+      HttpResponse<String> visualizations =
+          send(client, base.resolve("/visualizations"), "GET", null, cookie, null);
+      assertEquals(200, visualizations.statusCode());
+      assertTrue(visualizations.body().contains("<h3>Sources</h3>"), visualizations.body());
+      assertTrue(visualizations.body().contains("<strong>claude</strong>"), visualizations.body());
+      assertFalse(
+          visualizations.body().contains("<strong>Unknown source</strong>"), visualizations.body());
+    }
+  }
+
   private App start() {
     return App.start(
         new String[] {"--clock", CLOCK},
@@ -162,6 +181,22 @@ final class UsageHttpTest {
     HttpResponse<String> login = send(client, base.resolve("/login"), "GET", null, null, null);
     assertEquals(302, login.statusCode());
     return login.headers().firstValue("Set-Cookie").orElseThrow().split(";", 2)[0];
+  }
+
+  private static String createTrackerToken(HttpClient client, URI base, String cookie)
+      throws Exception {
+    HttpResponse<String> tokens = send(client, base.resolve("/tokens"), "GET", null, cookie, null);
+    String csrf = match(CSRF, tokens.body());
+    HttpResponse<String> created =
+        send(
+            client,
+            base.resolve("/tokens"),
+            "POST",
+            "application/x-www-form-urlencoded",
+            cookie,
+            form(Map.of("label", "Workstation", "csrf", csrf)));
+    assertEquals(201, created.statusCode(), created.body());
+    return match(TOKEN, created.body());
   }
 
   private static String usage(String generatedAt, String cost, boolean complete) {

@@ -250,7 +250,7 @@ final class DashboardFactory {
       List<Row> rows, DashboardCurrency currency, FxRate rate) {
     var totals = new HashMap<String, Totals>();
     for (Row row : rows) {
-      String source = "Unknown source";
+      String source = row.secondKey();
       if (row.data().get("metadata") instanceof Map<?, ?> metadata) {
         List<String> agents = strings(metadata.get("agents"), 8);
         if (!agents.isEmpty()) source = String.join(" + ", agents);
