@@ -9,6 +9,4 @@ weekday: thursday
 
 Find and correct the highest-impact documentation mismatch against current
 behavior. Verify claims from source, commands, and tests. Keep documentation
-terse and avoid speculative guidance. If documentation is already accurate,
-leave the repository unchanged. Continue an existing task pull request before
-starting unrelated work.
+terse and avoid speculative guidance.
