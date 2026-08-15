@@ -29,13 +29,15 @@ import toktrak.usage.UsageUpload.Report;
 
 public final class Router implements HttpHandler {
   private static final int PATH_BYTES_MAX = 2 * 1024;
+  private static final int QUERY_BYTES_MAX = 8 * 1024;
   private static final int METHOD_CHARACTERS_MAX = 32;
   private static final int FORM_BYTES_MAX = 16 * 1024;
   private static final int TOKEN_PAGE_SIZE = 100;
   private static final int USAGE_PAGE_SIZE_DEFAULT = 100;
   private static final int USAGE_PAGE_SIZE_MAX = 1_000;
   private static final Duration STREAM_WAIT = Duration.ofSeconds(5);
-  private static final String URI_TOO_LONG_PATH = "URI exceeds 2048-byte limit";
+  private static final String URI_TOO_LONG_PATH =
+      "URI exceeds 2048-byte path or 8192-byte query limit";
   private static final String INVALID_METHOD = "(invalid method)";
   private static final String CURRENCY_COOKIE = "toktrak_currency";
 
@@ -75,7 +77,10 @@ public final class Router implements HttpHandler {
     assert exchange != null;
     String rawPath = exchange.getRequestURI().getRawPath();
     String path = exchange.getRequestURI().getPath();
-    if (exceedsPathLimit(rawPath) || exceedsPathLimit(path)) {
+    String rawQuery = exchange.getRequestURI().getRawQuery();
+    if (exceedsUtf8Limit(rawPath, PATH_BYTES_MAX)
+        || exceedsUtf8Limit(path, PATH_BYTES_MAX)
+        || exceedsUtf8Limit(rawQuery, QUERY_BYTES_MAX)) {
       String requestId = UUID.randomUUID().toString();
       try {
         respondError(
@@ -164,7 +169,8 @@ public final class Router implements HttpHandler {
     assert exchange != null;
     String path = exchange.getRequestURI().getPath();
     String method = exchange.getRequestMethod();
-    assert !exceedsPathLimit(path);
+    assert !exceedsUtf8Limit(path, PATH_BYTES_MAX);
+    assert !exceedsUtf8Limit(exchange.getRequestURI().getRawQuery(), QUERY_BYTES_MAX);
     String rawPath = exchange.getRequestURI().getRawPath();
     if (method.equals("GET") && exchange.getRequestURI().getRawQuery() == null) {
       var asset = assets.publicAsset(rawPath);
@@ -958,9 +964,10 @@ public final class Router implements HttpHandler {
     return path != null && (path.equals("/health") || path.startsWith("/api/"));
   }
 
-  private static boolean exceedsPathLimit(String value) {
+  private static boolean exceedsUtf8Limit(String value, int bytesMax) {
+    assert bytesMax > 0;
     if (value == null) return false;
-    if (value.length() > PATH_BYTES_MAX) return true;
-    return value.getBytes(StandardCharsets.UTF_8).length > PATH_BYTES_MAX;
+    if (value.length() > bytesMax) return true;
+    return value.getBytes(StandardCharsets.UTF_8).length > bytesMax;
   }
 }

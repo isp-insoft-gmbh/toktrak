@@ -65,7 +65,21 @@ final class HttpServerTest {
       assertEquals(414, response.statusCode());
       assertEquals("text/html; charset=utf-8", response.header("content-type"));
       assertTrue(response.body().contains("Request URI is too long."));
-      assertTrue(response.body().contains("URI exceeds 2048-byte limit"));
+      assertTrue(response.body().contains("URI exceeds 2048-byte path or 8192-byte query limit"));
+    }
+  }
+
+  @Test
+  void given_queryAtAndAboveLengthLimit_when_requestingPublicRoute_then_enforcesLimit()
+      throws Exception {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
+      String queryAtLimit = "probe=" + "a".repeat(8 * 1024 - "probe=".length());
+      assertEquals(200, get(app, "/health?" + queryAtLimit).statusCode());
+
+      var rejected = get(app, "/health?" + queryAtLimit + "a");
+      assertEquals(414, rejected.statusCode());
+      assertEquals("application/json; charset=utf-8", rejected.header("content-type"));
+      assertTrue(rejected.body().contains("\"code\":\"uri_too_long\""));
     }
   }
 
