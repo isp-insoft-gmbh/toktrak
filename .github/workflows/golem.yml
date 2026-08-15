@@ -1,4 +1,5 @@
 name: Golems
+run-name: "Golems: ${{ inputs.operation || 'schedule' }} · ${{ inputs.task || 'due tasks' }}"
 
 on:
   schedule:
@@ -26,6 +27,7 @@ permissions:
 concurrency:
   group: golems
   cancel-in-progress: false
+  queue: max
 
 jobs:
   select:
@@ -45,6 +47,10 @@ jobs:
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
+        with:
+          version: 2026.8.6
+          install_args: node
+          cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - id: selection
         env:
           OPERATION: ${{ inputs.operation || 'run' }}
@@ -89,6 +95,9 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
       - if: matrix.task != ''
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
+        with:
+          version: 2026.8.6
+          cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - name: Install pinned harness and validate runner tools
         if: matrix.task != ''
         id: tools
@@ -142,8 +151,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: output/golem-auth/${{ matrix.harness }}.bin
-          key: golem-auth-${{ matrix.harness }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: golem-auth-${{ matrix.harness }}-
+          key: golem-auth-v1-${{ matrix.harness }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: golem-auth-v1-${{ matrix.harness }}-
           fail-on-cache-miss: true
       - name: Decrypt rotating authentication
         if: matrix.harness == 'pi' || matrix.harness == 'codex'
@@ -171,7 +180,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: output/golem-auth/${{ matrix.harness }}.bin
-          key: golem-auth-${{ matrix.harness }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: golem-auth-v1-${{ matrix.harness }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Summarize golem result
         if: always() && matrix.task != ''
         env:
@@ -199,6 +208,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
+        with:
+          version: 2026.8.6
+          install_args: node java
+          cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - name: Install pinned harness
         run: |
           if [[ "$HARNESS" == "pi" ]]; then
@@ -226,7 +239,7 @@ jobs:
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: output/golem-auth/${{ env.HARNESS }}.bin
-          key: golem-auth-${{ env.HARNESS }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: golem-auth-v1-${{ env.HARNESS }}-${{ github.run_id }}-${{ github.run_attempt }}
       - run: |
           {
             echo "## Golem authentication reseed"

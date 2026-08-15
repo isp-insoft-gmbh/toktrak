@@ -3,6 +3,14 @@ name: Production runtime verification
 on:
   push:
     branches: [trunk]
+    paths:
+      - .containerignore
+      - .github/workflows/prod.yml
+      - Containerfile
+      - mise.toml
+      - sources/**
+      - tools/**
+      - vendored/**
   workflow_dispatch:
 
 permissions:
@@ -21,6 +29,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
+        with:
+          version: 2026.8.6
+          cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - run: mise run prod
-      - run: mise run image
       - run: mise run container-verify
