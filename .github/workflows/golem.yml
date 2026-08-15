@@ -32,6 +32,7 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     outputs:
+      has-tasks: ${{ steps.selection.outputs.has-tasks }}
       tasks: ${{ steps.selection.outputs.tasks }}
     steps:
       - name: Require the default branch
@@ -56,6 +57,11 @@ jobs:
           else
             tasks="$(node tools/golem.mjs select)"
           fi
+          if [[ "$tasks" == *'"task":""'* ]]; then
+            echo "has-tasks=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-tasks=true" >> "$GITHUB_OUTPUT"
+          fi
           echo "tasks=$tasks" >> "$GITHUB_OUTPUT"
           {
             echo "## Golem dispatch"
@@ -67,6 +73,7 @@ jobs:
 
   golem:
     needs: select
+    if: needs.select.outputs.has-tasks == 'true'
     strategy:
       fail-fast: false
       max-parallel: 1
