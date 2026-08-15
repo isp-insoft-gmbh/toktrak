@@ -21,7 +21,7 @@ Image and release tasks read the repository from ignored local config:
 TOKTRAK_IMAGE_REPOSITORY = "registry.example.com/team/toktrak"
 ```
 
-Never commit `mise.local.toml`.
+Never commit `mise.local.toml`. CI uses `localhost/toktrak` and never pushes it.
 
 ## Setup
 
