@@ -27,7 +27,6 @@ permissions:
 concurrency:
   group: golems
   cancel-in-progress: false
-  queue: max
 
 jobs:
   select:
