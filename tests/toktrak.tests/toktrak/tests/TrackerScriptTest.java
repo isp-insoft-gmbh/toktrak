@@ -192,6 +192,58 @@ final class TrackerScriptTest {
   }
 
   @Test
+  void given_crossOriginRedirect_when_checkingForTrackerUpdate_then_rejectsRedirect()
+      throws Exception {
+    var redirectedRequests = new AtomicInteger();
+    HttpServer redirected =
+        HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 8);
+    HttpServer origin =
+        HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 8);
+    URI baseUri = URI.create("http://127.0.0.1:" + origin.getAddress().getPort());
+    var scripts = new TrackerScript(Assets.load().privateBytes("tracker.mjs"), baseUri);
+    TrackerScript.Personalized original = scripts.render(TOKEN);
+    TrackerScript.Personalized replacement = scripts.render("tt_" + "B".repeat(43));
+    URI redirectedUri =
+        URI.create("http://127.0.0.1:" + redirected.getAddress().getPort() + "/replacement");
+    redirected.createContext(
+        "/replacement",
+        exchange -> {
+          redirectedRequests.incrementAndGet();
+          exchange.getResponseHeaders().set("X-TokTrak-SHA256", replacement.sha256());
+          respond(exchange, 200, replacement.bytes());
+        });
+    origin.createContext("/api/usage", exchange -> respond(exchange, 200, "{}"));
+    origin.createContext(
+        "/api/tracker",
+        exchange -> {
+          exchange.getResponseHeaders().set("Location", redirectedUri.toString());
+          exchange.sendResponseHeaders(307, -1);
+          exchange.close();
+        });
+    redirected.start();
+    origin.start();
+    try {
+      Path tracker = directory.resolve("redirected-update.mjs");
+      Files.write(tracker, original.bytes());
+      Path commandDirectory = directory.resolve("redirect-bin");
+      Files.createDirectory(commandDirectory);
+      writeFakeNpx(commandDirectory);
+
+      ProcessResult result =
+          runTracker(
+              tracker, commandDirectory, directory.resolve("redirect.log"), "0", "full", null);
+
+      assertEquals(0, result.exitCode(), result.output());
+      assertTrue(result.output().contains("self-update failed"), result.output());
+      assertEquals(0, redirectedRequests.get());
+      assertArrayEquals(original.bytes(), Files.readAllBytes(tracker));
+    } finally {
+      origin.stop(0);
+      redirected.stop(0);
+    }
+  }
+
+  @Test
   void given_schedulerInputs_when_generatingDefinitions_then_usesNativeUserSchedulers()
       throws Exception {
     var scripts =

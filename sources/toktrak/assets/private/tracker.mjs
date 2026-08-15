@@ -466,7 +466,11 @@ async function fetchBounded(url, options, bytesMax) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MILLIS);
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
+    const response = await fetch(url, {
+      ...options,
+      redirect: "error",
+      signal: controller.signal,
+    });
     if (bytesMax === 0) {
       await response.body?.cancel();
       return { response, body: Buffer.alloc(0) };
