@@ -52,6 +52,7 @@ import java.util.stream.Stream;
 import javax.tools.ToolProvider;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
@@ -132,6 +133,19 @@ public final class Build {
   private static final int ASSET_INDEX_BYTES_MAX = 64 * 1024;
   private static final Pattern ASSET_PATH =
       Pattern.compile("[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*");
+  private static final int SVG_NODES_AND_ATTRIBUTES_MAX = 100_000;
+  private static final Set<String> SVG_DENIED_ELEMENTS =
+      Set.of(
+          "script",
+          "style",
+          "foreignobject",
+          "iframe",
+          "object",
+          "embed",
+          "audio",
+          "video",
+          "image",
+          "use");
   private static final int COLLECTION_ENTRIES_MAX = 10_000;
   private static final int ARGUMENTS_MAX = 10_000;
   private static final int ARGUMENT_BYTES_MAX = 32 * 1024;
@@ -1647,6 +1661,39 @@ public final class Build {
   private static void validateSvg(Path path, String svg) {
     assert path != null;
     assert svg != null;
+    Document document = parseSvg(path, svg);
+    Element root = document.getDocumentElement();
+    if (root == null
+        || !"svg".equals(root.getLocalName())
+        || !"http://www.w3.org/2000/svg".equals(root.getNamespaceURI())) {
+      throw unsafeSvg(path, null);
+    }
+
+    var pending = new ArrayDeque<Node>();
+    pending.add(document);
+    int inspected = 0;
+    while (!pending.isEmpty()) {
+      Node node = pending.removeFirst();
+      inspected = Math.addExact(inspected, 1);
+      if (inspected > SVG_NODES_AND_ATTRIBUTES_MAX) throw unsafeSvg(path, null);
+      if (node.getNodeType() == Node.PROCESSING_INSTRUCTION_NODE
+          || node.getNodeType() == Node.DOCUMENT_TYPE_NODE) {
+        throw unsafeSvg(path, null);
+      }
+      if (node instanceof Element element) {
+        NamedNodeMap attributes = element.getAttributes();
+        inspected = Math.addExact(inspected, attributes.getLength());
+        if (inspected > SVG_NODES_AND_ATTRIBUTES_MAX) throw unsafeSvg(path, null);
+        validateSvgElement(path, root, element, attributes);
+      }
+      for (Node child = node.getFirstChild(); child != null; child = child.getNextSibling()) {
+        pending.addLast(child);
+        if (pending.size() > SVG_NODES_AND_ATTRIBUTES_MAX) throw unsafeSvg(path, null);
+      }
+    }
+  }
+
+  private static Document parseSvg(Path path, String svg) {
     DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
     try {
       factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
@@ -1667,90 +1714,56 @@ public final class Build {
           exception);
     }
 
-    org.w3c.dom.Document document;
     try {
       var builder = factory.newDocumentBuilder();
       builder.setErrorHandler(new org.xml.sax.helpers.DefaultHandler());
-      document = builder.parse(new ByteArrayInputStream(svg.getBytes(StandardCharsets.UTF_8)));
+      return builder.parse(new ByteArrayInputStream(svg.getBytes(StandardCharsets.UTF_8)));
     } catch (Exception exception) {
       throw unsafeSvg(path, exception);
     }
-    Element root = document.getDocumentElement();
-    if (root == null
-        || !"svg".equals(root.getLocalName())
-        || !"http://www.w3.org/2000/svg".equals(root.getNamespaceURI())) {
+  }
+
+  private static void validateSvgElement(
+      Path path, Element root, Element element, NamedNodeMap attributes) {
+    String namespace = element.getNamespaceURI();
+    String localName = element.getLocalName();
+    if (!"http://www.w3.org/2000/svg".equals(namespace)
+        || localName == null
+        || SVG_DENIED_ELEMENTS.contains(localName.toLowerCase(Locale.ROOT))) {
+      throw unsafeSvg(path, null);
+    }
+    for (int index = 0; index < attributes.getLength(); index++) {
+      validateSvgAttribute(path, root, element, attributes.item(index));
+    }
+  }
+
+  private static void validateSvgAttribute(
+      Path path, Element root, Element element, Node attribute) {
+    String name = attribute.getNodeName();
+    String value = attribute.getNodeValue();
+    if (name.equals("xmlns") || name.startsWith("xmlns:")) {
+      if (element.equals(root)
+          && name.equals("xmlns")
+          && value.equals("http://www.w3.org/2000/svg")) return;
       throw unsafeSvg(path, null);
     }
 
-    Set<String> deniedElements =
-        Set.of(
-            "script",
-            "style",
-            "foreignobject",
-            "iframe",
-            "object",
-            "embed",
-            "audio",
-            "video",
-            "image",
-            "use");
-    var pending = new ArrayDeque<Node>();
-    pending.add(document);
-    int inspected = 0;
-    while (!pending.isEmpty()) {
-      Node node = pending.removeFirst();
-      inspected = Math.addExact(inspected, 1);
-      if (inspected > 100_000) throw unsafeSvg(path, null);
-      if (node.getNodeType() == Node.PROCESSING_INSTRUCTION_NODE
-          || node.getNodeType() == Node.DOCUMENT_TYPE_NODE) {
-        throw unsafeSvg(path, null);
-      }
-      if (node.getNodeType() == Node.ELEMENT_NODE) {
-        String namespace = node.getNamespaceURI();
-        String localName = node.getLocalName();
-        if (!"http://www.w3.org/2000/svg".equals(namespace)
-            || localName == null
-            || deniedElements.contains(localName.toLowerCase(Locale.ROOT))) {
-          throw unsafeSvg(path, null);
-        }
-        NamedNodeMap attributes = node.getAttributes();
-        for (int index = 0; index < attributes.getLength(); index++) {
-          inspected = Math.addExact(inspected, 1);
-          if (inspected > 100_000) throw unsafeSvg(path, null);
-          Node attribute = attributes.item(index);
-          String attributeName = attribute.getNodeName();
-          String lowerName = attributeName.toLowerCase(Locale.ROOT);
-          String value = attribute.getNodeValue();
-          boolean rootNamespace =
-              node.equals(root)
-                  && attributeName.equals("xmlns")
-                  && value.equals("http://www.w3.org/2000/svg");
-          if (attributeName.equals("xmlns") || attributeName.startsWith("xmlns:")) {
-            if (!rootNamespace) throw unsafeSvg(path, null);
-            continue;
-          }
-          if (lowerName.startsWith("on")
-              || lowerName.equals("style")
-              || lowerName.equals("href")
-              || lowerName.equals("xlink:href")
-              || lowerName.equals("src")) {
-            throw unsafeSvg(path, null);
-          }
-          String lowerValue = value.toLowerCase(Locale.ROOT);
-          if (lowerValue.contains("url(")
-              || lowerValue.contains("@import")
-              || lowerValue.contains("javascript:")
-              || lowerValue.contains("data:")
-              || lowerValue.contains("://")
-              || lowerValue.contains("//")) {
-            throw unsafeSvg(path, null);
-          }
-        }
-      }
-      for (Node child = node.getFirstChild(); child != null; child = child.getNextSibling()) {
-        pending.addLast(child);
-        if (pending.size() > 100_000) throw unsafeSvg(path, null);
-      }
+    String lowerName = name.toLowerCase(Locale.ROOT);
+    if (lowerName.startsWith("on")
+        || lowerName.equals("style")
+        || lowerName.equals("href")
+        || lowerName.equals("xlink:href")
+        || lowerName.equals("src")) {
+      throw unsafeSvg(path, null);
+    }
+    String lowerValue = value.toLowerCase(Locale.ROOT);
+    if (lowerValue.contains("url(")
+        || lowerValue.contains("@import")
+        || lowerValue.contains("javascript:")
+        || lowerValue.contains("data:")
+        || lowerValue.contains("://")
+        || lowerValue.contains("//")) {
+      throw unsafeSvg(path, null);
     }
   }
 
@@ -4099,6 +4112,14 @@ public final class Build {
     rebuildArtifact(output, fingerprint, builder, failpoint);
   }
 
+  private record ArtifactManifest(Map<String, String> signatures) {
+    private ArtifactManifest {
+      signatures = Map.copyOf(signatures);
+    }
+  }
+
+  private record ArtifactEntry(String path, String signature) {}
+
   private static boolean artifactMatches(Path directory, String fingerprint) throws IOException {
     assert directory != null;
     requireArtifactFingerprint(fingerprint);
@@ -4107,10 +4128,30 @@ public final class Build {
         || !Files.isDirectory(directory)
         || Files.isSymbolicLink(marker)
         || !Files.isRegularFile(marker)) return false;
+    Optional<ArtifactManifest> manifest = artifactManifest(marker, fingerprint);
+    if (manifest.isEmpty()) return false;
+
+    var actual = new java.util.TreeMap<String, String>();
+    try {
+      for (Path path : treePaths(directory, TREE_ENTRIES_MAX)) {
+        if (path.equals(directory)
+            || path.equals(marker)
+            || (!Files.isSymbolicLink(path) && Files.isDirectory(path))) continue;
+        String relative = artifactPath(directory, path);
+        if (actual.put(relative, artifactSignature(directory, path)) != null) return false;
+      }
+    } catch (IllegalStateException | IOException exception) {
+      return false;
+    }
+    return actual.equals(manifest.orElseThrow().signatures());
+  }
+
+  private static Optional<ArtifactManifest> artifactManifest(Path marker, String fingerprint)
+      throws IOException {
     byte[] bytes;
     try (var input = Files.newInputStream(marker)) {
       bytes = input.readNBytes(ARTIFACT_MARKER_BYTES_MAX + 1);
-      if (bytes.length > ARTIFACT_MARKER_BYTES_MAX || input.read() >= 0) return false;
+      if (bytes.length > ARTIFACT_MARKER_BYTES_MAX || input.read() >= 0) return Optional.empty();
     }
     String content;
     try {
@@ -4122,55 +4163,41 @@ public final class Build {
               .decode(ByteBuffer.wrap(bytes))
               .toString();
     } catch (CharacterCodingException exception) {
-      return false;
+      return Optional.empty();
     }
     String[] lines = content.split("\n", -1);
     if (lines.length < 3
         || !lines[0].equals("toktrak-artifact-v2")
         || !lines[1].equals("fingerprint\t" + fingerprint)
         || !lines[lines.length - 1].isEmpty()
-        || lines.length > TREE_ENTRIES_MAX + 3) return false;
-    var expected = new java.util.TreeMap<String, String>();
+        || lines.length > TREE_ENTRIES_MAX + 3) return Optional.empty();
+
+    var signatures = new java.util.TreeMap<String, String>();
     for (int index = 2; index < lines.length - 1; index++) {
-      String[] fields = lines[index].split("\t", -1);
-      String path;
-      String signature;
-      if (fields.length == 4 && fields[0].equals("file")) {
-        long length;
-        try {
-          length = Long.parseLong(fields[1]);
-        } catch (NumberFormatException exception) {
-          return false;
-        }
-        if (length < 0 || length > FILE_BYTES_MAX || !fields[2].matches("[0-9a-f]{64}"))
-          return false;
-        path = fields[3];
-        signature = "file\t" + length + "\t" + fields[2];
-      } else if (fields.length == 3
-          && fields[0].equals("link")
-          && canonicalSymbolicLinkTarget(fields[1])) {
-        path = fields[2];
-        signature = "link\t" + fields[1];
-      } else {
-        return false;
-      }
-      if (!canonicalArtifactPath(path) || expected.put(path, signature) != null) return false;
+      ArtifactEntry entry = artifactEntry(lines[index]);
+      if (entry == null
+          || !canonicalArtifactPath(entry.path())
+          || signatures.put(entry.path(), entry.signature()) != null) return Optional.empty();
     }
-    var actual = new java.util.TreeMap<String, String>();
-    List<Path> paths;
-    try {
-      paths = treePaths(directory, TREE_ENTRIES_MAX);
-      for (Path path : paths) {
-        if (path.equals(directory)
-            || path.equals(marker)
-            || (!Files.isSymbolicLink(path) && Files.isDirectory(path))) continue;
-        String relative = artifactPath(directory, path);
-        if (actual.put(relative, artifactSignature(directory, path)) != null) return false;
+    return Optional.of(new ArtifactManifest(signatures));
+  }
+
+  private static ArtifactEntry artifactEntry(String line) {
+    String[] fields = line.split("\t", -1);
+    if (fields.length == 4 && fields[0].equals("file")) {
+      long length;
+      try {
+        length = Long.parseLong(fields[1]);
+      } catch (NumberFormatException exception) {
+        return null;
       }
-    } catch (IllegalStateException | IOException exception) {
-      return false;
+      if (length < 0 || length > FILE_BYTES_MAX || !fields[2].matches("[0-9a-f]{64}")) return null;
+      return new ArtifactEntry(fields[3], "file\t" + length + "\t" + fields[2]);
     }
-    return actual.equals(expected);
+    if (fields.length == 3 && fields[0].equals("link") && canonicalSymbolicLinkTarget(fields[1])) {
+      return new ArtifactEntry(fields[2], "link\t" + fields[1]);
+    }
+    return null;
   }
 
   private static void rebuildArtifact(Path output, String fingerprint, ArtifactBuilder builder)

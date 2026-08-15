@@ -67,11 +67,13 @@ public final class BuildTest {
     given_pitArtifactSets_when_validatingDependencies_then_acceptsCompleteSetAndRejectsMissingHistoryOrInvalidJunitPlugin();
     given_existingArgumentFile_when_requestingPitHelp_then_preservesFile();
     given_completeArtifact_when_checkingInventory_then_rejectsCorruption();
+    given_malformedArtifactMarkers_when_checkingInventory_then_rejectsMarker();
     given_artifactFailpoints_when_rebuilding_then_nextRunPublishesCompleteTree();
     given_generatedSymbolicLinks_when_checkingInventory_then_preservesInternalTargetsAndRejectsEscapes();
     given_runningBuildCommand_when_acquiringBuildLock_then_rejectsCommand();
     given_runningDevelopmentServer_when_requiringExclusiveBuild_then_rejectsCommand();
     given_validRuntimeAssets_when_buildingBundle_then_returnsCanonicalIndex();
+    given_svgSecurityInputs_when_buildingBundle_then_preservesValidationBoundary();
     given_invalidRuntimeAssets_when_buildingBundle_then_returnsActionableErrors();
     given_runtimeAssetBounds_when_buildingBundle_then_rejectsExcess();
     given_runtimeAssetBundle_when_writingModule_then_copiesAndVerifiesResources();
@@ -673,6 +675,36 @@ public final class BuildTest {
     }
   }
 
+  private static void given_malformedArtifactMarkers_when_checkingInventory_then_rejectsMarker()
+      throws Exception {
+    Path parent = Files.createTempDirectory("toktrak-build-marker-");
+    Path artifact = parent.resolve("cache");
+    try {
+      Build.rebuildArtifactForTest(artifact, "expected", BuildTest::writeArtifact, null);
+      Path marker = artifact.resolve(".toktrak-artifact");
+      String valid = Files.readString(marker);
+      String entry = valid.lines().skip(2).findFirst().orElseThrow();
+      String[] fields = entry.split("\t", -1);
+      for (String malformed :
+          List.of(
+              valid.replace("toktrak-artifact-v2", "toktrak-artifact-v1"),
+              valid.replace("fingerprint\texpected", "fingerprint\tother"),
+              valid.stripTrailing(),
+              valid + "\n",
+              valid.replace(entry, "file\tnot-a-length\t" + fields[2] + "\t" + fields[3]),
+              valid.replace(entry, "file\t" + fields[1] + "\tinvalid\t" + fields[3]),
+              valid.replace(entry, "file\t" + fields[1] + "\t" + fields[2] + "\t../escape"),
+              valid + entry + "\n")) {
+        Files.writeString(marker, malformed);
+        if (Build.artifactMatchesForTest(artifact, "expected")) {
+          throw new AssertionError("malformed artifact marker matched inventory: " + malformed);
+        }
+      }
+    } finally {
+      deleteTestTree(parent);
+    }
+  }
+
   private static void given_artifactFailpoints_when_rebuilding_then_nextRunPublishesCompleteTree()
       throws Exception {
     for (String failpoint :
@@ -874,6 +906,35 @@ public final class BuildTest {
     }
   }
 
+  private static void given_svgSecurityInputs_when_buildingBundle_then_preservesValidationBoundary()
+      throws Exception {
+    assertAcceptedAsset(
+        "logo.svg",
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- metadata -->
+        <svg xmlns="http://www.w3.org/2000/svg" role="img" viewBox="0 0 24 24">
+          <title>Safe</title>
+          <g><path d="M0 0h24v24H0z"/><circle cx="12" cy="12" r="10"/></g>
+        </svg>
+        """
+            .getBytes(StandardCharsets.UTF_8));
+    for (String svg :
+        List.of(
+            "<?unsafe?><svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\""
+                + " xmlns:xlink=\"http://www.w3.org/1999/xlink\"/>",
+            "<svg xmlns=\"urn:not-svg\"/>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"url(#gradient)\"/>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><image"
+                + " href=\"data:image/svg+xml,x\"/></svg>")) {
+      assertRejectedAsset(
+          "logo.svg",
+          svg.getBytes(StandardCharsets.UTF_8),
+          "remove scripts, external references, and unsupported SVG features");
+    }
+  }
+
   private static void given_invalidRuntimeAssets_when_buildingBundle_then_returnsActionableErrors()
       throws Exception {
     assertRejectedAsset(
@@ -1068,6 +1129,17 @@ public final class BuildTest {
           || Build.assetsMatchForTest(secondBundle, firstModule)) {
         throw new AssertionError("exploded module assets matched the wrong bundle");
       }
+    } finally {
+      deleteTestTree(root);
+    }
+  }
+
+  private static void assertAcceptedAsset(String relative, byte[] bytes) throws Exception {
+    Path root = Files.createTempDirectory("toktrak-assets-valid-");
+    try {
+      Path publicAssets = Files.createDirectories(root.resolve("public"));
+      Files.write(publicAssets.resolve(relative), bytes);
+      Build.assetBundleForTest(root);
     } finally {
       deleteTestTree(root);
     }
