@@ -80,6 +80,7 @@ record DashboardSnapshot(
 
   record DashboardSessionRow(
       String user,
+      String source,
       String project,
       String models,
       String cost,

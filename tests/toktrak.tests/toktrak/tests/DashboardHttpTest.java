@@ -45,6 +45,7 @@ final class DashboardHttpTest {
       assertTrue(
           overview.body().contains("<span class=\"status status-ok\">Complete</span>"),
           overview.body());
+      assertTrue(overview.body().contains("All reports · Tracker vdev-corpus"), overview.body());
       assertTrue(
           overview.body().contains("<span class=\"status status-warn\">Partial</span>"),
           overview.body());
@@ -83,6 +84,8 @@ final class DashboardHttpTest {
       assertTrue(visualizations.body().contains("<td>$940.18</td>"));
       assertTrue(visualizations.body().contains("synthetic-project-4-045"));
       assertFalse(visualizations.body().contains("synthetic-project-4-045.jsonl"));
+      assertTrue(visualizations.body().contains("<th>Source</th><th>Project</th>"));
+      assertFalse(visualizations.body().contains("Unknown project"));
       assertTrue(visualizations.body().contains("2026-07-14T07:00:00.000Z"));
 
       HttpResponse<String> scope = send(client, base.resolve("/scope"), session);

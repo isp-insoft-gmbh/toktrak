@@ -8,6 +8,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
@@ -64,6 +65,12 @@ final class UsageHttpTest {
       assertTrue(analytics.body().contains("\"costUsd\":1"), analytics.body());
       assertTrue(analytics.body().contains("\"dailyRows\":1"), analytics.body());
       assertTrue(analytics.body().contains("\"partial\":false"), analytics.body());
+      HttpResponse<String> visualizations =
+          send(client, base.resolve("/visualizations"), "GET", null, cookie, null);
+      assertEquals(200, visualizations.statusCode());
+      assertTrue(
+          visualizations.body().contains("<td>codex</td><td>Not reported</td>"),
+          visualizations.body());
 
       HttpResponse<String> daily =
           send(
@@ -116,6 +123,9 @@ final class UsageHttpTest {
           send(client, base.resolve("/api/analytics"), "GET", null, cookie, null);
       assertTrue(unchanged.body().contains("\"costUsd\":1"), unchanged.body());
     }
+    String events = Files.readString(directory.resolve("events.ndjson"));
+    assertTrue(events.contains("\"futureDailyField\":\"preserved\""));
+    assertTrue(events.contains("\"futureSourceField\":\"preserved\""));
 
     try (var app = start()) {
       URI base = URI.create("http://127.0.0.1:" + app.port());
@@ -167,7 +177,7 @@ final class UsageHttpTest {
         + generatedAt
         + "\",\"reports\":{\"daily\":"
         + daily
-        + ",\"session\":{\"ok\":true,\"json\":{\"session\":[]}},\"blocks\":{\"ok\":true,\"json\":{\"blocks\":[]}}}}";
+        + ",\"session\":{\"ok\":true,\"json\":{\"session\":[{\"period\":\"codex-session\",\"agent\":\"codex\",\"modelsUsed\":[\"gpt-test\"],\"totalCost\":0.2,\"totalTokens\":12,\"metadata\":{\"lastActivity\":\"2026-07-14T22:00:00Z\"}}]}},\"blocks\":{\"ok\":true,\"json\":{\"blocks\":[]}},\"sourceReports\":{\"codex\":{\"daily\":{\"ok\":true,\"json\":{\"daily\":[{\"futureDailyField\":\"preserved\"}],\"totals\":{}}},\"session\":{\"ok\":true,\"json\":{\"sessions\":[{\"sessionId\":\"codex-session\",\"futureSourceField\":\"preserved\"}],\"totals\":{}}}}}}}";
   }
 
   private static HttpResponse<String> send(

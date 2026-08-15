@@ -10,9 +10,9 @@ Approved; depends on accepted server APIs and dashboard shell.
 
 ## Outcome
 
-A user creates a token, downloads one personalized Node installer, installs a
-daily user-scoped tracker on Windows/macOS/Linux, uploads usage, self-updates,
-and uninstalls.
+A user creates a token, sees instructions on how to install NodeJs for their
+current platform , installs a daily user-scoped tracker on Windows/macOS/Linux,
+uploads usage, self-updates, and uninstalls.
 
 ## Scope
 

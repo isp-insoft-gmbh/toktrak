@@ -42,6 +42,11 @@ final class AssetsTest {
         "/assets/clipboard." + sha256(clipboard).substring(0, 32) + ".js",
         assets.publicUrl("clipboard.js"));
     assertTrue(new String(clipboard, StandardCharsets.UTF_8).contains("navigator.clipboard"));
+    byte[] platform = Files.readAllBytes(Path.of("sources/toktrak/assets/public/platform.js"));
+    assertEquals(
+        "/assets/platform." + sha256(platform).substring(0, 32) + ".js",
+        assets.publicUrl("platform.js"));
+    assertTrue(new String(platform, StandardCharsets.UTF_8).contains("userAgentData"));
     for (String name :
         List.of(
             "favicon.svg",
@@ -63,7 +68,7 @@ final class AssetsTest {
             name + ": " + colors.group());
       }
     }
-    assertEquals(9, assets.publicCount());
+    assertEquals(10, assets.publicCount());
     Assets inMemory =
         Assets.loadForTest(
             index("public", "main.css", CSS_MEDIA_TYPE, expected),

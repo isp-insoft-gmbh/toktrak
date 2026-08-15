@@ -114,6 +114,15 @@ public final class HttpSupport {
     send(exchange, 200, contentType, body);
   }
 
+  public static void trackerScript(HttpExchange exchange, byte[] body, String sha256)
+      throws IOException {
+    assert exchange != null;
+    assert body != null;
+    assert sha256 != null && sha256.matches("[0-9a-f]{64}");
+    exchange.getResponseHeaders().set("X-TokTrak-SHA256", sha256);
+    send(exchange, 200, "text/javascript; charset=utf-8", body.clone());
+  }
+
   private static final class BoundedOutputStream extends OutputStream {
     private final int limit;
     private final ByteArrayOutputStream output;

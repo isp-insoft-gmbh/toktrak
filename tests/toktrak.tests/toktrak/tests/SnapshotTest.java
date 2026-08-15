@@ -32,6 +32,9 @@ final class SnapshotTest {
   private static final String STYLESHEET = "/assets/main.0123456789abcdef0123456789abcdef.css";
   private static final String DATASTAR = "/assets/datastar.0123456789abcdef0123456789abcdef.js";
   private static final String CLIPBOARD = "/assets/clipboard.0123456789abcdef0123456789abcdef.js";
+  private static final String PLATFORM = "/assets/platform.0123456789abcdef0123456789abcdef.js";
+  private static final String TOKEN = "tt_" + "A".repeat(43);
+  private static final String SCRIPT = "const TOKEN = \"" + TOKEN + "\";\n";
   private static final String FAVICON = "/assets/favicon.0123456789abcdef0123456789abcdef.svg";
   private static final String LOGO_MARK = "/assets/logo-mark.0123456789abcdef0123456789abcdef.svg";
   private static final String LOGO_WORDMARK =
@@ -75,7 +78,8 @@ final class SnapshotTest {
             false,
             "",
             false,
-            "");
+            "",
+            PLATFORM);
     expectSelfie(decode(HttpSupport.renderEncoded(TokenListViewRenderer.of(), view))).toMatchDisk();
   }
 
@@ -107,7 +111,8 @@ final class SnapshotTest {
             true,
             "/tokens?page=1",
             true,
-            "/tokens?page=3");
+            "/tokens?page=3",
+            PLATFORM);
     expectSelfie(decode(HttpSupport.renderEncoded(TokenListViewRenderer.of(), view))).toMatchDisk();
   }
 
@@ -117,8 +122,11 @@ final class SnapshotTest {
     var view =
         new CreatedTokenView(
             trackerBase("Tracker token created · TokTrak", false),
-            "tt_" + "A".repeat(43),
-            CLIPBOARD);
+            TOKEN,
+            SCRIPT,
+            "0".repeat(64),
+            CLIPBOARD,
+            PLATFORM);
     expectSelfie(decode(HttpSupport.renderEncoded(CreatedTokenViewRenderer.of(), view)))
         .toMatchDisk();
   }

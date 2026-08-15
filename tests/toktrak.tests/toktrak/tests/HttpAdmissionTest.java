@@ -70,7 +70,8 @@ final class HttpAdmissionTest {
               Assets.load(),
               auth,
               new UsageService(writer, ClockSource.system()),
-              projection));
+              projection,
+              URI.create("http://127.0.0.1")));
       server.setExecutor(Runnable::run);
       for (int index = 0; index < WORKER_COUNT; index++) {
         workers.execute(

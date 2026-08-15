@@ -13,7 +13,8 @@ public record TokenListView(
     boolean hasPrevious,
     String previousUrl,
     boolean hasNext,
-    String nextUrl) {
+    String nextUrl,
+    String platformUrl) {
   private static final int TOKENS_MAX = 100;
 
   public TokenListView {
@@ -22,6 +23,7 @@ public record TokenListView(
     Objects.requireNonNull(tokens, "tokens");
     Objects.requireNonNull(previousUrl, "previousUrl");
     Objects.requireNonNull(nextUrl, "nextUrl");
+    Objects.requireNonNull(platformUrl, "platformUrl");
     if (csrf.isBlank() || csrf.length() > 256)
       throw new IllegalArgumentException("csrf is invalid");
     tokens = List.copyOf(tokens);
@@ -29,6 +31,9 @@ public record TokenListView(
     if (page < 1) throw new IllegalArgumentException("page is invalid");
     requirePageUrl(previousUrl, hasPrevious, "previousUrl");
     requirePageUrl(nextUrl, hasNext, "nextUrl");
+    if (!platformUrl.matches("/assets/platform\\.[0-9a-f]{32}\\.js")) {
+      throw new IllegalArgumentException("platformUrl is invalid");
+    }
   }
 
   private static void requirePageUrl(String value, boolean present, String name) {

@@ -672,6 +672,17 @@ th {
   margin-bottom: 1rem;
 }
 
+.platform-instructions {
+  margin-bottom: 1rem;
+  border-left: 5px solid var(--line);
+  padding-left: 1rem;
+}
+
+.platform-instructions h3,
+.platform-instructions p {
+  margin-bottom: 0.35rem;
+}
+
 .tracker-form label {
   display: block;
   margin-bottom: 0.5rem;

@@ -9,6 +9,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -90,8 +92,12 @@ final class IdentityHttpTest {
       assertEquals(201, created.statusCode());
       assertNavigation(created.body(), "/tokens", "My Tracker");
       assertTrue(created.body().contains("data-copy-token"));
+      assertTrue(created.body().contains("data-download-tracker"));
+      assertTrue(created.body().contains("data-platform=\"win32\""));
       assertTrue(
           created.body().matches("(?s).*/assets/clipboard\\.[0-9a-f]{32}\\.js.*"), created.body());
+      assertTrue(
+          created.body().matches("(?s).*/assets/platform\\.[0-9a-f]{32}\\.js.*"), created.body());
       String token = match(TOKEN, created.body());
       assertFalse(created.headers().firstValue("Cache-Control").orElseThrow().contains("public"));
 
@@ -99,6 +105,17 @@ final class IdentityHttpTest {
           200,
           send(client, base.resolve("/api/tracker/verify"), "POST", null, "", "Bearer " + token)
               .statusCode());
+      HttpResponse<String> tracker =
+          send(client, base.resolve("/api/tracker"), "GET", null, null, "Bearer " + token);
+      assertEquals(200, tracker.statusCode());
+      assertEquals(
+          "text/javascript; charset=utf-8",
+          tracker.headers().firstValue("Content-Type").orElseThrow());
+      assertEquals(
+          sha256(tracker.body()), tracker.headers().firstValue("X-TokTrak-SHA256").orElseThrow());
+      assertTrue(tracker.body().contains("const TOKEN = \"" + token + "\";"));
+      assertTrue(tracker.body().contains("ccusage@${CCUSAGE_VERSION}"));
+      assertFalse(tracker.body().contains("__TOKTRAK_"));
       HttpResponse<String> usedPage =
           send(client, base.resolve("/tokens"), "GET", cookie, null, null);
       assertTrue(usedPage.body().contains("last used"));
@@ -127,6 +144,10 @@ final class IdentityHttpTest {
       assertEquals(
           401,
           send(client, base.resolve("/api/tracker/verify"), "POST", null, "", "Bearer " + token)
+              .statusCode());
+      assertEquals(
+          401,
+          send(client, base.resolve("/api/tracker"), "GET", null, null, "Bearer " + token)
               .statusCode());
       HttpResponse<String> revokedPage =
           send(client, base.resolve("/tokens"), "GET", cookie, null, null);
@@ -195,6 +216,12 @@ final class IdentityHttpTest {
         html.contains(
             "href=\"" + currentPath + "\" aria-current=\"page\">" + currentLabel + "</a>"),
         html);
+  }
+
+  private static String sha256(String value) throws Exception {
+    return HexFormat.of()
+        .formatHex(
+            MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
   }
 
   private static String form(Map<String, String> fields) {

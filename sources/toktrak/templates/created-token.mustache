@@ -2,13 +2,36 @@
 {{$content}}
   <div class="scope-page tracker-page">
     <h1>Tracker token created</h1>
-    <p class="lede">Copy this token now. It will not be shown again.</p>
+    <div class="warning" role="alert">
+      <strong>Secret:</strong>
+      <span>Download the installer now. It contains your token and this page cannot be reopened.</span>
+    </div>
     <div class="token-copy">
       <pre id="tracker-token" class="token-secret">{{plaintext}}</pre>
       <button type="button" data-copy-token aria-controls="tracker-token">Copy token</button>
     </div>
+    <section class="tracker-panel" aria-labelledby="download-heading">
+      <h2 id="download-heading">3. Install tracker</h2>
+      <textarea id="tracker-script" hidden>{{script}}</textarea>
+      <button type="button" data-download-tracker data-sha256="{{scriptSha256}}" aria-controls="tracker-script">Download toktrak.mjs</button>
+      <p data-platform-status>After downloading, run the command for your platform:</p>
+      <div class="platform-instructions" data-platform="win32">
+        <h3>Windows</h3>
+        <p><code>node .\toktrak.mjs</code></p>
+      </div>
+      <div class="platform-instructions" data-platform="darwin">
+        <h3>macOS</h3>
+        <p><code>node ~/Downloads/toktrak.mjs</code></p>
+      </div>
+      <div class="platform-instructions" data-platform="linux">
+        <h3>Linux</h3>
+        <p><code>node ~/Downloads/toktrak.mjs</code></p>
+      </div>
+      <p>The installer creates one daily user job and uploads existing usage. It never needs administrator or root access.</p>
+    </section>
     <p><a class="button-link button-secondary" href="/tokens">Return to My Tracker</a></p>
     <script type="module" src="{{clipboardUrl}}"></script>
+    <script type="module" src="{{platformUrl}}"></script>
   </div>
 {{/content}}
 {{/base.mustache}}

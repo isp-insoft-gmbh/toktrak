@@ -356,7 +356,8 @@ final class DashboardFactory {
                   row.data().get("metadata") instanceof Map<?, ?> value ? value : Map.of();
               return new DashboardSessionRow(
                   user.displayName(),
-                  project(text(metadata.get("projectPath"), "Unknown project", 2_048)),
+                  row.secondKey(),
+                  project(text(metadata.get("projectPath"), "Not reported", 2_048)),
                   String.join(", ", strings(row.data().get("modelsUsed"), 3)),
                   money(decimal(row.data().get("totalCost")), currency, rate),
                   integer(whole(row.data().get("totalTokens"))),
@@ -396,7 +397,7 @@ final class DashboardFactory {
               String detail =
                   row.partial()
                       ? "Missing: " + String.join(", ", row.failedReports())
-                      : "All reports · tracker " + row.trackerVersion();
+                      : "All reports · Tracker v" + row.trackerVersion();
               return new DashboardIngestionRow(
                   initials(name),
                   name,

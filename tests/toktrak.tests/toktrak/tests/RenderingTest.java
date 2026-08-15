@@ -21,6 +21,10 @@ final class RenderingTest {
   private static final String STYLESHEET = "/assets/main.0123456789abcdef0123456789abcdef.css";
   private static final String DATASTAR = "/assets/datastar.0123456789abcdef0123456789abcdef.js";
   private static final String CLIPBOARD = "/assets/clipboard.0123456789abcdef0123456789abcdef.js";
+  private static final String PLATFORM = "/assets/platform.0123456789abcdef0123456789abcdef.js";
+  private static final String TOKEN = "tt_" + "A".repeat(43);
+  private static final String SCRIPT = "const TOKEN = \"" + TOKEN + "\";";
+  private static final String SHA256 = "0".repeat(64);
   private static final String FAVICON = "/assets/favicon.0123456789abcdef0123456789abcdef.svg";
   private static final String LOGO_WORDMARK =
       "/assets/logo-wordmark.0123456789abcdef0123456789abcdef.svg";
@@ -77,7 +81,8 @@ final class RenderingTest {
     var row =
         new TokenListView.TokenRow(
             "<&\"'>", "00000000-0000-4000-8000-000000000001", "active", false, "", true);
-    var view = new TokenListView(TOKEN_BASE, "<&\"'>", List.of(row), 1, false, "", false, "");
+    var view =
+        new TokenListView(TOKEN_BASE, "<&\"'>", List.of(row), 1, false, "", false, "", PLATFORM);
 
     String html =
         new String(
@@ -90,7 +95,7 @@ final class RenderingTest {
   @Test
   void given_mutableRows_when_constructingView_then_defensivelyCopiesCollection() {
     var rows = new ArrayList<TokenListView.TokenRow>();
-    var view = new TokenListView(TOKEN_BASE, "csrf", rows, 1, false, "", false, "");
+    var view = new TokenListView(TOKEN_BASE, "csrf", rows, 1, false, "", false, "", PLATFORM);
 
     rows.add(
         new TokenListView.TokenRow(
@@ -107,10 +112,10 @@ final class RenderingTest {
             "Laptop", "00000000-0000-4000-8000-000000000001", "active", false, "", true);
     assertThrows(
         IllegalArgumentException.class,
-        () -> new TokenListView(TOKEN_BASE, "", List.of(), 1, false, "", false, ""));
+        () -> new TokenListView(TOKEN_BASE, "", List.of(), 1, false, "", false, "", PLATFORM));
     assertThrows(
         IllegalArgumentException.class,
-        () -> new TokenListView(TOKEN_BASE, "csrf", List.of(), 0, false, "", false, ""));
+        () -> new TokenListView(TOKEN_BASE, "csrf", List.of(), 0, false, "", false, "", PLATFORM));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -122,7 +127,8 @@ final class RenderingTest {
                 false,
                 "",
                 false,
-                ""));
+                "",
+                PLATFORM));
     assertThrows(
         IllegalArgumentException.class,
         () -> new TokenListView.TokenRow("Laptop", "not-a-uuid", "active", false, "", true));
@@ -199,11 +205,28 @@ final class RenderingTest {
         IllegalArgumentException.class,
         () ->
             new TokenListView(
-                TOKEN_BASE, "csrf", List.of(), 1, true, "https://evil.example/tokens", false, ""));
+                TOKEN_BASE,
+                "csrf",
+                List.of(),
+                1,
+                true,
+                "https://evil.example/tokens",
+                false,
+                "",
+                PLATFORM));
     assertThrows(
         IllegalArgumentException.class,
-        () -> new CreatedTokenView(TOKEN_BASE, "tt_" + "A".repeat(43), "/clipboard.js"));
-    assertDoesNotThrow(() -> new CreatedTokenView(TOKEN_BASE, "tt_" + "A".repeat(43), CLIPBOARD));
+        () -> new CreatedTokenView(TOKEN_BASE, TOKEN, SCRIPT, SHA256, "/clipboard.js", PLATFORM));
+    assertDoesNotThrow(
+        () -> new CreatedTokenView(TOKEN_BASE, TOKEN, SCRIPT, SHA256, CLIPBOARD, PLATFORM));
+    String exactScript = TOKEN + " ".repeat(512 * 1024 - TOKEN.length());
+    assertDoesNotThrow(
+        () -> new CreatedTokenView(TOKEN_BASE, TOKEN, exactScript, SHA256, CLIPBOARD, PLATFORM));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new CreatedTokenView(
+                TOKEN_BASE, TOKEN, exactScript + " ", SHA256, CLIPBOARD, PLATFORM));
   }
 
   private static BaseView baseView(

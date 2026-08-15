@@ -31,13 +31,37 @@
   <main id="content">
   <div class="scope-page tracker-page">
     <h1>Tracker token created</h1>
-    <p class="lede">Copy this token now. It will not be shown again.</p>
+    <div class="warning" role="alert">
+      <strong>Secret:</strong>
+      <span>Download the installer now. It contains your token and this page cannot be reopened.</span>
+    </div>
     <div class="token-copy">
       <pre id="tracker-token" class="token-secret">tt_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</pre>
       <button type="button" data-copy-token aria-controls="tracker-token">Copy token</button>
     </div>
+    <section class="tracker-panel" aria-labelledby="download-heading">
+      <h2 id="download-heading">3. Install tracker</h2>
+      <textarea id="tracker-script" hidden>const TOKEN &#x3D; &quot;tt_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&quot;;
+</textarea>
+      <button type="button" data-download-tracker data-sha256="0000000000000000000000000000000000000000000000000000000000000000" aria-controls="tracker-script">Download toktrak.mjs</button>
+      <p data-platform-status>After downloading, run the command for your platform:</p>
+      <div class="platform-instructions" data-platform="win32">
+        <h3>Windows</h3>
+        <p><code>node .\toktrak.mjs</code></p>
+      </div>
+      <div class="platform-instructions" data-platform="darwin">
+        <h3>macOS</h3>
+        <p><code>node ~/Downloads/toktrak.mjs</code></p>
+      </div>
+      <div class="platform-instructions" data-platform="linux">
+        <h3>Linux</h3>
+        <p><code>node ~/Downloads/toktrak.mjs</code></p>
+      </div>
+      <p>The installer creates one daily user job and uploads existing usage. It never needs administrator or root access.</p>
+    </section>
     <p><a class="button-link button-secondary" href="/tokens">Return to My Tracker</a></p>
     <script type="module" src="/assets/clipboard.0123456789abcdef0123456789abcdef.js"></script>
+    <script type="module" src="/assets/platform.0123456789abcdef0123456789abcdef.js"></script>
   </div>
 
   </main>
@@ -114,13 +138,30 @@
   <div class="scope-page tracker-page">
     <h1>My Tracker</h1>
     <p class="lede">Create and revoke user-scoped tokens for the workstation uploader. Token secrets are shown once.</p>
+    <section class="tracker-panel platform-panel" aria-labelledby="node-heading">
+      <h2 id="node-heading">1. Install Node.js</h2>
+      <p data-platform-status>Choose your platform:</p>
+      <div class="platform-instructions" data-platform="win32">
+        <h3>Windows</h3>
+        <p>Run <code>winget install OpenJS.NodeJS.LTS</code>, then open a new terminal.</p>
+      </div>
+      <div class="platform-instructions" data-platform="darwin">
+        <h3>macOS</h3>
+        <p>Run <code>brew install node</code>.</p>
+      </div>
+      <div class="platform-instructions" data-platform="linux">
+        <h3>Linux</h3>
+        <p>Install Node.js 22 or newer with your distribution package manager.</p>
+      </div>
+      <p>Verify installation with <code>node --version</code>.</p>
+    </section>
     <ul class="token-list">
       <li class="empty">No tracker tokens yet.</li>
     </ul>
     <div class="tracker-pagination">
     </div>
     <section class="tracker-panel" aria-labelledby="create-token-heading">
-      <h2 id="create-token-heading">New tracker token</h2>
+      <h2 id="create-token-heading">2. Create tracker token</h2>
       <form class="tracker-form" method="post" action="/tokens">
         <input type="hidden" name="csrf" value="csrf-value">
         <label for="tracker-label">Label</label>
@@ -130,6 +171,7 @@
         </div>
       </form>
     </section>
+    <script type="module" src="/assets/platform.0123456789abcdef0123456789abcdef.js"></script>
     <footer class="tracker-actions">
       <form method="post" action="/account/deactivate">
         <input type="hidden" name="csrf" value="csrf-value">
@@ -222,6 +264,23 @@
   <div class="scope-page tracker-page">
     <h1>My Tracker</h1>
     <p class="lede">Create and revoke user-scoped tokens for the workstation uploader. Token secrets are shown once.</p>
+    <section class="tracker-panel platform-panel" aria-labelledby="node-heading">
+      <h2 id="node-heading">1. Install Node.js</h2>
+      <p data-platform-status>Choose your platform:</p>
+      <div class="platform-instructions" data-platform="win32">
+        <h3>Windows</h3>
+        <p>Run <code>winget install OpenJS.NodeJS.LTS</code>, then open a new terminal.</p>
+      </div>
+      <div class="platform-instructions" data-platform="darwin">
+        <h3>macOS</h3>
+        <p>Run <code>brew install node</code>.</p>
+      </div>
+      <div class="platform-instructions" data-platform="linux">
+        <h3>Linux</h3>
+        <p>Install Node.js 22 or newer with your distribution package manager.</p>
+      </div>
+      <p>Verify installation with <code>node --version</code>.</p>
+    </section>
     <ul class="token-list">
       <li>
         <div class="token-details">
@@ -249,7 +308,7 @@
       <a href="/tokens?page&#x3D;3">Next</a>
     </div>
     <section class="tracker-panel" aria-labelledby="create-token-heading">
-      <h2 id="create-token-heading">New tracker token</h2>
+      <h2 id="create-token-heading">2. Create tracker token</h2>
       <form class="tracker-form" method="post" action="/tokens">
         <input type="hidden" name="csrf" value="csrf-value">
         <label for="tracker-label">Label</label>
@@ -259,6 +318,7 @@
         </div>
       </form>
     </section>
+    <script type="module" src="/assets/platform.0123456789abcdef0123456789abcdef.js"></script>
     <footer class="tracker-actions">
       <form method="post" action="/account/deactivate">
         <input type="hidden" name="csrf" value="csrf-value">

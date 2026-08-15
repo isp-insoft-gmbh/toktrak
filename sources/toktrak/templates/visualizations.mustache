@@ -113,17 +113,17 @@
       <section class="viz-section" aria-labelledby="details-heading">
         <div class="section-number" aria-hidden="true">06</div>
         <div>
-          <p class="eyebrow">SESSIONS → PROJECT DETAILS</p>
+          <p class="eyebrow">SESSIONS → HARNESS / PROJECT</p>
           <h2 id="details-heading">Costliest sessions</h2>
-          <p>Project labels are reduced to their final local path component.</p>
+          <p>Harness is always shown. Project appears when ccusage reports it.</p>
         </div>
         <div class="table-wrap">
           <table>
             <caption>Top sessions by projected cost</caption>
-            <thead><tr><th>User</th><th>Project</th><th>Models</th><th>Cost</th><th>Tokens</th><th>Last activity</th></tr></thead>
+            <thead><tr><th>User</th><th>Source</th><th>Project</th><th>Models</th><th>Cost</th><th>Tokens</th><th>Last activity</th></tr></thead>
             <tbody>
 {{#dashboard.sessions}}
-              <tr><td>{{user}}</td><td>{{project}}</td><td>{{models}}</td><td>{{cost}}</td><td>{{tokens}}</td><td>{{lastActivity}}</td></tr>
+              <tr><td>{{user}}</td><td>{{source}}</td><td>{{project}}</td><td>{{models}}</td><td>{{cost}}</td><td>{{tokens}}</td><td>{{lastActivity}}</td></tr>
 {{/dashboard.sessions}}
             </tbody>
           </table>

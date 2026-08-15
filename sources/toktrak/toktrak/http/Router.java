@@ -46,6 +46,7 @@ public final class Router implements HttpHandler {
   private final AuthService auth;
   private final UsageService usage;
   private final Projection projection;
+  private final TrackerScript trackerScript;
 
   public Router(
       HealthState health,
@@ -54,7 +55,8 @@ public final class Router implements HttpHandler {
       Assets assets,
       AuthService auth,
       UsageService usage,
-      Projection projection) {
+      Projection projection,
+      URI baseUri) {
     assert health != null;
     assert requestExecutor != null;
     this.health = health;
@@ -64,6 +66,8 @@ public final class Router implements HttpHandler {
     this.auth = Objects.requireNonNull(auth, "auth");
     this.usage = Objects.requireNonNull(usage, "usage");
     this.projection = Objects.requireNonNull(projection, "projection");
+    this.trackerScript =
+        new TrackerScript(assets.privateBytes("tracker.mjs"), Objects.requireNonNull(baseUri));
   }
 
   @Override
@@ -212,6 +216,10 @@ public final class Router implements HttpHandler {
       verifyTracker(exchange);
       return;
     }
+    if (path.equals("/api/tracker") && method.equals("GET")) {
+      trackerScript(exchange);
+      return;
+    }
     if (path.equals("/api/usage") && method.equals("POST")) {
       uploadUsage(exchange);
       return;
@@ -298,7 +306,8 @@ public final class Router implements HttpHandler {
               page > 1,
               page > 1 ? tokenPageUrl(page - 1) : "",
               page < tokens.pageCount(),
-              page < tokens.pageCount() ? tokenPageUrl(page + 1) : "");
+              page < tokens.pageCount() ? tokenPageUrl(page + 1) : "",
+              assets.publicUrl("platform.js"));
       HttpSupport.encodedHtml(
           exchange,
           200,
@@ -321,11 +330,15 @@ public final class Router implements HttpHandler {
       auth.requireCsrf(session, form.get("csrf"));
       PreparedToken prepared =
           auth.identities().prepareTrackerToken(session.key(), form.get("label"));
+      TrackerScript.Personalized script = trackerScript.render(prepared.plaintext());
       var view =
           new CreatedTokenView(
               trackerBase("Tracker token created · TokTrak"),
               prepared.plaintext(),
-              assets.publicUrl("clipboard.js"));
+              script.text(),
+              script.sha256(),
+              assets.publicUrl("clipboard.js"),
+              assets.publicUrl("platform.js"));
       byte[] body =
           render(
               CreatedTokenViewRenderer.of(),
@@ -399,6 +412,13 @@ public final class Router implements HttpHandler {
     HttpSupport.json(exchange, 200, Json.write(Map.of("status", "ok")));
   }
 
+  private void trackerScript(HttpExchange exchange) throws IOException {
+    String token = bearerToken(exchange);
+    if (token == null || trackerOwner(exchange, token) == null) return;
+    TrackerScript.Personalized script = trackerScript.render(token);
+    HttpSupport.trackerScript(exchange, script.bytes(), script.sha256());
+  }
+
   private void uploadUsage(HttpExchange exchange) throws IOException {
     UserKey owner = trackerOwner(exchange);
     if (owner == null) return;
@@ -434,14 +454,25 @@ public final class Router implements HttpHandler {
   }
 
   private UserKey trackerOwner(HttpExchange exchange) throws IOException {
+    String token = bearerToken(exchange);
+    return token == null ? null : trackerOwner(exchange, token);
+  }
+
+  private String bearerToken(HttpExchange exchange) throws IOException {
+    assert exchange != null;
     String authorization = exchange.getRequestHeaders().getFirst("Authorization");
     if (authorization == null || !authorization.startsWith("Bearer ")) {
       apiError(exchange, 401, "invalid_token", "tracker token is invalid");
       return null;
     }
+    return authorization.substring("Bearer ".length());
+  }
+
+  private UserKey trackerOwner(HttpExchange exchange, String token) throws IOException {
+    assert exchange != null;
+    assert token != null;
     try {
-      return auth.identities()
-          .authenticateTrackerToken(authorization.substring("Bearer ".length()));
+      return auth.identities().authenticateTrackerToken(token);
     } catch (IllegalArgumentException exception) {
       apiError(exchange, 401, "invalid_token", "tracker token is invalid");
       return null;

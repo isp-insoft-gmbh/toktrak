@@ -108,10 +108,12 @@ public final class App implements AutoCloseable {
           HttpServer.create(
               new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), config.port()),
               HTTP_BACKLOG);
-      AuthService auth = auth(config, projection, writer, server.getAddress().getPort());
+      URI baseUri = baseUri(config, server.getAddress().getPort());
+      AuthService auth = auth(config, projection, writer, baseUri);
       var usage = new UsageService(writer, config.clock());
       server.createContext(
-          "/", new Router(health, config.devAuth(), executor, assets, auth, usage, projection));
+          "/",
+          new Router(health, config.devAuth(), executor, assets, auth, usage, projection, baseUri));
       server.setExecutor(Runnable::run);
       server.start();
       if (!config.devAuth()) fxService = FxService.start(writer);
@@ -135,17 +137,21 @@ public final class App implements AutoCloseable {
     }
   }
 
+  private static URI baseUri(Config config, int boundPort) {
+    assert config != null;
+    assert boundPort >= 0 && boundPort <= 65_535;
+    return URI.create(
+        config.devAuth()
+            ? "http://127.0.0.1:" + boundPort
+            : Objects.requireNonNull(config.baseUrl()));
+  }
+
   private static AuthService auth(
-      Config config, Projection projection, Writer writer, int boundPort) {
+      Config config, Projection projection, Writer writer, URI baseUri) {
     assert config != null;
     assert projection != null;
     assert writer != null;
-    assert boundPort >= 0 && boundPort <= 65_535;
-    URI baseUri =
-        URI.create(
-            config.devAuth()
-                ? "http://127.0.0.1:" + boundPort
-                : Objects.requireNonNull(config.baseUrl()));
+    assert baseUri != null;
     if (config.devAuth()) {
       byte[] sessionSecret = randomSecret();
       byte[] tokenPepper = new byte[32];
