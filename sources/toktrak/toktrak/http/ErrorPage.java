@@ -12,7 +12,6 @@ public final class ErrorPage {
   private static final int REQUEST_ID_CHARACTERS_MAX = 64;
   private static final int METHOD_CHARACTERS_MAX = 32;
   private static final int PATH_CHARACTERS_MAX = 2 * 1024;
-  private static final int STYLESHEET_URL_CHARACTERS_MAX = 256;
   private static final int EXCEPTION_CLASS_CHARACTERS_MAX = 1024;
   private static final int EXCEPTION_MESSAGE_CHARACTERS_MAX = 8 * 1024;
   private static final int HTML_CHARACTERS_MAX = 128 * 1024;
@@ -27,6 +26,8 @@ public final class ErrorPage {
       String method,
       String path,
       String stylesheetUrl,
+      String faviconUrl,
+      String logoMarkUrl,
       Throwable failure,
       boolean debug) {
     if (status < 400 || status > 599) {
@@ -37,14 +38,20 @@ public final class ErrorPage {
     requireText(requestId, REQUEST_ID_CHARACTERS_MAX, "requestId");
     requireText(method, METHOD_CHARACTERS_MAX, "method");
     requireText(path, PATH_CHARACTERS_MAX, "path");
-    requireText(stylesheetUrl, STYLESHEET_URL_CHARACTERS_MAX, "stylesheetUrl");
+    requireAssetUrl(stylesheetUrl, "main", "css", "stylesheetUrl");
+    requireAssetUrl(faviconUrl, "favicon", "svg", "faviconUrl");
+    requireAssetUrl(logoMarkUrl, "logo-mark", "svg", "logoMarkUrl");
 
     var html = new StringBuilder(2 * 1024);
     html.append("<!doctype html><meta charset=\"utf-8\"><title>")
         .append(status)
         .append(" · TokTrak</title><link rel=\"stylesheet\" href=\"")
         .append(escape(stylesheetUrl))
-        .append("\"><main class=\"error-page\">");
+        .append("\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"")
+        .append(escape(faviconUrl))
+        .append("\"><main class=\"error-page\"><img class=\"error-mark\" src=\"")
+        .append(escape(logoMarkUrl))
+        .append("\" alt=\"\" width=\"160\" height=\"160\">");
     if (debug) {
       html.append("<div class=\"environment-banner\">DEV AUTH · DEBUG</div>");
     }
@@ -67,7 +74,7 @@ public final class ErrorPage {
         detail(html, "Exception", failureClass + ": " + failureMessage);
       }
     }
-    html.append("</dl><p><a href=\"/\">Return to TokTrak</a></p></main>");
+    html.append("</dl><p><a class=\"button-link\" href=\"/\">Return to TokTrak</a></p></main>");
     String result = html.toString();
     if (result.length() > HTML_CHARACTERS_MAX) {
       throw new IllegalStateException("error page exceeds " + HTML_CHARACTERS_MAX + " characters");
@@ -107,6 +114,16 @@ public final class ErrorPage {
       }
     }
     return escaped.toString();
+  }
+
+  private static void requireAssetUrl(String url, String name, String extension, String field) {
+    assert url != null;
+    assert name != null && !name.isBlank();
+    assert extension != null && !extension.isBlank();
+    assert field != null && !field.isBlank();
+    if (!url.matches("/assets/" + name + "\\.[0-9a-f]{32}\\." + extension)) {
+      throw new IllegalArgumentException(field + " is invalid");
+    }
   }
 
   private static void requireText(String value, int charactersMax, String name) {

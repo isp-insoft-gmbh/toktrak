@@ -6,6 +6,11 @@ public record BaseView(
     String title,
     String stylesheetUrl,
     String datastarUrl,
+    String faviconUrl,
+    String logoWordmarkUrl,
+    String logoWordmarkDarkUrl,
+    String logoLockupUrl,
+    String logoLockupDarkUrl,
     boolean development,
     boolean navigation,
     boolean overviewCurrent,
@@ -20,6 +25,11 @@ public record BaseView(
     Objects.requireNonNull(title, "title");
     Objects.requireNonNull(stylesheetUrl, "stylesheetUrl");
     Objects.requireNonNull(datastarUrl, "datastarUrl");
+    Objects.requireNonNull(faviconUrl, "faviconUrl");
+    Objects.requireNonNull(logoWordmarkUrl, "logoWordmarkUrl");
+    Objects.requireNonNull(logoWordmarkDarkUrl, "logoWordmarkDarkUrl");
+    Objects.requireNonNull(logoLockupUrl, "logoLockupUrl");
+    Objects.requireNonNull(logoLockupDarkUrl, "logoLockupDarkUrl");
     Objects.requireNonNull(currencySwitchUrl, "currencySwitchUrl");
     Objects.requireNonNull(currencySwitchLabel, "currencySwitchLabel");
     if (title.isBlank() || title.length() > 128) {
@@ -31,6 +41,11 @@ public record BaseView(
     if (!datastarUrl.matches("/assets/datastar\\.[0-9a-f]{32}\\.js")) {
       throw new IllegalArgumentException("datastarUrl is invalid");
     }
+    requireSvgAsset(faviconUrl, "favicon", "faviconUrl");
+    requireSvgAsset(logoWordmarkUrl, "logo-wordmark", "logoWordmarkUrl");
+    requireSvgAsset(logoWordmarkDarkUrl, "logo-wordmark-dark", "logoWordmarkDarkUrl");
+    requireSvgAsset(logoLockupUrl, "logo-lockup", "logoLockupUrl");
+    requireSvgAsset(logoLockupDarkUrl, "logo-lockup-dark", "logoLockupDarkUrl");
     int currentPages =
         (overviewCurrent ? 1 : 0)
             + (visualizationsCurrent ? 1 : 0)
@@ -47,6 +62,15 @@ public record BaseView(
       }
     } else if (!currencySwitchUrl.isEmpty() || !currencySwitchLabel.isEmpty()) {
       throw new IllegalArgumentException("currency switch is disabled");
+    }
+  }
+
+  private static void requireSvgAsset(String url, String name, String field) {
+    assert url != null;
+    assert name != null && !name.isBlank();
+    assert field != null && !field.isBlank();
+    if (!url.matches("/assets/" + name + "\\.[0-9a-f]{32}\\.svg")) {
+      throw new IllegalArgumentException(field + " is invalid");
     }
   }
 }

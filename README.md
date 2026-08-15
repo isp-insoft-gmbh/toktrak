@@ -1,8 +1,9 @@
 # TokTrak
 
-Internal Coding Harness Token Tracker for isp-insoft GmbH.
+[![TokTrak — Internal Coding Harness Token Tracker][toktrak-logo]][toktrak]
 
-<https://toktrak.isp-insoft.de>
+[toktrak-logo]: sources/toktrak/assets/public/logo-lockup-dark.svg
+[toktrak]: https://toktrak.isp-insoft.de
 
 ## Why does it exist
 

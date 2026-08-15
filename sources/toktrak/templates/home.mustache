@@ -1,14 +1,21 @@
 {{<base.mustache}}
 {{$content}}
-  <div class="scope-page">
-    <h1>TokTrak</h1>
+  <div class="scope-page home-page">
+    <h1 class="home-brand">
+      <picture>
+        <source media="(max-width: 32rem) and (prefers-color-scheme: dark)" srcset="{{base.logoWordmarkDarkUrl}}">
+        <source media="(max-width: 32rem)" srcset="{{base.logoWordmarkUrl}}">
+        <source media="(prefers-color-scheme: dark)" srcset="{{base.logoLockupDarkUrl}}">
+        <img src="{{base.logoLockupUrl}}" alt="TokTrak" width="800" height="250">
+      </picture>
+    </h1>
+    <p class="home-intro">Understand projected AI coding subscription costs from your team's local harness usage.</p>
+    <p class="home-detail">No prompts, code, cloud, web, or CI usage. Estimates inform awareness—not billing or performance reviews.</p>
 {{#signedIn}}
-    <p>Signed in · <a href="/tokens">My Tracker</a></p>
+    <p>Signed in · <a class="button-link" href="/tokens">My Tracker</a></p>
 {{/signedIn}}
 {{^signedIn}}
-    <form action="/login">
-      <button>Sign in</button>
-    </form>
+    <a class="button-link" href="/login">Sign in</a>
 {{/signedIn}}
   </div>
 {{/content}}

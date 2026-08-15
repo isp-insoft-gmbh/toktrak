@@ -4,14 +4,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="TokTrak">
+  <meta name="theme-color" content="#b5b9f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0909" media="(prefers-color-scheme: dark)">
   <title>Tracker token created · TokTrak</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
   <header class="site-header">
-    <a class="wordmark" href="/">TOKTRAK</a>
+    <a class="wordmark" href="/" aria-label="TokTrak home">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="/assets/logo-wordmark-dark.0123456789abcdef0123456789abcdef.svg">
+        <img src="/assets/logo-wordmark.0123456789abcdef0123456789abcdef.svg" alt="" width="540" height="120">
+      </picture>
+    </a>
     <nav aria-label="Primary navigation">
       <a href="/">Overview</a>
       <a href="/visualizations">Visualizations</a>
@@ -20,11 +29,15 @@
     </nav>
   </header>
   <main id="content">
-  <div class="scope-page">
+  <div class="scope-page tracker-page">
     <h1>Tracker token created</h1>
-    <p>Copy this token now. It will not be shown again.</p>
-    <pre>tt_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</pre>
-    <p><a href="/tokens">Return to My Tracker</a></p>
+    <p class="lede">Copy this token now. It will not be shown again.</p>
+    <div class="token-copy">
+      <pre id="tracker-token" class="token-secret">tt_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</pre>
+      <button type="button" data-copy-token aria-controls="tracker-token">Copy token</button>
+    </div>
+    <p><a class="button-link button-secondary" href="/tokens">Return to My Tracker</a></p>
+    <script type="module" src="/assets/clipboard.0123456789abcdef0123456789abcdef.js"></script>
   </div>
 
   </main>
@@ -37,7 +50,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="TokTrak">
+  <meta name="theme-color" content="#b5b9f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0909" media="(prefers-color-scheme: dark)">
   <title>TokTrak</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
 </head>
@@ -45,9 +62,18 @@
   <a class="skip-link" href="#content">Skip to content</a>
   <div class="environment-banner" role="status">DEV AUTH</div>
   <main id="content">
-  <div class="scope-page">
-    <h1>TokTrak</h1>
-    <p>Signed in · <a href="/tokens">My Tracker</a></p>
+  <div class="scope-page home-page">
+    <h1 class="home-brand">
+      <picture>
+        <source media="(max-width: 32rem) and (prefers-color-scheme: dark)" srcset="/assets/logo-wordmark-dark.0123456789abcdef0123456789abcdef.svg">
+        <source media="(max-width: 32rem)" srcset="/assets/logo-wordmark.0123456789abcdef0123456789abcdef.svg">
+        <source media="(prefers-color-scheme: dark)" srcset="/assets/logo-lockup-dark.0123456789abcdef0123456789abcdef.svg">
+        <img src="/assets/logo-lockup.0123456789abcdef0123456789abcdef.svg" alt="TokTrak" width="800" height="250">
+      </picture>
+    </h1>
+    <p class="home-intro">Understand projected AI coding subscription costs from your team's local harness usage.</p>
+    <p class="home-detail">No prompts, code, cloud, web, or CI usage. Estimates inform awareness—not billing or performance reviews.</p>
+    <p>Signed in · <a class="button-link" href="/tokens">My Tracker</a></p>
   </div>
 
   </main>
@@ -60,14 +86,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="TokTrak">
+  <meta name="theme-color" content="#b5b9f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0909" media="(prefers-color-scheme: dark)">
   <title>My Tracker · TokTrak</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
   <header class="site-header">
-    <a class="wordmark" href="/">TOKTRAK</a>
+    <a class="wordmark" href="/" aria-label="TokTrak home">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="/assets/logo-wordmark-dark.0123456789abcdef0123456789abcdef.svg">
+        <img src="/assets/logo-wordmark.0123456789abcdef0123456789abcdef.svg" alt="" width="540" height="120">
+      </picture>
+    </a>
     <nav aria-label="Primary navigation">
       <a href="/">Overview</a>
       <a href="/visualizations">Visualizations</a>
@@ -76,24 +111,35 @@
     </nav>
   </header>
   <main id="content">
-  <div class="scope-page">
+  <div class="scope-page tracker-page">
     <h1>My Tracker</h1>
-    <ul>
-      <li>No tracker tokens.</li>
+    <p class="lede">Create and revoke user-scoped tokens for the workstation uploader. Token secrets are shown once.</p>
+    <ul class="token-list">
+      <li class="empty">No tracker tokens yet.</li>
     </ul>
-    <form method="post" action="/tokens">
-      <input type="hidden" name="csrf" value="csrf-value">
-      <label>Label <input name="label" maxlength="128" required></label>
-      <button>Create token</button>
-    </form>
-    <form method="post" action="/account/deactivate">
-      <input type="hidden" name="csrf" value="csrf-value">
-      <button>Deactivate account</button>
-    </form>
-    <form method="post" action="/logout">
-      <input type="hidden" name="csrf" value="csrf-value">
-      <button>Sign out</button>
-    </form>
+    <div class="tracker-pagination">
+    </div>
+    <section class="tracker-panel" aria-labelledby="create-token-heading">
+      <h2 id="create-token-heading">New tracker token</h2>
+      <form class="tracker-form" method="post" action="/tokens">
+        <input type="hidden" name="csrf" value="csrf-value">
+        <label for="tracker-label">Label</label>
+        <div class="tracker-form-row">
+          <input id="tracker-label" name="label" maxlength="128" placeholder="Work laptop" autocomplete="off" required>
+          <button>Create token</button>
+        </div>
+      </form>
+    </section>
+    <footer class="tracker-actions">
+      <form method="post" action="/account/deactivate">
+        <input type="hidden" name="csrf" value="csrf-value">
+        <button class="button-danger">Deactivate account</button>
+      </form>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf" value="csrf-value">
+        <button class="button-secondary">Sign out</button>
+      </form>
+    </footer>
   </div>
 
   </main>
@@ -105,25 +151,36 @@
 ╔═ given_healthPayload_when_serializingJson_then_matchesApprovedDocument ═╗
 {"status":"degraded","reason":"writes_failed"}
 ╔═ given_productionErrorPage_when_renderingHtml_then_matchesApprovedDocument ═╗
-<!doctype html><meta charset="utf-8"><title>418 · TokTrak</title><link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css"><main class="error-page"><h1>418</h1><p>cannot brew coffee</p><dl><dt>Path</dt><dd><code>/coffee</code></dd><dt>Request ID</dt><dd><code>00000000-0000-4000-8000-000000000001</code></dd></dl><p><a href="/">Return to TokTrak</a></p></main>
+<!doctype html><meta charset="utf-8"><title>418 · TokTrak</title><link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css"><link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg"><main class="error-page"><img class="error-mark" src="/assets/logo-mark.0123456789abcdef0123456789abcdef.svg" alt="" width="160" height="160"><h1>418</h1><p>cannot brew coffee</p><dl><dt>Path</dt><dd><code>/coffee</code></dd><dt>Request ID</dt><dd><code>00000000-0000-4000-8000-000000000001</code></dd></dl><p><a class="button-link" href="/">Return to TokTrak</a></p></main>
 ╔═ given_productionHomeView_when_renderingEncodedHtml_then_matchesApprovedDocument ═╗
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="TokTrak">
+  <meta name="theme-color" content="#b5b9f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0909" media="(prefers-color-scheme: dark)">
   <title>TokTrak</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
   <main id="content">
-  <div class="scope-page">
-    <h1>TokTrak</h1>
-    <form action="/login">
-      <button>Sign in</button>
-    </form>
+  <div class="scope-page home-page">
+    <h1 class="home-brand">
+      <picture>
+        <source media="(max-width: 32rem) and (prefers-color-scheme: dark)" srcset="/assets/logo-wordmark-dark.0123456789abcdef0123456789abcdef.svg">
+        <source media="(max-width: 32rem)" srcset="/assets/logo-wordmark.0123456789abcdef0123456789abcdef.svg">
+        <source media="(prefers-color-scheme: dark)" srcset="/assets/logo-lockup-dark.0123456789abcdef0123456789abcdef.svg">
+        <img src="/assets/logo-lockup.0123456789abcdef0123456789abcdef.svg" alt="TokTrak" width="800" height="250">
+      </picture>
+    </h1>
+    <p class="home-intro">Understand projected AI coding subscription costs from your team's local harness usage.</p>
+    <p class="home-detail">No prompts, code, cloud, web, or CI usage. Estimates inform awareness—not billing or performance reviews.</p>
+    <a class="button-link" href="/login">Sign in</a>
   </div>
 
   </main>
@@ -136,7 +193,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="TokTrak">
+  <meta name="theme-color" content="#b5b9f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0909" media="(prefers-color-scheme: dark)">
   <title>My Tracker · TokTrak</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
 </head>
@@ -144,7 +205,12 @@
   <a class="skip-link" href="#content">Skip to content</a>
   <div class="environment-banner" role="status">DEV AUTH</div>
   <header class="site-header">
-    <a class="wordmark" href="/">TOKTRAK</a>
+    <a class="wordmark" href="/" aria-label="TokTrak home">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="/assets/logo-wordmark-dark.0123456789abcdef0123456789abcdef.svg">
+        <img src="/assets/logo-wordmark.0123456789abcdef0123456789abcdef.svg" alt="" width="540" height="120">
+      </picture>
+    </a>
     <nav aria-label="Primary navigation">
       <a href="/">Overview</a>
       <a href="/visualizations">Visualizations</a>
@@ -153,41 +219,56 @@
     </nav>
   </header>
   <main id="content">
-  <div class="scope-page">
+  <div class="scope-page tracker-page">
     <h1>My Tracker</h1>
-    <ul>
+    <p class="lede">Create and revoke user-scoped tokens for the workstation uploader. Token secrets are shown once.</p>
+    <ul class="token-list">
       <li>
-        <strong>Laptop &lt;primary&gt;</strong>
-        <code>00000000-0000-4000-8000-000000000001</code>
-        · active
-        <form method="post" action="/tokens/revoke">
+        <div class="token-details">
+          <strong>Laptop &lt;primary&gt;</strong>
+          <code>00000000-0000-4000-8000-000000000001</code>
+          <span class="token-status">active</span>
+        </div>
+        <form class="token-action" method="post" action="/tokens/revoke">
           <input type="hidden" name="csrf" value="csrf-value">
           <input type="hidden" name="tokenId" value="00000000-0000-4000-8000-000000000001">
-          <button>Revoke</button>
+          <button class="button-secondary">Revoke</button>
         </form>
       </li>
       <li>
-        <strong>Old workstation</strong>
-        <code>00000000-0000-4000-8000-000000000002</code>
-        · revoked
-        · last used <time>2026-07-10T12:00:00Z</time>
+        <div class="token-details">
+          <strong>Old workstation</strong>
+          <code>00000000-0000-4000-8000-000000000002</code>
+          <span class="token-status">revoked</span>
+          · last used <time>2026-07-10T12:00:00Z</time>
+        </div>
       </li>
     </ul>
-    <a href="/tokens?page&#x3D;1">Previous</a>
-    <a href="/tokens?page&#x3D;3">Next</a>
-    <form method="post" action="/tokens">
-      <input type="hidden" name="csrf" value="csrf-value">
-      <label>Label <input name="label" maxlength="128" required></label>
-      <button>Create token</button>
-    </form>
-    <form method="post" action="/account/deactivate">
-      <input type="hidden" name="csrf" value="csrf-value">
-      <button>Deactivate account</button>
-    </form>
-    <form method="post" action="/logout">
-      <input type="hidden" name="csrf" value="csrf-value">
-      <button>Sign out</button>
-    </form>
+    <div class="tracker-pagination">
+      <a href="/tokens?page&#x3D;1">Previous</a>
+      <a href="/tokens?page&#x3D;3">Next</a>
+    </div>
+    <section class="tracker-panel" aria-labelledby="create-token-heading">
+      <h2 id="create-token-heading">New tracker token</h2>
+      <form class="tracker-form" method="post" action="/tokens">
+        <input type="hidden" name="csrf" value="csrf-value">
+        <label for="tracker-label">Label</label>
+        <div class="tracker-form-row">
+          <input id="tracker-label" name="label" maxlength="128" placeholder="Work laptop" autocomplete="off" required>
+          <button>Create token</button>
+        </div>
+      </form>
+    </section>
+    <footer class="tracker-actions">
+      <form method="post" action="/account/deactivate">
+        <input type="hidden" name="csrf" value="csrf-value">
+        <button class="button-danger">Deactivate account</button>
+      </form>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf" value="csrf-value">
+        <button class="button-secondary">Sign out</button>
+      </form>
+    </footer>
   </div>
 
   </main>

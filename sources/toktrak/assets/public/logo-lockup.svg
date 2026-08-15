@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 250" role="img" aria-labelledby="title description">
+  <title id="title">TokTrak</title>
+  <desc id="description">Internal coding harness token tracker, powered by isp-insoft GmbH</desc>
+  <g transform="translate(48 34)">
+    <path d="M2 20h56v34H2z" fill="#b5b9f0"/>
+    <path d="M82 20h56v34H82zM49 72h42v86H49z" fill="#408175"/>
+    <path d="M30 54v44h19M110 54v22H91" fill="none" stroke="#2e4540" stroke-width="7" stroke-linecap="square"/>
+    <circle cx="30" cy="98" r="9" fill="#b5b9f0" stroke="#2e4540" stroke-width="4"/>
+    <circle cx="91" cy="76" r="9" fill="#0b0909" stroke="#408175" stroke-width="4"/>
+    <circle cx="70" cy="158" r="10" fill="#b5b9f0" stroke="#2e4540" stroke-width="4"/>
+  </g>
+  <text x="230" y="132" fill="#0b0909" font-family="Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif" font-size="82" letter-spacing="1">TOK<tspan fill="#408175">TRAK</tspan></text>
+  <text x="235" y="169" fill="#2e4540" font-family="ui-monospace, 'Cascadia Mono', monospace" font-size="15" font-weight="700" letter-spacing="2.2">INTERNAL CODING HARNESS TOKEN TRACKER</text>
+  <text x="235" y="202" fill="#2e4540" font-family="ui-monospace, 'Cascadia Mono', monospace" font-size="13" font-weight="700" letter-spacing="0.5">POWERED BY ISP-INSOFT GMBH</text>
+</svg>

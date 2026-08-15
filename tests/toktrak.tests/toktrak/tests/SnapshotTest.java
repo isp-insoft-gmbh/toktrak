@@ -28,8 +28,20 @@ import toktrak.store.EventEnvelope;
 
 @Tag("snapshot")
 final class SnapshotTest {
+
   private static final String STYLESHEET = "/assets/main.0123456789abcdef0123456789abcdef.css";
   private static final String DATASTAR = "/assets/datastar.0123456789abcdef0123456789abcdef.js";
+  private static final String CLIPBOARD = "/assets/clipboard.0123456789abcdef0123456789abcdef.js";
+  private static final String FAVICON = "/assets/favicon.0123456789abcdef0123456789abcdef.svg";
+  private static final String LOGO_MARK = "/assets/logo-mark.0123456789abcdef0123456789abcdef.svg";
+  private static final String LOGO_WORDMARK =
+      "/assets/logo-wordmark.0123456789abcdef0123456789abcdef.svg";
+  private static final String LOGO_WORDMARK_DARK =
+      "/assets/logo-wordmark-dark.0123456789abcdef0123456789abcdef.svg";
+  private static final String LOGO_LOCKUP =
+      "/assets/logo-lockup.0123456789abcdef0123456789abcdef.svg";
+  private static final String LOGO_LOCKUP_DARK =
+      "/assets/logo-lockup-dark.0123456789abcdef0123456789abcdef.svg";
 
   @Test
   void given_productionHomeView_when_renderingEncodedHtml_then_matchesApprovedDocument()
@@ -104,7 +116,9 @@ final class SnapshotTest {
       throws Exception {
     var view =
         new CreatedTokenView(
-            trackerBase("Tracker token created · TokTrak", false), "tt_" + "A".repeat(43));
+            trackerBase("Tracker token created · TokTrak", false),
+            "tt_" + "A".repeat(43),
+            CLIPBOARD);
     expectSelfie(decode(HttpSupport.renderEncoded(CreatedTokenViewRenderer.of(), view)))
         .toMatchDisk();
   }
@@ -119,7 +133,9 @@ final class SnapshotTest {
                 "00000000-0000-4000-8000-000000000001",
                 "POST",
                 "/coffee",
-                "/assets/main.0123456789abcdef0123456789abcdef.css",
+                STYLESHEET,
+                FAVICON,
+                LOGO_MARK,
                 new IllegalStateException("debug failure"),
                 false))
         .toMatchDisk();
@@ -161,6 +177,11 @@ final class SnapshotTest {
         title,
         STYLESHEET,
         DATASTAR,
+        FAVICON,
+        LOGO_WORDMARK,
+        LOGO_WORDMARK_DARK,
+        LOGO_LOCKUP,
+        LOGO_LOCKUP_DARK,
         development,
         true,
         false,
@@ -178,6 +199,11 @@ final class SnapshotTest {
         title,
         STYLESHEET,
         DATASTAR,
+        FAVICON,
+        LOGO_WORDMARK,
+        LOGO_WORDMARK_DARK,
+        LOGO_LOCKUP,
+        LOGO_LOCKUP_DARK,
         development,
         false,
         false,

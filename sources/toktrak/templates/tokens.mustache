@@ -1,48 +1,61 @@
 {{<base.mustache}}
 {{$content}}
-  <div class="scope-page">
+  <div class="scope-page tracker-page">
     <h1>My Tracker</h1>
-    <ul>
+    <p class="lede">Create and revoke user-scoped tokens for the workstation uploader. Token secrets are shown once.</p>
+    <ul class="token-list">
 {{#tokens}}
       <li>
-        <strong>{{label}}</strong>
-        <code>{{id}}</code>
-        · {{status}}
+        <div class="token-details">
+          <strong>{{label}}</strong>
+          <code>{{id}}</code>
+          <span class="token-status">{{status}}</span>
 {{#hasLastUsed}}
-        · last used <time>{{lastUsed}}</time>
+          · last used <time>{{lastUsed}}</time>
 {{/hasLastUsed}}
+        </div>
 {{#active}}
-        <form method="post" action="/tokens/revoke">
+        <form class="token-action" method="post" action="/tokens/revoke">
           <input type="hidden" name="csrf" value="{{csrf}}">
           <input type="hidden" name="tokenId" value="{{id}}">
-          <button>Revoke</button>
+          <button class="button-secondary">Revoke</button>
         </form>
 {{/active}}
       </li>
 {{/tokens}}
 {{^tokens}}
-      <li>No tracker tokens.</li>
+      <li class="empty">No tracker tokens yet.</li>
 {{/tokens}}
     </ul>
+    <div class="tracker-pagination">
 {{#hasPrevious}}
-    <a href="{{previousUrl}}">Previous</a>
+      <a href="{{previousUrl}}">Previous</a>
 {{/hasPrevious}}
 {{#hasNext}}
-    <a href="{{nextUrl}}">Next</a>
+      <a href="{{nextUrl}}">Next</a>
 {{/hasNext}}
-    <form method="post" action="/tokens">
-      <input type="hidden" name="csrf" value="{{csrf}}">
-      <label>Label <input name="label" maxlength="128" required></label>
-      <button>Create token</button>
-    </form>
-    <form method="post" action="/account/deactivate">
-      <input type="hidden" name="csrf" value="{{csrf}}">
-      <button>Deactivate account</button>
-    </form>
-    <form method="post" action="/logout">
-      <input type="hidden" name="csrf" value="{{csrf}}">
-      <button>Sign out</button>
-    </form>
+    </div>
+    <section class="tracker-panel" aria-labelledby="create-token-heading">
+      <h2 id="create-token-heading">New tracker token</h2>
+      <form class="tracker-form" method="post" action="/tokens">
+        <input type="hidden" name="csrf" value="{{csrf}}">
+        <label for="tracker-label">Label</label>
+        <div class="tracker-form-row">
+          <input id="tracker-label" name="label" maxlength="128" placeholder="Work laptop" autocomplete="off" required>
+          <button>Create token</button>
+        </div>
+      </form>
+    </section>
+    <footer class="tracker-actions">
+      <form method="post" action="/account/deactivate">
+        <input type="hidden" name="csrf" value="{{csrf}}">
+        <button class="button-danger">Deactivate account</button>
+      </form>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf" value="{{csrf}}">
+        <button class="button-secondary">Sign out</button>
+      </form>
+    </footer>
   </div>
 {{/content}}
 {{/base.mustache}}

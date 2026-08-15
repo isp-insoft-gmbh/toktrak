@@ -24,6 +24,11 @@ public final class Main {
       Assets assets = Assets.load();
       String stylesheetUrl = assets.publicUrl("main.css");
       String datastarUrl = assets.publicUrl("datastar.js");
+      String faviconUrl = assets.publicUrl("favicon.svg");
+      String logoWordmarkUrl = assets.publicUrl("logo-wordmark.svg");
+      String logoWordmarkDarkUrl = assets.publicUrl("logo-wordmark-dark.svg");
+      String logoLockupUrl = assets.publicUrl("logo-lockup.svg");
+      String logoLockupDarkUrl = assets.publicUrl("logo-lockup-dark.svg");
       byte[] html =
           HttpSupport.renderEncoded(
               HomeViewRenderer.of(),
@@ -32,6 +37,11 @@ public final class Main {
                       "TokTrak",
                       stylesheetUrl,
                       datastarUrl,
+                      faviconUrl,
+                      logoWordmarkUrl,
+                      logoWordmarkDarkUrl,
+                      logoLockupUrl,
+                      logoLockupDarkUrl,
                       false,
                       false,
                       false,
@@ -44,7 +54,9 @@ public final class Main {
                       ""),
                   false));
       String document = new String(html, StandardCharsets.UTF_8);
-      if (!document.contains("<h1>TokTrak</h1>") || document.contains("{{")) {
+      if (!document.contains("class=\"home-brand\"")
+          || !document.contains(logoLockupUrl)
+          || document.contains("{{")) {
         throw new IllegalStateException("production renderer self-check failed");
       }
       System.out.println(

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">TokTrak</title>
+  <rect width="64" height="64" fill="#0b0909"/>
+  <path d="M7 8h21v14H7z" fill="#b5b9f0"/>
+  <path d="M36 8h21v14H36zM25 28h14v29H25z" fill="#408175"/>
+  <rect x="12" y="31" width="8" height="8" fill="#b5b9f0"/>
+  <rect x="44" y="25" width="8" height="8" fill="#b5b9f0"/>
+</svg>

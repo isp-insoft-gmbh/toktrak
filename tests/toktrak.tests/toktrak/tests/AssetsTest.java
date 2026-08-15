@@ -6,10 +6,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import toktrak.http.Assets;
 
@@ -33,12 +37,81 @@ final class AssetsTest {
         "/assets/datastar." + sha256(datastar).substring(0, 32) + ".js",
         assets.publicUrl("datastar.js"));
     assertTrue(new String(datastar, StandardCharsets.UTF_8).startsWith("// Datastar v1.0.2\n"));
-    assertEquals(2, assets.publicCount());
+    byte[] clipboard = Files.readAllBytes(Path.of("sources/toktrak/assets/public/clipboard.js"));
+    assertEquals(
+        "/assets/clipboard." + sha256(clipboard).substring(0, 32) + ".js",
+        assets.publicUrl("clipboard.js"));
+    assertTrue(new String(clipboard, StandardCharsets.UTF_8).contains("navigator.clipboard"));
+    for (String name :
+        List.of(
+            "favicon.svg",
+            "logo-lockup-dark.svg",
+            "logo-lockup.svg",
+            "logo-mark.svg",
+            "logo-wordmark-dark.svg",
+            "logo-wordmark.svg")) {
+      String assetUrl = assets.publicUrl(name);
+      assertTrue(assetUrl.matches("/assets/" + name.replace(".", "\\.[0-9a-f]{32}\\.")), assetUrl);
+      String svg = Files.readString(Path.of("sources/toktrak/assets/public", name));
+      assertTrue(svg.startsWith("<svg xmlns=\"http://www.w3.org/2000/svg\""), name);
+      assertTrue(svg.contains("<title"), name);
+      var colors = Pattern.compile("#[0-9a-fA-F]{6}").matcher(svg);
+      while (colors.find()) {
+        assertTrue(
+            Set.of("#0b0909", "#2e4540", "#408175", "#b5b9f0")
+                .contains(colors.group().toLowerCase(Locale.ROOT)),
+            name + ": " + colors.group());
+      }
+    }
+    assertEquals(9, assets.publicCount());
     Assets inMemory =
         Assets.loadForTest(
             index("public", "main.css", CSS_MEDIA_TYPE, expected),
             Map.of("assets/public/main.css", expected));
     assertEquals(url, inMemory.publicUrl("main.css"));
+  }
+
+  @Test
+  void given_toktrakTheme_when_readingCss_then_limitsLiteralsToThemeAndSemanticBases()
+      throws Exception {
+    String css = Files.readString(Path.of("sources/toktrak/assets/public/main.css"));
+    var colors = new HashSet<String>();
+    var matcher = Pattern.compile("#[0-9a-fA-F]{6}").matcher(css);
+    while (matcher.find()) colors.add(matcher.group().toLowerCase(Locale.ROOT));
+
+    assertEquals(
+        Set.of(
+            "#0b0909", "#2e4540", "#408175", "#b5b9f0", "#c52f4f", "#c88900", "#2f6fa8", "#2f7d56"),
+        colors);
+    assertTrue(css.contains("--background: oklch(from var(--theme-lilac)"));
+    assertTrue(css.contains("--danger-surface: oklch(from var(--semantic-danger)"));
+  }
+
+  @Test
+  void given_responsiveUiStyles_when_readingCss_then_keepsNavigationAndTrackerControlsUsable()
+      throws Exception {
+    String css = Files.readString(Path.of("sources/toktrak/assets/public/main.css"));
+
+    assertTrue(
+        css.matches(
+            "(?s).*\\.site-header nav \\{[^}]*display: grid;[^}]*grid-template-columns: repeat\\(2,"
+                + " minmax\\(0, 1fr\\)\\);[^}]*\\}.*"));
+    assertFalse(css.matches("(?s).*\\.site-header nav \\{[^}]*overflow-x: auto;[^}]*\\}.*"));
+    assertTrue(
+        css.matches(
+            "(?s).*\\.token-list > li \\{[^}]*grid-template-columns: minmax\\(0, 1fr\\)"
+                + " auto;[^}]*\\}.*"));
+    assertTrue(
+        css.matches(
+            "(?s).*\\.token-list > li,\\s*\\.tracker-form-row,\\s*\\.token-copy"
+                + " \\{[^}]*grid-template-columns: 1fr;[^}]*\\}.*"));
+    assertTrue(css.matches("(?s).*\\.error-page \\{[^}]*width: calc\\(100% - 2rem\\);[^}]*\\}.*"));
+    assertTrue(css.contains(".viz-section > .table-wrap {\n  grid-column: 2 / -1;"));
+    assertTrue(css.contains(".scope-page:not(.tracker-page) > section {\n  display: grid;"));
+    assertTrue(
+        css.matches(
+            "(?s).*@media \\(max-width: 44rem\\) \\{.*\\.streams li \\{[^}]*grid-template-columns:"
+                + " 2.5rem minmax\\(0, 1fr\\);[^}]*\\}.*"));
   }
 
   @Test

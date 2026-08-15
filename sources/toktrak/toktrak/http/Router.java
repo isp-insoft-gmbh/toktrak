@@ -323,7 +323,9 @@ public final class Router implements HttpHandler {
           auth.identities().prepareTrackerToken(session.key(), form.get("label"));
       var view =
           new CreatedTokenView(
-              trackerBase("Tracker token created · TokTrak"), prepared.plaintext());
+              trackerBase("Tracker token created · TokTrak"),
+              prepared.plaintext(),
+              assets.publicUrl("clipboard.js"));
       byte[] body =
           render(
               CreatedTokenViewRenderer.of(),
@@ -645,6 +647,11 @@ public final class Router implements HttpHandler {
         title,
         assets.publicUrl("main.css"),
         assets.publicUrl("datastar.js"),
+        assets.publicUrl("favicon.svg"),
+        assets.publicUrl("logo-wordmark.svg"),
+        assets.publicUrl("logo-wordmark-dark.svg"),
+        assets.publicUrl("logo-lockup.svg"),
+        assets.publicUrl("logo-lockup-dark.svg"),
         devAuth,
         true,
         overviewCurrent,
@@ -662,6 +669,11 @@ public final class Router implements HttpHandler {
         title,
         assets.publicUrl("main.css"),
         assets.publicUrl("datastar.js"),
+        assets.publicUrl("favicon.svg"),
+        assets.publicUrl("logo-wordmark.svg"),
+        assets.publicUrl("logo-wordmark-dark.svg"),
+        assets.publicUrl("logo-lockup.svg"),
+        assets.publicUrl("logo-lockup-dark.svg"),
         devAuth,
         true,
         false,
@@ -679,6 +691,11 @@ public final class Router implements HttpHandler {
         title,
         assets.publicUrl("main.css"),
         assets.publicUrl("datastar.js"),
+        assets.publicUrl("favicon.svg"),
+        assets.publicUrl("logo-wordmark.svg"),
+        assets.publicUrl("logo-wordmark-dark.svg"),
+        assets.publicUrl("logo-lockup.svg"),
+        assets.publicUrl("logo-lockup-dark.svg"),
         devAuth,
         false,
         false,
@@ -899,6 +916,8 @@ public final class Router implements HttpHandler {
               method,
               path,
               assets.publicUrl("main.css"),
+              assets.publicUrl("favicon.svg"),
+              assets.publicUrl("logo-mark.svg"),
               failure,
               devAuth));
     }

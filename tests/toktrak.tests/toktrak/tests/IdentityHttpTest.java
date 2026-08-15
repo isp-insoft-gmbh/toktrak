@@ -35,7 +35,8 @@ final class IdentityHttpTest {
       URI base = URI.create("http://127.0.0.1:" + app.port());
       var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
       HttpResponse<String> signedOutHome = send(client, base.resolve("/"), "GET", null, null, null);
-      assertTrue(signedOutHome.body().contains(">Sign in</button>"), signedOutHome.body());
+      assertTrue(
+          signedOutHome.body().contains("href=\"/login\">Sign in</a>"), signedOutHome.body());
       assertFalse(signedOutHome.body().contains("Signed in"), signedOutHome.body());
       assertEquals(
           302, send(client, base.resolve("/tokens"), "GET", null, null, null).statusCode());
@@ -51,7 +52,7 @@ final class IdentityHttpTest {
       assertTrue(signedInHome.body().contains("Signed in"), signedInHome.body());
       assertNavigation(signedInHome.body(), "/", "Overview");
       assertTrue(signedInHome.body().contains("EUR unavailable · showing USD"));
-      assertFalse(signedInHome.body().contains(">Sign in</button>"), signedInHome.body());
+      assertFalse(signedInHome.body().contains("href=\"/login\">Sign in</a>"), signedInHome.body());
 
       HttpResponse<String> page = send(client, base.resolve("/tokens"), "GET", cookie, null, null);
       assertEquals(200, page.statusCode());
@@ -88,6 +89,9 @@ final class IdentityHttpTest {
               null);
       assertEquals(201, created.statusCode());
       assertNavigation(created.body(), "/tokens", "My Tracker");
+      assertTrue(created.body().contains("data-copy-token"));
+      assertTrue(
+          created.body().matches("(?s).*/assets/clipboard\\.[0-9a-f]{32}\\.js.*"), created.body());
       String token = match(TOKEN, created.body());
       assertFalse(created.headers().firstValue("Cache-Control").orElseThrow().contains("public"));
 
@@ -126,7 +130,9 @@ final class IdentityHttpTest {
               .statusCode());
       HttpResponse<String> revokedPage =
           send(client, base.resolve("/tokens"), "GET", cookie, null, null);
-      assertTrue(revokedPage.body().contains("· revoked"), revokedPage.body());
+      assertTrue(
+          revokedPage.body().contains("<span class=\"token-status\">revoked</span>"),
+          revokedPage.body());
       assertFalse(
           revokedPage.body().contains("name=\"tokenId\" value=\"" + tokenId), revokedPage.body());
       assertEquals(

@@ -1,10 +1,14 @@
 {{<base.mustache}}
 {{$content}}
-  <div class="scope-page">
+  <div class="scope-page tracker-page">
     <h1>Tracker token created</h1>
-    <p>Copy this token now. It will not be shown again.</p>
-    <pre>{{plaintext}}</pre>
-    <p><a href="/tokens">Return to My Tracker</a></p>
+    <p class="lede">Copy this token now. It will not be shown again.</p>
+    <div class="token-copy">
+      <pre id="tracker-token" class="token-secret">{{plaintext}}</pre>
+      <button type="button" data-copy-token aria-controls="tracker-token">Copy token</button>
+    </div>
+    <p><a class="button-link button-secondary" href="/tokens">Return to My Tracker</a></p>
+    <script type="module" src="{{clipboardUrl}}"></script>
   </div>
 {{/content}}
 {{/base.mustache}}

@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import toktrak.http.BaseView;
+import toktrak.http.CreatedTokenView;
 import toktrak.http.HomeViewRenderer;
 import toktrak.http.HttpSupport;
 import toktrak.http.TokenListView;
@@ -19,11 +20,26 @@ import toktrak.http.TokenListViewRenderer;
 final class RenderingTest {
   private static final String STYLESHEET = "/assets/main.0123456789abcdef0123456789abcdef.css";
   private static final String DATASTAR = "/assets/datastar.0123456789abcdef0123456789abcdef.js";
+  private static final String CLIPBOARD = "/assets/clipboard.0123456789abcdef0123456789abcdef.js";
+  private static final String FAVICON = "/assets/favicon.0123456789abcdef0123456789abcdef.svg";
+  private static final String LOGO_WORDMARK =
+      "/assets/logo-wordmark.0123456789abcdef0123456789abcdef.svg";
+  private static final String LOGO_WORDMARK_DARK =
+      "/assets/logo-wordmark-dark.0123456789abcdef0123456789abcdef.svg";
+  private static final String LOGO_LOCKUP =
+      "/assets/logo-lockup.0123456789abcdef0123456789abcdef.svg";
+  private static final String LOGO_LOCKUP_DARK =
+      "/assets/logo-lockup-dark.0123456789abcdef0123456789abcdef.svg";
   private static final BaseView TOKEN_BASE =
       new BaseView(
           "My Tracker · TokTrak",
           STYLESHEET,
           DATASTAR,
+          FAVICON,
+          LOGO_WORDMARK,
+          LOGO_WORDMARK_DARK,
+          LOGO_LOCKUP,
+          LOGO_LOCKUP_DARK,
           false,
           true,
           false,
@@ -122,25 +138,100 @@ final class RenderingTest {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new BaseView(
-                "TokTrak",
+            baseView(
                 "https://evil.example/x.css",
-                DATASTAR,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                true,
-                "",
-                ""));
+                FAVICON,
+                LOGO_WORDMARK,
+                LOGO_WORDMARK_DARK,
+                LOGO_LOCKUP,
+                LOGO_LOCKUP_DARK));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            baseView(
+                STYLESHEET,
+                "/favicon.svg",
+                LOGO_WORDMARK,
+                LOGO_WORDMARK_DARK,
+                LOGO_LOCKUP,
+                LOGO_LOCKUP_DARK));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            baseView(
+                STYLESHEET,
+                FAVICON,
+                "/logo-wordmark.svg",
+                LOGO_WORDMARK_DARK,
+                LOGO_LOCKUP,
+                LOGO_LOCKUP_DARK));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            baseView(
+                STYLESHEET,
+                FAVICON,
+                LOGO_WORDMARK,
+                "/logo-wordmark-dark.svg",
+                LOGO_LOCKUP,
+                LOGO_LOCKUP_DARK));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            baseView(
+                STYLESHEET,
+                FAVICON,
+                LOGO_WORDMARK,
+                LOGO_WORDMARK_DARK,
+                "/logo-lockup.svg",
+                LOGO_LOCKUP_DARK));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            baseView(
+                STYLESHEET,
+                FAVICON,
+                LOGO_WORDMARK,
+                LOGO_WORDMARK_DARK,
+                LOGO_LOCKUP,
+                "/logo-lockup-dark.svg"));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             new TokenListView(
                 TOKEN_BASE, "csrf", List.of(), 1, true, "https://evil.example/tokens", false, ""));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new CreatedTokenView(TOKEN_BASE, "tt_" + "A".repeat(43), "/clipboard.js"));
+    assertDoesNotThrow(() -> new CreatedTokenView(TOKEN_BASE, "tt_" + "A".repeat(43), CLIPBOARD));
+  }
+
+  private static BaseView baseView(
+      String stylesheet,
+      String favicon,
+      String logoWordmark,
+      String logoWordmarkDark,
+      String logoLockup,
+      String logoLockupDark) {
+    return new BaseView(
+        "TokTrak",
+        stylesheet,
+        DATASTAR,
+        favicon,
+        logoWordmark,
+        logoWordmarkDark,
+        logoLockup,
+        logoLockupDark,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        "",
+        "");
   }
 
   private record FixedSizeRenderer(int size) implements Template.EncodedTemplate<String> {
