@@ -11,6 +11,7 @@ import java.util.UUID;
 
 public record EventEnvelope(
     UUID id, Instant at, String type, int schemaVersion, String actor, Map<String, Object> data) {
+  private static final int SCHEMA_VERSION = 1;
   private static final int TYPE_BYTES_MAX = 128;
   private static final int ACTOR_BYTES_MAX = 256;
   private static final int DATA_ENTRIES_MAX = 1_024;
@@ -27,6 +28,8 @@ public record EventEnvelope(
     requireUtf8Length(type, TYPE_BYTES_MAX, "event type");
     if (schemaVersion <= 0)
       throw new IllegalArgumentException("event schema version must be positive");
+    if (schemaVersion != SCHEMA_VERSION)
+      throw new IllegalArgumentException("unsupported event schema version: " + schemaVersion);
     if (actor != null) requireUtf8Length(actor, ACTOR_BYTES_MAX, "event actor");
     Objects.requireNonNull(data, "data");
     if (data.size() > DATA_ENTRIES_MAX) {
@@ -39,8 +42,8 @@ public record EventEnvelope(
 
   public static EventEnvelope create(
       String type, Instant at, String actor, Map<String, Object> data) {
-    var event = new EventEnvelope(UUID.randomUUID(), at, type, 1, actor, data);
-    assert event.schemaVersion == 1;
+    var event = new EventEnvelope(UUID.randomUUID(), at, type, SCHEMA_VERSION, actor, data);
+    assert event.schemaVersion == SCHEMA_VERSION;
     return event;
   }
 

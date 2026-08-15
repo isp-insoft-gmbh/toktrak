@@ -29,6 +29,11 @@ final class EventEnvelopeTest {
             IllegalArgumentException.class,
             () -> new EventEnvelope(UUID.randomUUID(), AT, "event", 0, "system", Map.of()));
     assertEquals("event schema version must be positive", exception.getMessage());
+    exception =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new EventEnvelope(UUID.randomUUID(), AT, "event", 2, "system", Map.of()));
+    assertEquals("unsupported event schema version: 2", exception.getMessage());
   }
 
   @Test

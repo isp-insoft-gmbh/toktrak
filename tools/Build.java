@@ -107,10 +107,23 @@ public final class Build {
       Pattern.compile("[a-z0-9][a-z0-9-]*(?:/[a-z0-9][a-z0-9-]*)*\\.mustache");
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
+  private static final Path GOLEM_SCRIPT = ROOT.resolve("tools/golem.mjs");
+  private static final List<Path> GOLEM_TEST_SOURCES =
+      List.of(
+          ROOT.resolve("tools/golem.test.mjs"),
+          ROOT.resolve(".claude/skills/file-upload/scripts/upload.test.mjs"));
   private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
   private static final List<Path> REPOSITORY_SKILLS =
       List.of(
-          ROOT.resolve(".claude/skills/mustache"), ROOT.resolve(".claude/skills/toktrak-jstachio"));
+          ROOT.resolve(".claude/skills/mustache"),
+          ROOT.resolve(".claude/skills/toktrak-jstachio"),
+          ROOT.resolve(".claude/skills/modern-css"),
+          ROOT.resolve(".claude/skills/toktrak-quality"),
+          ROOT.resolve(".claude/skills/toktrak-refaster"),
+          ROOT.resolve(".claude/skills/git-workflow"),
+          ROOT.resolve(".claude/skills/gh-cli"),
+          ROOT.resolve(".claude/skills/make-pr"),
+          ROOT.resolve(".claude/skills/file-upload"));
   private static final long FILE_BYTES_MAX = 512L * 1024 * 1024;
   private static final int TREE_ENTRIES_MAX = 100_000;
   private static final int ASSET_COUNT_MAX = 64;
@@ -1964,7 +1977,21 @@ public final class Build {
   private static void check() throws Exception {
     format(false, List.of());
     validateRepositorySkills();
+    runGolemDefinitionCheck();
     compile();
+  }
+
+  private static void runGolemDefinitionCheck() throws Exception {
+    runProcess(
+        new ProcessBuilder("node", GOLEM_SCRIPT.toString(), "check").directory(ROOT.toFile()));
+  }
+
+  private static void runGolemTests() throws Exception {
+    var command = new ArrayList<String>();
+    command.add("node");
+    command.add("--test");
+    command.addAll(GOLEM_TEST_SOURCES.stream().map(Path::toString).toList());
+    runProcess(new ProcessBuilder(command).directory(ROOT.toFile()));
   }
 
   private static void validateRepositorySkills() throws IOException {
@@ -1986,8 +2013,9 @@ public final class Build {
         }
       }
     }
-    Path mustacheReference = REPOSITORY_SKILLS.get(0).resolve("references/spec.md");
-    Path jstachioReference = REPOSITORY_SKILLS.get(1).resolve("references/integration.md");
+    Path mustacheReference = ROOT.resolve(".claude/skills/mustache/references/spec.md");
+    Path jstachioReference =
+        ROOT.resolve(".claude/skills/toktrak-jstachio/references/integration.md");
     requireFile(mustacheReference);
     requireFile(jstachioReference);
     String references =
@@ -2374,6 +2402,10 @@ public final class Build {
       System.out.println("usage: mise run test [test files or directories...]");
       return;
     }
+    if (paths.size() == 1 && GOLEM_TEST_SOURCES.contains(ROOT.resolve(paths.getFirst()))) {
+      runGolemTests();
+      return;
+    }
     test(paths);
   }
 
@@ -2478,6 +2510,7 @@ public final class Build {
 
   private static void verify() throws Exception {
     check();
+    runGolemTests();
     runTests(testSelection(List.of()));
   }
 

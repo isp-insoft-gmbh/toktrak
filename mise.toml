@@ -28,6 +28,15 @@ run = "java -ea tools/Build.java check"
 description = "Rerun checks when project files change"
 run = "mise watch --restart --watch . -- check"
 
+[tasks.golem-check]
+description = "Authenticate every configured golem harness, model, and thinking level"
+run = "node tools/golem.mjs auth-check"
+
+[tasks.golem]
+description = "Run one complete local golem lifecycle"
+raw_args = true
+run = "node tools/golem.mjs run"
+
 [tasks.test]
 description = "Run tests, optionally limited to test files or directories"
 raw_args = true

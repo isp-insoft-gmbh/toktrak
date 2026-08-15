@@ -48,6 +48,51 @@ layout, generated-code boundaries, and verification commands.
 The installer contains the one-time token. Do not share it. If it is lost,
 revoke it and create another.
 
+## Maintain with golems
+
+Local golems run one bounded maintenance task through Pi, Claude Code, or Codex
+CLI. Task definitions live in `.github/golems`; `_golem.md` supplies shared
+instructions. Each task explicitly declares its harness, model, thinking level,
+and weekday. `mise run check` validates their strict structure offline.
+
+Install and authenticate all three CLIs with their provider subscriptions:
+
+- Pi and Codex CLI use ChatGPT Pro authentication. Pi models must use the
+  `openai-codex/` provider; metered API fallback is forbidden.
+- Claude Code uses Claude Max authentication.
+- `gh` uses an account authorized for this repository.
+
+Then validate every configured combination and run one task:
+
+```sh
+mise run golem-check
+mise run golem bugs
+```
+
+A run uses the exact branch `golem/<task-id>`. It resumes one matching open pull
+request or removes a stale dedicated branch before fresh work. No useful change
+creates no remote state. Useful work is committed, checked for protected paths,
+published with guarded branch updates, labeled, and accepted only after the
+final `CI / ci` succeeds. Harness sessions are always ephemeral.
+
+Run from the clean, current default branch. On failure, inspect the printed
+error, the ignored `output/golems/<task-id>` worktree, its dedicated remote
+branch, and any open pull request. Resolve concurrent branch changes or review
+threads, then rerun the same task. Never repair failure by pushing `trunk`,
+merging the pull request, or editing `.system`, `.github/golems`, `.claude`,
+`.agents`, `.codex`, or `.pi` from a golem branch.
+
+Optional public review evidence uses only the seeded development corpus. Set
+`GATEBRIDGE_R2_ACCESS_KEY_ID`, `GATEBRIDGE_R2_SECRET_ACCESS_KEY`, and
+`GATEBRIDGE_R2_ENDPOINT` in the parent environment. The harness cannot read
+these credentials; the parent uploads files from `output/golem-evidence` after
+it exits.
+
+To change or add a task, edit one lowercase kebab-case `.md` file, run
+`mise run check`, then `mise run golem-check`. Tracked `.claude/skills` are
+canonical; Pi points to them through `.pi/settings.json`, Claude discovers them
+directly, and Codex follows the tracked `.agents/skills` bridge.
+
 ## Operate
 
 See [OPERATIONS.md](OPERATIONS.md) for production configuration, rootless Podman

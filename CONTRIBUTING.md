@@ -47,6 +47,16 @@ dev server before running build tasks; `mise run fmt` remains available.
 Read `.system/SYSTEM.md`, `.system/MISSION.md`, and `.system/RULES.md` before
 changing product behavior.
 
+## Persisted schema compatibility
+
+Assume every TokTrak deployment already contains durable production data. Every
+released event schema remains readable and migratable indefinitely. A schema
+change must document its transition, fail safely on unknown future versions, and
+add anonymized historical shapes to `tests/corpus/dev.jsonl`. Existing corpus
+tests must prove the complete development corpus still replays without loss,
+corruption, or reinterpretation. Never add production data or separate release
+fixtures.
+
 ## Generated code
 
 JStachio generates renderers from `sources/toktrak/templates` during
