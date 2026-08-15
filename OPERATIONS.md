@@ -119,7 +119,7 @@ mise run release
 
 The dry run performs local verification, runtime/image builds, and a rootless
 restart/persistence check without tags or remote writes. A release pushes only
-`$TOKTRAK_IMAGE_REPOSITORY:vN`; no `latest` tag exists.
+`$TOKTRAK_IMAGE_REPOSITORY:vN` and the matching Git tag; no `latest` tag exists.
 
 If image or Git-tag push fails, retain the local candidate tag and image, fix
 authentication or networking, and rerun `mise run release`. Recovery republishes
