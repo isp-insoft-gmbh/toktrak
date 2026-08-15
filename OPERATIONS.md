@@ -7,12 +7,24 @@ compression, authentication secrets, persistent-volume backups, and monitoring.
 
 - Rootless Podman on Linux, macOS, or Windows.
 - Node.js for the shown secret-generation command.
-- Access to `registry.isp-insoft.de/toktrak`.
+- Credentials for the configured OCI image repository.
 - A reverse proxy with public TLS.
 - A durable, backed-up volume writable by mapped container root.
 
 The image runs as container UID `0`; rootless user-namespace mapping keeps that
 user unprivileged on the host.
+
+## Image repository
+
+Configure the release checkout locally:
+
+```toml
+# mise.local.toml
+[env]
+TOKTRAK_IMAGE_REPOSITORY = "registry.example.com/team/toktrak"
+```
+
+This ignored file selects where image and release tasks tag and push images.
 
 ## Configuration
 
@@ -50,7 +62,7 @@ podman run -d --name toktrak --replace --restart=always \
   --env-file=$HOME/.config/toktrak/server.env \
   --volume=toktrak-data:/data \
   --publish=127.0.0.1:8080:8080 \
-  registry.isp-insoft.de/toktrak:v0
+  registry.example.com/team/toktrak:v0
 ```
 
 Proxy public HTTPS to host loopback port `8080`. Do not expose the container
@@ -107,7 +119,7 @@ mise run release
 
 The dry run performs local verification, runtime/image builds, and a rootless
 restart/persistence check without tags or remote writes. A release pushes only
-`registry.isp-insoft.de/toktrak:vN`; no `latest` tag exists.
+`$TOKTRAK_IMAGE_REPOSITORY:vN`; no `latest` tag exists.
 
 If image or Git-tag push fails, retain the local candidate tag and image, fix
 authentication or networking, and rerun `mise run release`. Recovery republishes

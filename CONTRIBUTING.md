@@ -13,6 +13,16 @@ Rootless Podman is required only for image, container, and release work. Start a
 Podman machine first on Windows or macOS. `mise run release` selects the
 rootless `podman-machine-default` connection automatically on Windows.
 
+Image and release tasks read the repository from ignored local config:
+
+```toml
+# mise.local.toml
+[env]
+TOKTRAK_IMAGE_REPOSITORY = "registry.example.com/team/toktrak"
+```
+
+Never commit `mise.local.toml`.
+
 ## Setup
 
 ```sh

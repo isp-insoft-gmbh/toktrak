@@ -88,6 +88,7 @@ public final class BuildTest {
     given_dirtyOrDivergedTree_when_checkingRelease_then_rejectsPreflight();
     given_changelogSections_when_checkingRelease_then_requiresExactNonemptySection();
     given_podmanImageIds_when_canonicalizing_then_acceptsOnlySha256();
+    given_imageRepositoryConfig_when_validating_then_acceptsCanonicalRepositories();
     given_productionRuntime_when_selectingRoots_then_includesManagementAndDiagnostics();
     given_controlledGitAndPodman_when_runningReleaseMutations_then_preservesOrderAndRedactsFailure();
     given_testGroups_when_selectingTimeouts_then_returnsConfiguredDurations();
@@ -1247,6 +1248,25 @@ public final class BuildTest {
     expectFailure(
         () -> Build.canonicalImageIdForTest("sha512:" + digest),
         "Podman returned invalid image ID");
+  }
+
+  private static void
+      given_imageRepositoryConfig_when_validating_then_acceptsCanonicalRepositories() {
+    for (String repository :
+        List.of("localhost/toktrak", "localhost:5000/toktrak", "ghcr.io/isp-insoft-gmbh/toktrak")) {
+      if (!Build.imageRepositoryForTest(repository).equals(repository)) {
+        throw new AssertionError("image repository changed: " + repository);
+      }
+    }
+    for (String repository :
+        List.of(
+            "", "TokTrak/image", "registry.example/image:v0", "registry.example/image@sha256")) {
+      expectFailure(() -> Build.imageRepositoryForTest(repository), "TOKTRAK_IMAGE_REPOSITORY");
+    }
+    expectFailure(() -> Build.imageRepositoryForTest(null), "TOKTRAK_IMAGE_REPOSITORY is required");
+    expectFailure(
+        () -> Build.imageRepositoryForTest("localhost:99999/toktrak"),
+        "TOKTRAK_IMAGE_REPOSITORY has an invalid registry port");
   }
 
   private static void

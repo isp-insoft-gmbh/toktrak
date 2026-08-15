@@ -173,7 +173,7 @@ public final class Build {
           "release",
           "test",
           "verify");
-  private static final String IMAGE_REPOSITORY = "registry.isp-insoft.de/toktrak";
+  private static final String IMAGE_REPOSITORY_ENV = "TOKTRAK_IMAGE_REPOSITORY";
   private static final String IMAGE_VERSION_LABEL = "org.opencontainers.image.version";
   private static final String IMAGE_REVISION_LABEL = "org.opencontainers.image.revision";
   private static final Set<String> BUILD_OWNED_PIT_OPTIONS =
@@ -3177,9 +3177,43 @@ public final class Build {
     throw new IllegalStateException("Podman returned invalid image ID");
   }
 
+  static String imageRepositoryForTest(String value) {
+    return requireImageRepository(value);
+  }
+
+  private static String imageRepository() {
+    return requireImageRepository(System.getenv(IMAGE_REPOSITORY_ENV));
+  }
+
+  private static String requireImageRepository(String value) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalStateException(
+          IMAGE_REPOSITORY_ENV + " is required; define it in mise.local.toml");
+    }
+    if (value.length() > 512) {
+      throw new IllegalStateException(IMAGE_REPOSITORY_ENV + " exceeds 512 characters");
+    }
+    String[] segments = value.split("/", -1);
+    if (segments.length < 2
+        || !segments[0].matches("[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?")) {
+      throw new IllegalStateException(IMAGE_REPOSITORY_ENV + " is not a canonical OCI repository");
+    }
+    int colon = segments[0].lastIndexOf(':');
+    if (colon >= 0 && Integer.parseInt(segments[0].substring(colon + 1)) > 65_535) {
+      throw new IllegalStateException(IMAGE_REPOSITORY_ENV + " has an invalid registry port");
+    }
+    for (int index = 1; index < segments.length; index++) {
+      if (!segments[index].matches("[a-z0-9]+(?:[._-][a-z0-9]+)*")) {
+        throw new IllegalStateException(
+            IMAGE_REPOSITORY_ENV + " is not a canonical OCI repository");
+      }
+    }
+    return value;
+  }
+
   private static String imageReference(int version) {
     assert version >= 0;
-    return IMAGE_REPOSITORY + ":v" + version;
+    return imageRepository() + ":v" + version;
   }
 
   private static void containerVerify(String image, int version, String revision) throws Exception {
