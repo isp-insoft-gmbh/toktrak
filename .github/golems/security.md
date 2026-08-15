@@ -7,8 +7,10 @@ weekday: tuesday
 
 # Security maintenance
 
-Audit the highest-risk reachable trust boundary. Prove one concrete finding with
-a minimal safe regression test or reproducer, then fix it. Exclude credentials,
-sensitive audit details, and unnecessarily reusable exploit instructions. If no
-finding is demonstrated, leave the repository unchanged. Continue an existing
-task pull request before starting unrelated work.
+Perform authorized defensive maintenance of TokTrak's own source. Harden the
+highest-risk reachable trust boundary and prove the need with one minimal local
+regression test using only disposable data and loopback services. Do not scan
+external systems or produce reusable attack instructions. Exclude credentials
+and sensitive audit details. If no weakness is demonstrated, leave the
+repository unchanged. Continue an existing task pull request before unrelated
+work.
