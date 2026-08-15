@@ -3,7 +3,7 @@ id: TT-PHASE-QMSEORWV
 type: phase
 title: CI golem automation
 spec: TT-SPEC-TGXDSNMR
-status: draft
+status: done
 depends_on:
   - TT-PHASE-QOEO5T6G
 ---

@@ -26,6 +26,9 @@ const SECRET_ENVIRONMENT = [
   "GATEBRIDGE_R2_ACCESS_KEY_ID",
   "GATEBRIDGE_R2_SECRET_ACCESS_KEY",
   "GATEBRIDGE_R2_ENDPOINT",
+  "GOLEM_AUTH_CACHE_KEY",
+  "GOLEM_AUTH_SEED",
+  "TOKTRAK_AGENT_APP_PRIVATE_KEY",
 ];
 const METADATA_START = "<!-- golem-metadata:start -->";
 const METADATA_END = "<!-- golem-metadata:end -->";
@@ -286,7 +289,10 @@ export const harnessArguments = (task, validation = false) => {
 const requireSubscription = (harness) => {
   if (harness === "claude") {
     const status = JSON.parse(captured("claude", ["auth", "status"], { operation: "Claude Code authentication check" }));
-    if (!status.loggedIn || status.authMethod !== "claude.ai" || status.subscriptionType !== "max") {
+    const setupToken = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim();
+    const validSetupTokenStatus = setupToken && status.loggedIn && status.authMethod === "oauth_token" && status.apiProvider === "firstParty";
+    const validLocalStatus = !setupToken && status.loggedIn && status.authMethod === "claude.ai" && status.subscriptionType === "max";
+    if (!validSetupTokenStatus && !validLocalStatus) {
       fail("Claude Code authentication must be an active Claude Max subscription");
     }
   }
@@ -297,6 +303,16 @@ const requireSubscription = (harness) => {
     });
     if (!status.includes("Logged in using ChatGPT")) fail("Codex must be logged in using ChatGPT Pro");
   }
+};
+
+export const selectedTasks = (tasks, id, weekday) => {
+  if (id) {
+    const task = tasks.get(id);
+    if (!task) fail(`unknown golem task ${id}; choose one of ${[...tasks.keys()].join(", ")}`);
+    return [task];
+  }
+  if (!WEEKDAYS.has(weekday)) fail(`invalid dispatch weekday ${weekday}`);
+  return [...tasks.values()].filter((task) => task.weekday === weekday);
 };
 
 export const authenticatedCheck = async (tasks) => {
@@ -328,7 +344,10 @@ export const authenticatedCheck = async (tasks) => {
         operation: `${task.file}: ${task.harness}/${task.model}/${task.thinking} authenticated validation`,
       });
     } catch (error) {
-      fail(`${task.file}: harness validation: ${error.message}; authenticate the configured subscription and verify model and thinking access`);
+      const remediation = task.harness === "claude" && process.env.CLAUDE_CODE_OAUTH_TOKEN
+        ? "renew GOLEM_CLAUDE_OAUTH_TOKEN with claude setup-token and verify model and thinking access"
+        : "authenticate the configured subscription and verify model and thinking access";
+      fail(`${task.file}: harness validation: ${error.message}; ${remediation}`);
     }
   }
 };
@@ -595,25 +614,35 @@ const publishRun = async (run) => {
 
 const runTask = (id) => runLifecycle(id, prepareRun, executeRun, publishRun);
 
+const usage = "usage: node tools/golem.mjs check | select [task-id] | auth-check [task-id] | run <task-id>";
+
 const main = async () => {
   const [command, id, ...extra] = process.argv.slice(2);
-  if (extra.length || !command) fail("usage: node tools/golem.mjs check | auth-check | run <task-id>");
+  if (extra.length || !command) fail(usage);
   if (command === "check" && !id) {
     const tasks = validateDefinitions();
     console.log(`validated ${tasks.size} golem tasks`);
     return;
   }
-  if (command === "auth-check" && !id) {
+  if (command === "select") {
+    const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const tasks = selectedTasks(validateDefinitions(), id, weekdays[new Date().getUTCDay()]);
+    const include = tasks.map(({ id: task, harness, model, thinking, weekday }) => ({ task, harness, model, thinking, weekday }));
+    console.log(JSON.stringify({ include: include.length ? include : [{ task: "", harness: "none", model: "none", thinking: "none", weekday: "none" }] }));
+    return;
+  }
+  if (command === "auth-check") {
     const tasks = validateDefinitions();
-    await authenticatedCheck(tasks);
-    console.log(`authenticated ${tasks.size} golem tasks`);
+    const selected = id ? new Map([[id, selectedTasks(tasks, id, "monday")[0]]]) : tasks;
+    await authenticatedCheck(selected);
+    console.log(`authenticated ${selected.size} golem task${selected.size === 1 ? "" : "s"}`);
     return;
   }
   if (command === "run" && id) {
     await runTask(id);
     return;
   }
-  fail("usage: node tools/golem.mjs check | auth-check | run <task-id>");
+  fail(usage);
 };
 
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -9,6 +11,7 @@ import {
   parseTask,
   protectedChanges,
   runLifecycle,
+  selectedTasks,
   streamed,
   validateDefinitions,
 } from "./golem.mjs";
@@ -99,6 +102,19 @@ test("rejects missing definition directory and common instructions", () => {
   }
 });
 
+test("selects one explicit task or every task due on a UTC weekday", () => {
+  const tasks = new Map([
+    ["bugs", { id: "bugs", weekday: "monday" }],
+    ["security", { id: "security", weekday: "tuesday" }],
+    ["docs", { id: "docs", weekday: "monday" }],
+  ]);
+  assert.deepEqual(selectedTasks(tasks, "security", "monday"), [tasks.get("security")]);
+  assert.deepEqual(selectedTasks(tasks, undefined, "monday"), [tasks.get("bugs"), tasks.get("docs")]);
+  assert.deepEqual(selectedTasks(tasks, undefined, "sunday"), []);
+  assert.throws(() => selectedTasks(tasks, "missing", "monday"), /unknown golem task/);
+  assert.throws(() => selectedTasks(tasks, undefined, "someday"), /invalid dispatch weekday/);
+});
+
 test("preserves preflight, harness, and publication command order", async () => {
   const commands = [];
   const result = await runLifecycle(
@@ -160,6 +176,51 @@ test("terminates the complete process tree on timeout", async () => {
       }
     }
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("encrypts, binds, and restores rotating subscription authentication", () => {
+  const home = mkdtempSync(join(tmpdir(), "toktrak-golem-auth-"));
+  const script = join(process.cwd(), "tools", "GolemAuth.java");
+  const cache = join(home, "pi.cache");
+  const secondCache = join(home, "pi-second.cache");
+  const secret = Buffer.from('{"openai-codex":{"type":"oauth","refresh":"secret"}}');
+  const key = randomBytes(32).toString("base64");
+  const run = (arguments_, environment) =>
+    spawnSync("java", ["-ea", `-Duser.home=${home}`, script, ...arguments_], {
+      encoding: "utf8",
+      env: { ...process.env, ...environment },
+      timeout: 30_000,
+    });
+  try {
+    const seeded = run(["seed", "pi"], { GOLEM_AUTH_SEED: secret.toString("base64") });
+    assert.equal(seeded.status, 0, seeded.stderr);
+    const authentication = join(home, ".pi", "agent", "auth.json");
+    assert.deepEqual(readFileSync(authentication), secret);
+    if (process.platform !== "win32") assert.equal(statSync(authentication).mode & 0o777, 0o600);
+
+    const encrypted = run(["encrypt", "pi", cache], { GOLEM_AUTH_CACHE_KEY: key });
+    const encryptedAgain = run(["encrypt", "pi", secondCache], { GOLEM_AUTH_CACHE_KEY: key });
+    assert.equal(encrypted.status, 0, encrypted.stderr);
+    assert.equal(encryptedAgain.status, 0, encryptedAgain.stderr);
+    assert.equal(readFileSync(cache).includes(secret), false);
+    assert.notDeepEqual(readFileSync(cache), readFileSync(secondCache));
+
+    rmSync(authentication);
+    const restored = run(["decrypt", "pi", cache], { GOLEM_AUTH_CACHE_KEY: key });
+    assert.equal(restored.status, 0, restored.stderr);
+    assert.deepEqual(readFileSync(authentication), secret);
+
+    const wrongProvider = run(["decrypt", "codex", cache], { GOLEM_AUTH_CACHE_KEY: key });
+    assert.notEqual(wrongProvider.status, 0);
+    assert.doesNotMatch(wrongProvider.stderr, /secret/);
+    const wrongKey = run(["decrypt", "pi", cache], {
+      GOLEM_AUTH_CACHE_KEY: randomBytes(32).toString("base64"),
+    });
+    assert.notEqual(wrongKey.status, 0);
+    assert.doesNotMatch(wrongKey.stderr, /secret/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
 });
 

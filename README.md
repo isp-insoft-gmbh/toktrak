@@ -93,6 +93,62 @@ To change or add a task, edit one lowercase kebab-case `.md` file, run
 canonical; Pi points to them through `.pi/settings.json`, Claude discovers them
 directly, and Codex follows the tracked `.agents/skills` bridge.
 
+### Golem CI
+
+`.github/workflows/golem.yml` dispatches due tasks daily at `09:17 UTC` and
+serializes every scheduled, manual, and reseed run. It installs the selected
+pinned harness on Blacksmith, validates runner `gh >= 2.70.0`, and delegates the
+full lifecycle to `tools/golem.mjs`. Each task job stops after 45 minutes.
+
+Install a repository-scoped GitHub App with write access to contents and pull
+requests, read access to actions, checks, commit statuses, and issues, and no
+workflow permission. Store its numeric App ID and private key as
+`TOKTRAK_AGENT_APP_ID` and `TOKTRAK_AGENT_APP_PRIVATE_KEY` repository secrets.
+The workflow mints a short-lived token and derives the bot Git identity.
+
+Create the AES-256 cache key once:
+
+```sh
+node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64"))' | gh secret set GOLEM_AUTH_CACHE_KEY
+```
+
+Pi and Codex use separate encrypted rotating caches. To seed either from a
+trusted authenticated machine, store the current auth file, dispatch reseeding,
+confirm success, then delete the bootstrap secret:
+
+```sh
+node -e 'process.stdout.write(require("node:fs").readFileSync(require("node:path").join(require("node:os").homedir(), ".pi/agent/auth.json")).toString("base64"))' | gh secret set GOLEM_PI_AUTH_SEED
+gh workflow run golem.yml --ref trunk -f operation=reseed-pi -f task=bugs
+gh secret delete GOLEM_PI_AUTH_SEED
+
+node -e 'process.stdout.write(require("node:fs").readFileSync(require("node:path").join(require("node:os").homedir(), ".codex/auth.json")).toString("base64"))' | gh secret set GOLEM_CODEX_AUTH_SEED
+gh workflow run golem.yml --ref trunk -f operation=reseed-codex -f task=bugs
+gh secret delete GOLEM_CODEX_AUTH_SEED
+```
+
+Generate Claude's one-year subscription token with `claude setup-token`, then
+store it as `GOLEM_CLAUDE_OAUTH_TOKEN`. Renew it before expiry. Metered API keys
+are neither required nor permitted.
+
+Gatebridge evidence is optional. To enable it, store
+`GATEBRIDGE_R2_ACCESS_KEY_ID`, `GATEBRIDGE_R2_SECRET_ACCESS_KEY`, and
+`GATEBRIDGE_R2_ENDPOINT`. These credentials enter only the parent lifecycle; the
+harness environment removes them.
+
+Run an explicit task only from `trunk`:
+
+```sh
+gh workflow run golem.yml --ref trunk -f operation=run -f task=bugs
+```
+
+Use the job summary for selection, effective parameters, tool version, result,
+and run URL. A missing, stale, revoked, or corrupt Pi or Codex cache fails
+closed; create a fresh seed and dispatch the matching reseed operation. A Claude
+renewal error requires a new setup token. For branch, protected-path, review, or
+check failures, inspect the dedicated branch and pull request, repair the
+violation as a human, then rerun the same task. Never bypass the lifecycle by
+pushing `trunk` or merging the pull request.
+
 ## Operate
 
 See [OPERATIONS.md](OPERATIONS.md) for production configuration, rootless Podman
