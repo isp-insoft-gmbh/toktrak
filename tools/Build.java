@@ -2505,22 +2505,6 @@ public final class Build {
         .isEmpty();
   }
 
-  private static void terminateFromReader(
-      Process process, AtomicReference<IOException> readFailure) {
-    assert process != null;
-    assert readFailure != null;
-    try {
-      terminateForcibly(process, PROCESS_KILL_TIMEOUT);
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      readFailure.compareAndSet(
-          null, new IOException("interrupted while terminating process output", exception));
-    } catch (RuntimeException exception) {
-      readFailure.compareAndSet(
-          null, new IOException("cannot terminate process output", exception));
-    }
-  }
-
   private static void verify() throws Exception {
     check();
     runGolemTests();
@@ -4008,6 +3992,13 @@ public final class Build {
       throw new IllegalStateException("cannot start required tool: " + tool, exception);
     }
 
+    ToolResult result = awaitTool(process, name, timeout);
+    printCompletion(result.exitCode() == 0 ? "done" : "failed", System.nanoTime() - started, null);
+    return result;
+  }
+
+  private static ToolResult awaitTool(Process process, String name, Duration timeout)
+      throws InterruptedException {
     var output = new AtomicReference<byte[]>();
     var readFailure = new AtomicReference<IOException>();
     Thread reader =
@@ -4047,20 +4038,36 @@ public final class Build {
     if (bytes.length > TOOL_OUTPUT_BYTES_MAX) {
       throw new IllegalStateException(name + " output exceeds " + TOOL_OUTPUT_BYTES_MAX + " bytes");
     }
-    String text;
+    return new ToolResult(exitCode, decodeToolOutput(name, bytes));
+  }
+
+  private static void terminateFromReader(
+      Process process, AtomicReference<IOException> readFailure) {
+    assert process != null;
+    assert readFailure != null;
     try {
-      text =
-          StandardCharsets.UTF_8
-              .newDecoder()
-              .onMalformedInput(CodingErrorAction.REPORT)
-              .onUnmappableCharacter(CodingErrorAction.REPORT)
-              .decode(ByteBuffer.wrap(bytes))
-              .toString();
+      terminateForcibly(process, PROCESS_KILL_TIMEOUT);
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      readFailure.compareAndSet(
+          null, new IOException("interrupted while terminating process output", exception));
+    } catch (RuntimeException exception) {
+      readFailure.compareAndSet(
+          null, new IOException("cannot terminate process output", exception));
+    }
+  }
+
+  private static String decodeToolOutput(String name, byte[] bytes) {
+    try {
+      return StandardCharsets.UTF_8
+          .newDecoder()
+          .onMalformedInput(CodingErrorAction.REPORT)
+          .onUnmappableCharacter(CodingErrorAction.REPORT)
+          .decode(ByteBuffer.wrap(bytes))
+          .toString();
     } catch (CharacterCodingException exception) {
       throw new IllegalStateException(name + " output is not valid UTF-8", exception);
     }
-    printCompletion(exitCode == 0 ? "done" : "failed", System.nanoTime() - started, null);
-    return new ToolResult(exitCode, text);
   }
 
   static record ToolResult(int exitCode, String output) {

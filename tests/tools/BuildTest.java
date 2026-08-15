@@ -45,7 +45,14 @@ public final class BuildTest {
           StandardOpenOption.CREATE,
           StandardOpenOption.APPEND);
       System.out.print(args[2] + "-output");
-      if (args[3].equals("fail")) throw new IllegalStateException("controlled failure");
+      switch (args[3]) {
+        case "ok" -> {}
+        case "fail" -> throw new IllegalStateException("controlled failure");
+        case "oversized" -> System.out.write(new byte[1024 * 1024 + 1]);
+        case "malformed" -> System.out.write(0xC3);
+        default -> throw new IllegalArgumentException("unexpected fake-tool result: " + args[3]);
+      }
+      System.out.flush();
       return;
     }
     if (args.length != 0) throw new IllegalArgumentException("unexpected arguments");
@@ -93,6 +100,7 @@ public final class BuildTest {
     given_imageRepositoryConfig_when_validating_then_acceptsCanonicalRepositories();
     given_productionRuntime_when_selectingRoots_then_includesManagementAndDiagnostics();
     given_controlledGitAndPodman_when_runningReleaseMutations_then_preservesOrderAndRedactsFailure();
+    given_invalidToolOutput_when_runningTool_then_rejectsBoundAndEncoding();
     given_testGroups_when_selectingTimeouts_then_returnsConfiguredDurations();
     given_runningProcess_when_timeoutUsesForceOption_then_reportsTimeoutAndStopsProcess();
     given_runningProcess_when_timeoutExpires_then_terminatesProcess();
@@ -1370,6 +1378,21 @@ public final class BuildTest {
           throw new AssertionError("tool failure disclosed secret", exception);
         }
       }
+    } finally {
+      deleteTestTree(directory);
+    }
+  }
+
+  private static void given_invalidToolOutput_when_runningTool_then_rejectsBoundAndEncoding()
+      throws Exception {
+    Path directory = Files.createTempDirectory("toktrak-tool-output-");
+    Path log = directory.resolve("commands.log");
+    try {
+      expectFailure(
+          () -> runFakeTool(directory, log, "oversized", "oversized"),
+          "output exceeds 1048576 bytes");
+      expectFailure(
+          () -> runFakeTool(directory, log, "malformed", "malformed"), "output is not valid UTF-8");
     } finally {
       deleteTestTree(directory);
     }
