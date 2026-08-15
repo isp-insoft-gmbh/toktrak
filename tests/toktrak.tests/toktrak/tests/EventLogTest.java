@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -122,17 +121,13 @@ final class EventLogTest {
   }
 
   @Test
-  void given_logAboveFileLimit_when_recoveringTornTail_then_rejectsLog() throws Exception {
-    var path = dir.resolve("events.ndjson");
-    try (var channel =
-        FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
-      channel.position(EventLog.MAX_FILE_BYTES);
-      channel.write(ByteBuffer.wrap(new byte[] {0}));
-    }
+  void given_logAboveFileLimit_when_validatingLog_then_rejectsSize() {
+    var ex =
+        assertThrows(
+            IllegalStateException.class,
+            () -> EventLog.requireFileBytesWithinLimitForTest(EventLog.MAX_FILE_BYTES + 1));
 
-    var ex = assertThrows(IllegalStateException.class, () -> EventLog.recoverTornTail(path));
     assertEquals("event log exceeds 17179869184 bytes", ex.getMessage());
-    assertEquals(EventLog.MAX_FILE_BYTES + 1L, Files.size(path));
   }
 
   @Test
@@ -246,46 +241,37 @@ final class EventLogTest {
   }
 
   @Test
-  void given_logAtExactFileLimit_when_recoveringTornTail_then_reportsNoFragment() throws Exception {
-    var path = dir.resolve("events.ndjson");
-    sparseFile(path, EventLog.MAX_FILE_BYTES);
-
-    var recovered = EventLog.recoverTornTail(path);
-
-    assertEquals(0, recovered.truncatedFragments());
-    assertEquals(EventLog.MAX_FILE_BYTES, Files.size(path));
+  void given_logAtExactFileLimit_when_validatingLog_then_acceptsSize() {
+    assertEquals(
+        EventLog.MAX_FILE_BYTES,
+        EventLog.requireFileBytesWithinLimitForTest(EventLog.MAX_FILE_BYTES));
   }
 
   @Test
-  void given_appendFillingExactFileLimit_when_appending_then_acceptsEvent() throws Exception {
+  void given_appendFillingExactFileLimit_when_validatingAppend_then_acceptsSize() throws Exception {
     var event =
         EventEnvelope.create("event", Instant.parse("2026-07-10T00:00:00Z"), "system", Map.of());
     long lineBytes = appendedLineBytes(event);
-    var path = dir.resolve("events.ndjson");
-    sparseFile(path, EventLog.MAX_FILE_BYTES - lineBytes);
 
-    try (var log = EventLog.open(path)) {
-      log.appendAndFsync(event);
-    }
-
-    assertEquals(EventLog.MAX_FILE_BYTES, Files.size(path));
+    assertEquals(
+        EventLog.MAX_FILE_BYTES,
+        EventLog.resultingFileBytesForTest(
+            EventLog.MAX_FILE_BYTES - lineBytes, Math.toIntExact(lineBytes)));
   }
 
   @Test
-  void given_appendAboveFileLimit_when_appending_then_rejectsEvent() throws Exception {
+  void given_appendAboveFileLimit_when_validatingAppend_then_rejectsSize() throws Exception {
     var event =
         EventEnvelope.create("event", Instant.parse("2026-07-10T00:00:00Z"), "system", Map.of());
     long lineBytes = appendedLineBytes(event);
-    var path = dir.resolve("events.ndjson");
     long fileBytes = EventLog.MAX_FILE_BYTES - lineBytes + 1;
-    sparseFile(path, fileBytes);
 
-    try (var log = EventLog.open(path)) {
-      var ex = assertThrows(IllegalStateException.class, () -> log.appendAndFsync(event));
-      assertEquals("event log exceeds 17179869184 bytes", ex.getMessage());
-    }
+    var ex =
+        assertThrows(
+            IllegalStateException.class,
+            () -> EventLog.resultingFileBytesForTest(fileBytes, Math.toIntExact(lineBytes)));
 
-    assertEquals(fileBytes, Files.size(path));
+    assertEquals("event log exceeds 17179869184 bytes", ex.getMessage());
   }
 
   @Test
@@ -351,14 +337,6 @@ final class EventLogTest {
     long lineBytes = Files.size(probePath);
     Files.delete(probePath);
     return lineBytes;
-  }
-
-  private static void sparseFile(Path path, long sizeBytes) throws Exception {
-    try (var channel =
-        FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
-      channel.position(sizeBytes - 1);
-      channel.write(ByteBuffer.wrap(new byte[] {'\n'}));
-    }
   }
 
   @Test

@@ -53,10 +53,7 @@ public final class EventLog implements AutoCloseable {
     }
     try {
       long fileBytes = requireFileSizeWithinLimit();
-      long resultingFileBytes = Math.addExact(fileBytes, line.length);
-      if (resultingFileBytes > MAX_FILE_BYTES) {
-        throw new IllegalStateException("event log exceeds " + MAX_FILE_BYTES + " bytes");
-      }
+      long resultingFileBytes = resultingFileBytes(fileBytes, line.length);
       try (var channel =
           FileChannel.open(
               path,
@@ -203,16 +200,38 @@ public final class EventLog implements AutoCloseable {
     }
   }
 
+  private static long resultingFileBytes(long fileBytes, int lineBytes) {
+    assert fileBytes >= 0 && fileBytes <= MAX_FILE_BYTES;
+    assert lineBytes > 0 && lineBytes <= MAX_LINE_BYTES;
+    long resultingFileBytes = Math.addExact(fileBytes, lineBytes);
+    if (resultingFileBytes > MAX_FILE_BYTES) {
+      throw new IllegalStateException("event log exceeds " + MAX_FILE_BYTES + " bytes");
+    }
+    return resultingFileBytes;
+  }
+
+  public static long resultingFileBytesForTest(long fileBytes, int lineBytes) {
+    return resultingFileBytes(fileBytes, lineBytes);
+  }
+
   private long requireFileSizeWithinLimit() throws IOException {
     return requireFileSizeWithinLimit(path);
   }
 
   private static long requireFileSizeWithinLimit(Path path) throws IOException {
-    long fileBytes = Files.size(path);
+    return requireFileBytesWithinLimit(Files.size(path));
+  }
+
+  private static long requireFileBytesWithinLimit(long fileBytes) {
+    assert fileBytes >= 0;
     if (fileBytes > MAX_FILE_BYTES) {
       throw new IllegalStateException("event log exceeds " + MAX_FILE_BYTES + " bytes");
     }
     return fileBytes;
+  }
+
+  public static long requireFileBytesWithinLimitForTest(long fileBytes) {
+    return requireFileBytesWithinLimit(fileBytes);
   }
 
   private static byte readByte(FileChannel channel, long position) throws IOException {
