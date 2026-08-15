@@ -242,6 +242,9 @@ mise run release --dry-run
 mise run release
 ```
 
+Windows Podman defaults to its rootful connection. Use
+`mise run release-windows --dry-run` and `mise run release-windows` instead.
+
 The dry run performs verification, runtime/image builds, and a rootless
 restart/persistence check without tags or remote writes. A release pushes only
 `registry.isp-insoft.de/toktrak:vN`; no `latest` tag exists.

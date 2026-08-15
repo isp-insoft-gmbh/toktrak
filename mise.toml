@@ -91,3 +91,9 @@ run = "java -ea tools/Build.java container-verify"
 description = "Verify and publish the next immutable integer release"
 raw_args = true
 run = "java -ea tools/Build.java release"
+
+[tasks.release-windows]
+description = "Release through the rootless Windows Podman machine"
+raw_args = true
+env = { CONTAINER_CONNECTION = "podman-machine-default" }
+run = "java -ea tools/Build.java release"
