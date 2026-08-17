@@ -802,7 +802,9 @@ public final class Router implements HttpHandler {
   private static long revision(String query) {
     if (query == null) return 0;
     Map<String, String> fields = toktrak.auth.OidcClient.parseForm(query);
-    if (!fields.keySet().equals(java.util.Set.of("revision"))) {
+    if (!java.util.Set.of("revision", "datastar").containsAll(fields.keySet())
+        || !fields.containsKey("revision")
+        || !fields.getOrDefault("datastar", "{}").equals("{}")) {
       throw new IllegalArgumentException("query is invalid");
     }
     String value = fields.get("revision");
