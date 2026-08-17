@@ -316,12 +316,36 @@ export const selectedTasks = (tasks, id, weekday) => {
   return [...tasks.values()].filter((task) => task.weekday === weekday);
 };
 
-export const authenticatedCheck = async (tasks) => {
+export const authCheckTargets = (tasks) => {
+  const targets = new Map();
+  for (const task of tasks.values()) {
+    if (!targets.has(task.harness)) targets.set(task.harness, task);
+  }
+  return new Map([...targets.values()].map((task) => [task.id, task]));
+};
+
+const hasHarnessExecutable = (harness) => {
+  const command = process.platform === "win32" && harness === "pi" ? "pi.cmd" : harness;
+  const result = process.platform === "win32"
+    ? spawnSync("where.exe", [command], { encoding: "utf8", windowsHide: true })
+    : spawnSync("sh", ["-c", `command -v ${command}`], { encoding: "utf8" });
+  return result.status === 0;
+};
+
+export const authenticatedCheck = async (tasks, { allowMissingHarness = false } = {}) => {
+  let checked = 0;
+  let skipped = 0;
   const combinations = new Map();
   for (const task of tasks.values()) {
     combinations.set(`${task.harness}\0${task.model}\0${task.thinking}`, task);
   }
   for (const task of combinations.values()) {
+    if (!hasHarnessExecutable(task.harness)) {
+      if (!allowMissingHarness) fail(`${task.file}: ${task.harness} executable is missing; install the configured harness`);
+      console.warn(`${task.file}: warning: ${task.harness} executable is missing; skipping authentication`);
+      skipped += 1;
+      continue;
+    }
     requireSubscription(task.harness);
     if (task.harness === "pi") {
       const catalog = captured("pi", ["--list-models", task.model], {
@@ -344,6 +368,7 @@ export const authenticatedCheck = async (tasks) => {
         timeout: 5 * 60 * 1000,
         operation: `${task.file}: ${task.harness}/${task.model}/${task.thinking} authenticated validation`,
       });
+      checked += 1;
     } catch (error) {
       const remediation = task.harness === "claude" && process.env.CLAUDE_CODE_OAUTH_TOKEN
         ? "renew GOLEM_CLAUDE_OAUTH_TOKEN with claude setup-token and verify model and thinking access"
@@ -351,6 +376,7 @@ export const authenticatedCheck = async (tasks) => {
       fail(`${task.file}: harness validation: ${error.message}; ${remediation}`);
     }
   }
+  return { checked, skipped };
 };
 
 const git = (args, cwd = ROOT, operation = "Git") => captured("git", args, { cwd, operation, timeout: 10 * 60 * 1000 });
@@ -635,9 +661,9 @@ const main = async () => {
   }
   if (command === "auth-check") {
     const tasks = validateDefinitions();
-    const selected = id ? new Map([[id, selectedTasks(tasks, id, "monday")[0]]]) : tasks;
-    await authenticatedCheck(selected);
-    console.log(`authenticated ${selected.size} golem task${selected.size === 1 ? "" : "s"}`);
+    const selected = id ? new Map([[id, selectedTasks(tasks, id, "monday")[0]]]) : authCheckTargets(tasks);
+    const result = await authenticatedCheck(selected, { allowMissingHarness: process.env.GITHUB_ACTIONS !== "true" });
+    console.log(`authenticated ${result.checked} golem harness${result.checked === 1 ? "" : "es"}${result.skipped ? `; skipped ${result.skipped} missing` : ""}`);
     return;
   }
   if (command === "run" && id) {

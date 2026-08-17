@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
+  authCheckTargets,
   evidenceBody,
   harnessArguments,
   runDetailsBody,
@@ -114,6 +115,16 @@ test("selects one explicit task or every task due on a UTC weekday", () => {
   assert.deepEqual(selectedTasks(tasks, undefined, "sunday"), []);
   assert.throws(() => selectedTasks(tasks, "missing", "monday"), /unknown golem task/);
   assert.throws(() => selectedTasks(tasks, undefined, "someday"), /invalid dispatch weekday/);
+});
+
+test("selects one authentication target per harness", () => {
+  const tasks = new Map([
+    ["bugs", { id: "bugs", harness: "pi" }],
+    ["docs", { id: "docs", harness: "pi" }],
+    ["qa", { id: "qa", harness: "claude" }],
+    ["security", { id: "security", harness: "codex" }],
+  ]);
+  assert.deepEqual([...authCheckTargets(tasks).keys()], ["bugs", "qa", "security"]);
 });
 
 test("preserves preflight, harness, and publication command order", async () => {

@@ -29,7 +29,12 @@ description = "Rerun checks when project files change"
 run = "mise watch --restart --watch . -- check"
 
 [tasks.golem-check]
-description = "Authenticate every configured golem harness, model, and thinking level"
+description = "Validate golem definition files"
+run = "node tools/golem.mjs check"
+
+[tasks.golem-auth-check]
+description = "Authenticate one configured task or one task per harness"
+raw_args = true
 run = "node tools/golem.mjs auth-check"
 
 [tasks.golem]
