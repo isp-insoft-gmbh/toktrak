@@ -208,7 +208,13 @@ public final class BuildTest {
     try {
       for (String directory :
           List.of(
-              "sources/toktrak", "tests/toktrak.tests", "tools/refaster", "tests/tools", "deps")) {
+              "sources/toktrak",
+              "tests/toktrak.tests",
+              "tools/refaster",
+              "tools/perf",
+              "tests/tools",
+              "deps",
+              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http")) {
         Files.createDirectories(root.resolve(directory));
       }
       for (String file :
@@ -216,10 +222,13 @@ public final class BuildTest {
               "sources/toktrak/module-info.java",
               "tests/toktrak.tests/module-info.java",
               "tools/Build.java",
+              "tools/perf/Perf.java",
               "tools/refaster/Rules.java",
               "tests/tools/BuildTest.java",
+              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http/CreatedTokenViewRenderer.java",
               "deps/main.jar",
               "deps/test.jar",
+              "deps/snapshot.jar",
               "deps/error_prone_refaster-2.50.0.jar")) {
         Files.createFile(root.resolve(file));
       }
@@ -229,10 +238,11 @@ public final class BuildTest {
           output,
           List.of(root.resolve("deps/main.jar")),
           List.of(root.resolve("deps/test.jar")),
+          List.of(root.resolve("deps/snapshot.jar")),
           root.resolve("deps/error_prone_refaster-2.50.0.jar"));
 
       var parser = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder();
-      for (String project : List.of("toktrak", "toktrak.tests", "toktrak.build")) {
+      for (String project : List.of("toktrak", "toktrak.tests", "toktrak.build", "toktrak.perf")) {
         Path directory = output.resolve(project);
         parser.parse(directory.resolve(".project").toFile());
         parser.parse(directory.resolve(".classpath").toFile());
@@ -250,18 +260,28 @@ public final class BuildTest {
               + Files.readString(output.resolve("toktrak.tests/.project"))
               + Files.readString(output.resolve("toktrak.tests/.classpath"))
               + Files.readString(output.resolve("toktrak.build/.project"))
-              + Files.readString(output.resolve("toktrak.build/.classpath"));
+              + Files.readString(output.resolve("toktrak.build/.classpath"))
+              + Files.readString(output.resolve("toktrak.perf/.project"))
+              + Files.readString(output.resolve("toktrak.perf/.classpath"));
       for (String expected :
           List.of(
               "<name>toktrak</name>",
               "<name>toktrak.tests</name>",
               "<name>toktrak.build</name>",
+              "<name>toktrak.perf</name>",
+              "generated",
+              "snapshot.jar",
+              "toktrak.tests=ALL-UNNAMED",
+              "name=\"add-reads\"",
               "name=\"module\" value=\"true\"",
               "name=\"test\" value=\"true\"",
               "name=\"add-exports\"",
               "JavaSE-26",
+              "kind=\"output\" path=\"bin/default\"",
               "src/tools",
               "test/tools",
+              "tools/perf",
+              "generated/toktrak",
               "error_prone_refaster-2.50.0.jar",
               "excluding=\"templates/**\"",
               "jstache.resourcesPath",
@@ -272,6 +292,10 @@ public final class BuildTest {
       }
       if (generated.contains("output/modules") || generated.contains("output/runtimes")) {
         throw new AssertionError("Eclipse metadata references authoritative output");
+      }
+      if (Files.readString(output.resolve("toktrak.tests/.classpath"))
+          .contains("excluding=\"module-info.java\"")) {
+        throw new AssertionError("Eclipse test project excludes its JPMS descriptor");
       }
     } finally {
       List<Path> paths = Build.treePathsForTest(root, 1_000);
@@ -288,7 +312,12 @@ public final class BuildTest {
     try {
       for (String directory :
           List.of(
-              "sources/toktrak", "tests/toktrak.tests", "tools/refaster", "tests/tools", "deps")) {
+              "sources/toktrak",
+              "tests/toktrak.tests",
+              "tools/refaster",
+              "tests/tools",
+              "deps",
+              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http")) {
         Files.createDirectories(root.resolve(directory));
       }
       for (String file :
@@ -298,10 +327,17 @@ public final class BuildTest {
               "tools/Build.java",
               "tools/refaster/Rules.java",
               "tests/tools/BuildTest.java",
+              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http/CreatedTokenViewRenderer.java",
               "deps/main.jar",
               "deps/test.jar",
+              "deps/snapshot.jar",
               "deps/error_prone_refaster-2.50.0.jar")) {
         Files.createFile(root.resolve(file));
+      }
+      try (var jar =
+          new java.util.jar.JarOutputStream(
+              Files.newOutputStream(root.resolve("deps/snapshot.jar")))) {
+        jar.flush();
       }
       Path idea = root.resolve(".idea");
       Files.createDirectories(idea);
@@ -312,6 +348,7 @@ public final class BuildTest {
           idea,
           List.of(root.resolve("deps/main.jar")),
           List.of(root.resolve("deps/test.jar")),
+          List.of(root.resolve("deps/snapshot.jar")),
           root.resolve("deps/error_prone_refaster-2.50.0.jar"));
 
       var parser = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder();
@@ -322,7 +359,8 @@ public final class BuildTest {
               "compiler.xml",
               "modules/toktrak.iml",
               "modules/toktrak.tests.iml",
-              "modules/toktrak.build.iml")) {
+              "modules/toktrak.build.iml",
+              "modules/toktrak.perf.iml")) {
         parser.parse(idea.resolve(file).toFile());
       }
       String generated =
@@ -331,28 +369,43 @@ public final class BuildTest {
               + Files.readString(idea.resolve("compiler.xml"))
               + Files.readString(idea.resolve("modules/toktrak.iml"))
               + Files.readString(idea.resolve("modules/toktrak.tests.iml"))
-              + Files.readString(idea.resolve("modules/toktrak.build.iml"));
+              + Files.readString(idea.resolve("modules/toktrak.build.iml"))
+              + Files.readString(idea.resolve("modules/toktrak.perf.iml"));
       for (String expected :
           List.of(
               "toktrak.iml",
               "toktrak.tests.iml",
               "toktrak.build.iml",
+              "toktrak.perf.iml",
               "languageLevel=\"JDK_26\"",
               "isTestSource=\"true\"",
               "packagePrefix=\"tools\"",
               "scope=\"TEST\"",
+              "snapshot.jar",
               "type=\"module-library\"",
               "module-name=\"toktrak\"",
               "ADDITIONAL_OPTIONS_OVERRIDE",
-              "--add-exports=toktrak/toktrak.dev=toktrak.tests",
+              "-Ajstache.resourcesPath=",
+              "packagePrefix=\"toktrak\"",
+              "packagePrefix=\"selfie\"",
+              "tests/toktrak.tests/toktrak",
+              "tests/toktrak.tests/selfie",
+              "output/ide/intellij/generated/toktrak",
+              "generated=\"true\"",
               "output/ide/intellij",
               "TokTrak JStachio",
               "jstache.resourcesPath",
               "io.jstach.apt.jar",
-              "excludeFolder url=\"file://$PROJECT_DIR$/sources/toktrak/templates\"")) {
+              "content url=\"file://$MODULE_DIR$/../../tools/perf\"",
+              "excludeFolder url=\"file://$MODULE_DIR$/../../sources/toktrak/templates\"",
+              "excludeFolder url=\"file://$MODULE_DIR$/../../tools/perf\"")) {
         if (!generated.contains(expected)) {
           throw new AssertionError("missing IntelliJ metadata: " + expected);
         }
+      }
+      if (generated.contains("file://$PROJECT_DIR$/sources")
+          || generated.contains("jar://$PROJECT_DIR$/output")) {
+        throw new AssertionError("IntelliJ module metadata uses unresolved project dir paths");
       }
       if (generated.contains("output/modules") || generated.contains("output/runtimes")) {
         throw new AssertionError("IntelliJ metadata references authoritative output");
