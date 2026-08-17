@@ -282,6 +282,7 @@ public final class Writer implements AutoCloseable {
   private void process(Request request) {
     assert request != null;
     try {
+      health.requireWritable();
       if (failWrites) throw new IllegalStateException("writes disabled by --fail-writes");
       Instant at = Objects.requireNonNull(clock.instant(), "clock instant");
       if (abort.get()) throw new IllegalStateException("writer shutdown aborted write");

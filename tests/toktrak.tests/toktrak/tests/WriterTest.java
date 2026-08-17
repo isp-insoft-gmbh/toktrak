@@ -2,6 +2,7 @@ package toktrak.tests;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -284,6 +285,32 @@ final class WriterTest {
     } finally {
       releaseFsync.countDown();
       writer.close();
+    }
+  }
+
+  @Test
+  void given_storageFailure_when_submittingAfterStorageRecovers_then_rejectsWithoutMutation()
+      throws Exception {
+    Path eventLogPath = dir.resolve("events.ndjson");
+    var log = EventLog.open(eventLogPath);
+    var projection = Projection.empty();
+    var health = new HealthState();
+    var writer = Writer.start(log, projection, health, ClockSource.system(), false);
+    try (writer) {
+      Files.delete(eventLogPath);
+      Files.createDirectory(eventLogPath);
+      assertThrows(IllegalStateException.class, () -> writer.write(WriteCommand.devTest("first")));
+      assertFalse(health.healthy());
+
+      Files.delete(eventLogPath);
+      Files.createFile(eventLogPath);
+      var exception =
+          assertThrows(
+              IllegalStateException.class, () -> writer.write(WriteCommand.devTest("second")));
+
+      assertEquals("writes_failed", exception.getMessage());
+      assertEquals(0, projection.eventCount());
+      assertEquals(0, log.replay(_ -> {}));
     }
   }
 
