@@ -16,6 +16,11 @@ Use the simplest tool per workload:
 - JMH for isolated stable Java CPU hot paths
 - Node helpers for tracker `.mjs` workloads
 
-New benchmarks start observational. Compare performance only for the same
-`hostKey`. Use recorded environment fields as caveats, not automatic history
-invalidators.
+The observational `corpus-replay` JMH benchmark rebuilds the production
+projection from `tests/corpus/dev.jsonl`. It records average replay time in
+`corpus-replay/result.json` and fails if the fixture's identity or canonical
+totals change unexpectedly.
+
+Compare performance only for the same `hostKey`. Use recorded environment fields
+as caveats, not automatic history invalidators. New benchmarks do not apply
+slowdown thresholds until stable same-host history exists.
