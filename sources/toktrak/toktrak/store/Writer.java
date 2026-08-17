@@ -296,6 +296,8 @@ public final class Writer implements AutoCloseable {
         boolean completed = request.future.complete(new WriteResult(Optional.of(event.id())));
         assert completed;
       }
+    } catch (WriteCommand.RejectedException exception) {
+      request.future.completeExceptionally(exception);
     } catch (RuntimeException exception) {
       health.degrade("writes_failed");
       request.future.completeExceptionally(exception);

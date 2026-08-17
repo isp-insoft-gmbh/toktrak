@@ -41,6 +41,39 @@ final class WriterTest {
   }
 
   @Test
+  void given_alreadyRevokedToken_when_rejectingSecondRevocation_then_keepsWriterHealthy()
+      throws Exception {
+    var log = EventLog.open(dir.resolve("events.ndjson"));
+    var projection = Projection.empty();
+    var health = new HealthState();
+    var writer =
+        Writer.start(
+            log,
+            projection,
+            health,
+            ClockSource.fixed(Instant.parse("2026-07-10T00:00:00Z")),
+            false);
+    try (writer) {
+      var owner = new Projection.UserKey("issuer", "subject");
+      var tokenId = java.util.UUID.randomUUID();
+      writer.write(WriteCommand.userAuthenticated(owner, "user@example.com", "User", "#a8dadc"));
+      writer.write(WriteCommand.trackerTokenCreated(owner, tokenId, "Laptop", new byte[32]));
+      writer.write(WriteCommand.trackerTokenRevoked(owner, tokenId));
+
+      var exception =
+          assertThrows(
+              IllegalStateException.class,
+              () -> writer.write(WriteCommand.trackerTokenRevoked(owner, tokenId)));
+
+      assertEquals("tracker token cannot be revoked", exception.getMessage());
+      assertTrue(health.healthy());
+      assertDoesNotThrow(() -> writer.write(WriteCommand.devTest("system")));
+      assertEquals(4, projection.eventCount());
+      assertEquals(4, log.replay(_ -> {}));
+    }
+  }
+
+  @Test
   void given_maximumProjection_when_submittingCommand_then_doesNotAppendEvent() throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var projection = Projection.empty();
