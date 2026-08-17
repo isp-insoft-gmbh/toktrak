@@ -80,11 +80,11 @@ public final class Build {
   private static final Path TEST_DEPS = OUTPUT.resolve("deps/test");
   private static final Path SNAPSHOT_DEPS = OUTPUT.resolve("deps/snapshot");
   private static final Path BUILD_DEPS = OUTPUT.resolve("deps/build");
+  private static final Path PMD_DEPS = OUTPUT.resolve("deps/pmd");
   private static final Path REFASTER_DEPS = OUTPUT.resolve("deps/refaster");
   private static final Path PIT_DEPS = OUTPUT.resolve("deps/pit");
   private static final Path COVERAGE_DEPS = OUTPUT.resolve("deps/coverage");
   private static final Path COVERAGE = OUTPUT.resolve("coverage");
-  private static final Path PERF = OUTPUT.resolve("perf");
   private static final Path PERF_DEPS = OUTPUT.resolve("perf-deps");
   private static final Path PERF_JMH_DEPS = PERF_DEPS.resolve("jmh");
   private static final Path MUTATIONS = OUTPUT.resolve("mutations");
@@ -126,6 +126,8 @@ public final class Build {
           ROOT.resolve(".claude/skills/file-upload/scripts/upload.test.mjs"),
           ROOT.resolve(".claude/skills/toktrak-intellij-inspection/scripts/run.test.mjs"));
   private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
+  private static final Path PMD_CONFIG = ROOT.resolve("sources/pmd.xml");
+  private static final Path PMD_REPORT = OUTPUT.resolve("pmd/report.txt");
   private static final List<Path> REPOSITORY_SKILLS =
       List.of(
           ROOT.resolve(".claude/skills/mustache"),
@@ -459,6 +461,10 @@ public final class Build {
 
   private static void ensureBuildDependencies() throws Exception {
     ensureDependency("sources/build-deps.txt", BUILD_DEPS, "resolve-build-dependencies", true);
+  }
+
+  private static void ensurePmdDependencies() throws Exception {
+    ensureDependency("sources/pmd-deps.txt", PMD_DEPS, "resolve-pmd-dependencies", false);
   }
 
   private static void ensureRefasterDependencies() throws Exception {
@@ -2196,6 +2202,35 @@ public final class Build {
     validateRepositorySkills();
     runGolemDefinitionCheck();
     compile();
+    runPmd();
+  }
+
+  private static void runPmd() throws Exception {
+    ensurePmdDependencies();
+    Files.createDirectories(PMD_REPORT.getParent());
+    var arguments = new ArrayList<String>();
+    arguments.add("-ea");
+    arguments.add("-cp");
+    arguments.add(modulePath(List.of(PMD_DEPS)));
+    arguments.add("net.sourceforge.pmd.cli.PmdCli");
+    arguments.add("check");
+    arguments.add("--dir");
+    arguments.add(APP_SOURCES.toString());
+    arguments.add("--rulesets");
+    arguments.add(PMD_CONFIG.toString());
+    arguments.add("--format");
+    arguments.add("text");
+    arguments.add("--report-file");
+    arguments.add(PMD_REPORT.toString());
+    arguments.add("--relativize-paths-with");
+    arguments.add(ROOT.toString());
+    arguments.add("--use-version");
+    arguments.add("java-26");
+    arguments.add("--aux-classpath");
+    arguments.add(modulePath(List.of(MODULE_CLASSES, MAIN_DEPS)));
+    arguments.add("--no-cache");
+    arguments.add("--no-progress");
+    runArgFile(javaExecutable(), "run-pmd", arguments);
   }
 
   private static void runGolemDefinitionCheck() throws Exception {

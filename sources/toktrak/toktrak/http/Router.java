@@ -90,7 +90,7 @@ public final class Router implements HttpHandler {
         || exceedsUtf8Limit(path, PATH_BYTES_MAX)
         || exceedsUtf8Limit(rawQuery, QUERY_BYTES_MAX)) {
       String requestId = UUID.randomUUID().toString();
-      try {
+      try (exchange) {
         respondError(
             exchange,
             414,
@@ -99,15 +99,13 @@ public final class Router implements HttpHandler {
             "Request URI is too long.",
             requestId,
             null);
-      } finally {
-        exchange.close();
       }
       return;
     }
     String method = exchange.getRequestMethod();
     if (method == null || method.isBlank() || method.length() > METHOD_CHARACTERS_MAX) {
       String requestId = UUID.randomUUID().toString();
-      try {
+      try (exchange) {
         respondError(
             exchange,
             400,
@@ -116,15 +114,13 @@ public final class Router implements HttpHandler {
             "Request method is invalid.",
             requestId,
             null);
-      } finally {
-        exchange.close();
       }
       return;
     }
     try {
       requestExecutor.execute(() -> handleAccepted(exchange));
     } catch (RejectedExecutionException exception) {
-      try {
+      try (exchange) {
         respondError(
             exchange,
             503,
@@ -133,8 +129,6 @@ public final class Router implements HttpHandler {
             "Server is busy. Try again.",
             UUID.randomUUID().toString(),
             null);
-      } finally {
-        exchange.close();
       }
     }
   }
@@ -146,30 +140,49 @@ public final class Router implements HttpHandler {
             exchange.getRequestMethod(),
             exchange.getRequestURI().getPath(),
             devAuth ? "dev" : "prod");
-    try {
-      RequestContext.with(
-          context,
-          () -> {
-            route(exchange);
-            return null;
-          });
-    } catch (Exception exception) {
-      if (exchange.getResponseCode() < 0) {
-        try {
-          respondError(
-              exchange,
-              500,
-              "internal_error",
-              "internal server error",
-              "Internal server error. Try again.",
-              context.requestId(),
-              exception);
-        } catch (IOException responseException) {
-          // The peer may have disconnected; the exchange is closed below.
-        }
+    try (exchange) {
+      try {
+        RequestContext.with(
+            context,
+            () -> {
+              route(exchange);
+              return null;
+            });
+      } catch (IOException
+          | ArithmeticException
+          | ArrayStoreException
+          | ClassCastException
+          | EnumConstantNotPresentException
+          | IllegalArgumentException
+          | IllegalMonitorStateException
+          | IllegalStateException
+          | IndexOutOfBoundsException
+          | NegativeArraySizeException
+          | RenderFailure
+          | SecurityException
+          | TypeNotPresentException
+          | UnsupportedOperationException exception) {
+        internalFailure(exchange, context, exception);
       }
-    } finally {
-      exchange.close();
+    }
+  }
+
+  private void internalFailure(HttpExchange exchange, RequestContext context, Throwable exception) {
+    assert exchange != null;
+    assert context != null;
+    assert exception != null;
+    if (exchange.getResponseCode() >= 0) return;
+    try {
+      respondError(
+          exchange,
+          500,
+          "internal_error",
+          "internal server error",
+          "Internal server error. Try again.",
+          context.requestId(),
+          exception);
+    } catch (IOException responseException) {
+      // The peer may have disconnected; the exchange is closed by the caller.
     }
   }
 
@@ -283,7 +296,7 @@ public final class Router implements HttpHandler {
         exchange.getResponseHeaders().add("Set-Cookie", auth.sessionCookie(login.session()));
       }
       HttpSupport.redirect(exchange, 302, login.redirectUri());
-    } catch (RuntimeException exception) {
+    } catch (IllegalArgumentException | IllegalStateException exception) {
       authFailure(exchange, exception);
     }
   }
@@ -299,7 +312,7 @@ public final class Router implements HttpHandler {
       exchange.getResponseHeaders().add("Set-Cookie", auth.clearTransactionCookie());
       exchange.getResponseHeaders().add("Set-Cookie", auth.sessionCookie(login.session()));
       HttpSupport.redirect(exchange, 302, login.redirectUri());
-    } catch (RuntimeException exception) {
+    } catch (IllegalArgumentException | IllegalStateException exception) {
       authFailure(exchange, exception);
     }
   }
@@ -684,11 +697,7 @@ public final class Router implements HttpHandler {
   }
 
   private BaseView dashboardBase(
-      String title,
-      String path,
-      boolean overviewCurrent,
-      boolean visualizationsCurrent,
-      DashboardCurrency currency) {
+      String title, String path, CurrentPage currentPage, DashboardCurrency currency) {
     assert path.equals("/") || path.equals("/visualizations") || path.equals("/scope");
     DashboardCurrency alternative =
         currency == DashboardCurrency.USD ? DashboardCurrency.EUR : DashboardCurrency.USD;
@@ -701,16 +710,12 @@ public final class Router implements HttpHandler {
         assets.publicUrl("logo-wordmark-dark.svg"),
         assets.publicUrl("logo-lockup.svg"),
         assets.publicUrl("logo-lockup-dark.svg"),
-        devAuth,
-        true,
-        overviewCurrent,
-        visualizationsCurrent,
-        path.equals("/scope"),
-        false,
-        true,
-        currency == DashboardCurrency.USD,
-        path + "?currency=" + alternative,
-        alternative.name());
+        devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
+        currentPage,
+        CurrencySwitch.enabled(
+            Currency.from(currency),
+            path + "?currency=" + alternative,
+            Currency.from(alternative)));
   }
 
   private BaseView trackerBase(String title) {
@@ -723,16 +728,9 @@ public final class Router implements HttpHandler {
         assets.publicUrl("logo-wordmark-dark.svg"),
         assets.publicUrl("logo-lockup.svg"),
         assets.publicUrl("logo-lockup-dark.svg"),
-        devAuth,
-        true,
-        false,
-        false,
-        false,
-        true,
-        false,
-        true,
-        "",
-        "");
+        devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
+        CurrentPage.TRACKER,
+        CurrencySwitch.disabled());
   }
 
   private BaseView base(String title) {
@@ -745,16 +743,9 @@ public final class Router implements HttpHandler {
         assets.publicUrl("logo-wordmark-dark.svg"),
         assets.publicUrl("logo-lockup.svg"),
         assets.publicUrl("logo-lockup-dark.svg"),
-        devAuth,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        true,
-        "",
-        "");
+        devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
+        CurrentPage.NONE,
+        CurrencySwitch.disabled());
   }
 
   private Session browserSession(HttpExchange exchange) throws IOException {
@@ -871,9 +862,9 @@ public final class Router implements HttpHandler {
     try {
       return HttpSupport.renderEncoded(renderer, model);
     } catch (HttpSupport.EncodedHtmlTooLargeException exception) {
-      throw new RenderFailure(templateName, modelName, rendererName, "output_limit");
-    } catch (IOException | RuntimeException exception) {
-      throw new RenderFailure(templateName, modelName, rendererName, "renderer_failure");
+      throw new RenderFailure(templateName, modelName, rendererName, "output_limit", exception);
+    } catch (IOException exception) {
+      throw new RenderFailure(templateName, modelName, rendererName, "renderer_failure", exception);
     }
   }
 

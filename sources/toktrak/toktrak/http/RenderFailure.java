@@ -1,10 +1,12 @@
 package toktrak.http;
 
+import java.io.IOException;
+
 final class RenderFailure extends RuntimeException {
   private static final long serialVersionUID = 1L;
 
-  RenderFailure(String template, String model, String renderer, String kind) {
-    super(message(template, model, renderer, kind), null, false, false);
+  RenderFailure(String template, String model, String renderer, String kind, IOException cause) {
+    super(message(template, model, renderer, kind), cause, false, false);
   }
 
   private static String message(String template, String model, String renderer, String kind) {

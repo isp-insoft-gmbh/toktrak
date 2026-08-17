@@ -1,5 +1,6 @@
 package toktrak.store;
 
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -172,14 +173,12 @@ public final class Writer implements AutoCloseable {
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("write interrupted", exception);
-    } catch (java.util.concurrent.ExecutionException
-        | java.util.concurrent.TimeoutException exception) {
-      Throwable cause =
-          exception instanceof java.util.concurrent.ExecutionException
-              ? exception.getCause()
-              : exception;
-      if (cause instanceof RuntimeException runtimeException) throw runtimeException;
-      throw new IllegalStateException("write failed", cause);
+    } catch (java.util.concurrent.ExecutionException exception) {
+      Throwable cause = exception.getCause();
+      String message = cause == null ? "write failed" : cause.getMessage();
+      throw new IllegalStateException(message, exception);
+    } catch (java.util.concurrent.TimeoutException exception) {
+      throw new IllegalStateException("write failed", exception);
     }
   }
 
@@ -298,7 +297,19 @@ public final class Writer implements AutoCloseable {
       }
     } catch (WriteCommand.RejectedException exception) {
       request.future.completeExceptionally(exception);
-    } catch (RuntimeException exception) {
+    } catch (ArithmeticException
+        | ArrayStoreException
+        | ClassCastException
+        | DateTimeException
+        | EnumConstantNotPresentException
+        | IllegalArgumentException
+        | IllegalMonitorStateException
+        | IllegalStateException
+        | IndexOutOfBoundsException
+        | NegativeArraySizeException
+        | SecurityException
+        | TypeNotPresentException
+        | UnsupportedOperationException exception) {
       health.degrade("writes_failed");
       request.future.completeExceptionally(exception);
     }
@@ -353,10 +364,11 @@ public final class Writer implements AutoCloseable {
       Request current = inFlight.get();
       if (current != null) current.future.completeExceptionally(failure);
       int drained = 0;
-      Request request;
-      while (drained < QUEUE_CAPACITY && (request = queue.poll()) != null) {
+      Request request = queue.poll();
+      while (drained < QUEUE_CAPACITY && request != null) {
         request.future.completeExceptionally(failure);
         drained = Math.addExact(drained, 1);
+        request = queue.poll();
       }
       assert queue.isEmpty();
     }

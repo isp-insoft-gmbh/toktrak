@@ -16,40 +16,41 @@ public final class DataLock implements AutoCloseable {
   private final FileLock lock;
   private final AtomicBoolean closed = new AtomicBoolean();
 
-  private DataLock(FileChannel channel, FileLock lock) {
-    assert channel != null && channel.isOpen();
-    assert lock != null && lock.isValid();
-    this.channel = channel;
-    this.lock = lock;
+  private DataLock(Path dataDirectory) throws IOException {
+    channel =
+        FileChannel.open(
+            dataDirectory.resolve("toktrak.lock"),
+            StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE);
+    try {
+      lock = channel.tryLock();
+    } catch (OverlappingFileLockException exception) {
+      closeChannel();
+      throw new IllegalStateException(MESSAGE, exception);
+    } catch (IOException exception) {
+      closeChannel();
+      throw exception;
+    }
+    if (lock == null) {
+      closeChannel();
+      throw new IllegalStateException(MESSAGE);
+    }
+    assert channel.isOpen();
+    assert lock.isValid();
   }
 
   public static DataLock acquire(Path dataDirectory) {
     Objects.requireNonNull(dataDirectory, "dataDirectory");
     try {
       Files.createDirectories(dataDirectory);
-      FileChannel channel =
-          FileChannel.open(
-              dataDirectory.resolve("toktrak.lock"),
-              StandardOpenOption.CREATE,
-              StandardOpenOption.WRITE);
-      try {
-        FileLock lock = channel.tryLock();
-        if (lock == null) {
-          channel.close();
-          throw new IllegalStateException(MESSAGE);
-        }
-        var dataLock = new DataLock(channel, lock);
-        assert lock.isValid();
-        return dataLock;
-      } catch (OverlappingFileLockException exception) {
-        channel.close();
-        throw new IllegalStateException(MESSAGE, exception);
-      }
-    } catch (IllegalStateException exception) {
-      throw exception;
+      return new DataLock(dataDirectory);
     } catch (IOException exception) {
       throw new IllegalStateException("cannot lock TokTrak data directory", exception);
     }
+  }
+
+  private void closeChannel() throws IOException {
+    channel.close();
   }
 
   @Override

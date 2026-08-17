@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 public final class HttpSupport {
   public static final int MAX_REQUEST_BODY_BYTES = 5 * 1024 * 1024;
@@ -59,9 +60,11 @@ public final class HttpSupport {
       throws IOException {
     assert renderer != null;
     assert model != null;
-    var output = new BoundedOutputStream(ENCODED_HTML_BYTES_MAX);
-    renderer.write(model, Output.of(output, StandardCharsets.UTF_8));
-    byte[] result = output.toByteArray();
+    byte[] result;
+    try (var output = new BoundedOutputStream(ENCODED_HTML_BYTES_MAX)) {
+      renderer.write(model, Output.of(output, StandardCharsets.UTF_8));
+      result = output.toByteArray();
+    }
     assert result.length <= ENCODED_HTML_BYTES_MAX;
     return result;
   }
@@ -140,7 +143,7 @@ public final class HttpSupport {
 
     @Override
     public void write(byte[] bytes, int offset, int length) throws IOException {
-      if (bytes == null) throw new NullPointerException("bytes");
+      Objects.requireNonNull(bytes, "bytes");
       if (offset < 0 || length < 0 || offset > bytes.length - length) {
         throw new IndexOutOfBoundsException();
       }

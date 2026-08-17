@@ -2,10 +2,12 @@ package toktrak.usage;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -78,7 +80,7 @@ public final class UsageUpload {
     String clientTimeZone = string(data, "clientTimeZone", TIME_ZONE_CHARACTERS_MAX);
     try {
       ZoneId.of(clientTimeZone);
-    } catch (RuntimeException exception) {
+    } catch (DateTimeException exception) {
       throw new IllegalArgumentException("clientTimeZone is invalid", exception);
     }
     boolean full = bool(data, "full");
@@ -220,7 +222,7 @@ public final class UsageUpload {
       Map<String, Object> row = object(element, report.name + " row");
       try {
         validateRow(report, row);
-      } catch (RuntimeException exception) {
+      } catch (IllegalArgumentException | IllegalStateException exception) {
         throw new IllegalArgumentException(report.name + " row is invalid", exception);
       }
       result.add(row);
@@ -234,7 +236,7 @@ public final class UsageUpload {
     if (report == Report.DAILY) {
       try {
         LocalDate.parse(first);
-      } catch (RuntimeException exception) {
+      } catch (DateTimeParseException exception) {
         throw new IllegalArgumentException("daily period is invalid", exception);
       }
       nonnegativeLong(row, "inputTokens");
@@ -279,7 +281,7 @@ public final class UsageUpload {
   private static Instant instant(Map<String, Object> data, String name) {
     try {
       return Instant.parse(string(data, name, 64));
-    } catch (RuntimeException exception) {
+    } catch (IllegalArgumentException | DateTimeParseException exception) {
       throw new IllegalArgumentException(name + " is invalid", exception);
     }
   }

@@ -192,7 +192,7 @@ public record Config(
       if (port < 0 || port > 65_535) throw new NumberFormatException();
       return port;
     } catch (NumberFormatException exception) {
-      throw new IllegalArgumentException("TOKTRAK_PORT must be 0..65535");
+      throw new IllegalArgumentException("TOKTRAK_PORT must be 0..65535", exception);
     }
   }
 
@@ -229,10 +229,12 @@ public record Config(
   }
 
   private static void requireSecret(String value, String name) {
+    boolean valid;
     try {
-      if (Base64.getDecoder().decode(value).length < 32) throw new IllegalArgumentException();
+      valid = Base64.getDecoder().decode(value).length >= 32;
     } catch (IllegalArgumentException exception) {
-      throw new IllegalArgumentException(name + " must be Base64 with at least 32 bytes");
+      valid = false;
     }
+    if (!valid) throw new IllegalArgumentException(name + " must be Base64 with at least 32 bytes");
   }
 }

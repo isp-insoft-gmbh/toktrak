@@ -1,8 +1,8 @@
 package toktrak.http;
 
+import java.io.IOException;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.Callable;
 
 public record RequestContext(
     String requestId, String method, String path, String userId, String tokenId, String mode) {
@@ -34,11 +34,47 @@ public record RequestContext(
     return context;
   }
 
-  public static <T> T with(RequestContext context, Callable<T> action) throws Exception {
+  public static <T> T with(RequestContext context, ThrowingSupplier<T> action) throws IOException {
     assert context != null;
     assert action != null;
     assert !CURRENT.isBound();
-    return ScopedValue.where(CURRENT, context).call(action::call);
+    var result = new Result<T>();
+    try {
+      ScopedValue.where(CURRENT, context)
+          .run(
+              () -> {
+                try {
+                  result.value = action.get();
+                } catch (IOException exception) {
+                  throw new RequestIOException(exception);
+                }
+              });
+    } catch (RequestIOException exception) {
+      throw new IOException(exception.getCause().getMessage(), exception);
+    }
+    return result.value;
+  }
+
+  @FunctionalInterface
+  public interface ThrowingSupplier<T> {
+    T get() throws IOException;
+  }
+
+  private static final class Result<T> {
+    private T value;
+  }
+
+  private static final class RequestIOException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
+    private RequestIOException(IOException cause) {
+      super(cause);
+    }
+
+    @Override
+    public IOException getCause() {
+      return (IOException) super.getCause();
+    }
   }
 
   private static void requireText(String value, int charactersMax, String name) {

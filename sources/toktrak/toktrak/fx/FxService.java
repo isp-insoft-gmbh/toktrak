@@ -54,7 +54,7 @@ public final class FxService implements AutoCloseable {
       FxClient.Rate rate = client.fetch();
       writer.write(
           WriteCommand.fxRateUpdated(rate.date().toString(), rate.eurPerUsd().toPlainString()));
-    } catch (RuntimeException exception) {
+    } catch (IllegalArgumentException | IllegalStateException exception) {
       LOG.warning("FX refresh failed; retaining last-good rate");
     }
   }
