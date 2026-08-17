@@ -9,6 +9,7 @@ import {
   authCheckTargets,
   evidenceBody,
   harnessArguments,
+  labelColor,
   renderedPullRequestBody,
   runDetailsBody,
   parseTask,
@@ -250,6 +251,17 @@ test("builds explicit ephemeral harness adapters", () => {
     harnessArguments({ harness: "codex", model: "gpt-5.6-sol", thinking: "max" }),
     ["exec", "--ephemeral", "--model", "gpt-5.6-sol", "--config", 'model_reasoning_effort="max"', "--dangerously-bypass-approvals-and-sandbox", "-"],
   );
+});
+
+test("colors golem labels while leaving other metadata grey", () => {
+  const bugs = labelColor("golem:bugs");
+  const qa = labelColor("golem:qa");
+
+  assert.equal(labelColor("golem"), "6f42c1");
+  assert.match(bugs, /^[0-9a-f]{6}$/);
+  assert.match(qa, /^[0-9a-f]{6}$/);
+  assert.notEqual(bugs, qa);
+  assert.equal(labelColor("harness:pi"), "555555");
 });
 
 test("detects every protected control-plane prefix", () => {

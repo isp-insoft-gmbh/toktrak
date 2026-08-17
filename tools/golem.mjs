@@ -499,10 +499,27 @@ const prepareWorktree = (task, target, remoteBranchHead) => {
   return { worktree, remoteBranchHead };
 };
 
+const GOLEM_LABEL_COLORS = ["d73a49", "e36209", "b08800", "28a745", "00a085", "0366d6", "005cc5", "6f42c1", "d63384"];
+
+const hashString = (value) => {
+  let hash = 0x811c9dc5;
+  for (const character of value) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash;
+};
+
+export const labelColor = (label) => {
+  if (label === "golem") return "6f42c1";
+  if (label.startsWith("golem:")) return GOLEM_LABEL_COLORS[hashString(label.slice("golem:".length)) % GOLEM_LABEL_COLORS.length];
+  return "555555";
+};
+
 const ensureLabels = (task, pullRequest, cwd) => {
   const labels = ["golem", `golem:${task.id}`, `harness:${task.harness}`, `model:${task.model}`, `thinking:${task.thinking}`, `weekday:${task.weekday}`];
   for (const label of labels) {
-    gh(["label", "create", label, "--force", "--color", "555555", "--description", "TokTrak golem run metadata"], cwd, `ensure label ${label}`);
+    gh(["label", "create", label, "--force", "--color", labelColor(label), "--description", "TokTrak golem run metadata"], cwd, `ensure label ${label}`);
   }
   gh(["pr", "edit", String(pullRequest), "--add-label", labels.join(",")], cwd, "apply golem labels");
 };
