@@ -33,6 +33,38 @@ The tracker is one plain Node `.mjs` using the standard library, a pinned
 
 It installs without root or administrator access and uploads daily.
 
+## System overview
+
+Start with the bird's-eye map, then follow the three detail diagrams in order.
+The D2 sources live beside the rendered SVGs under `.system`.
+
+![TokTrak overview](.system/overview.svg)
+
+### 1. Tracker upload flow
+
+The tracker is intentionally not a Java application. It is one personalized Node
+`.mjs` file that installs into the user's account, runs native scheduling,
+invokes pinned `ccusage`, uploads bounded JSON, and self-updates only after a
+SHA-256 check.
+
+![TokTrak tracker upload flow](.system/overview-tracker.svg)
+
+### 2. Runtime
+
+The server is a small Java 26+ JPMS service. It stays stateless except for
+`TOKTRAK_DATA_DIR`, writes durable NDJSON through one bounded writer, and
+rebuilds the in-memory projection during startup.
+
+![TokTrak runtime](.system/overview-runtime.svg)
+
+### 3. Build and contributor workflow
+
+`mise` is the human entrypoint, but `tools/Build.java` is the build authority.
+There is no Maven, Gradle, Spring, servlet container, npm install, bundler, or
+DB server.
+
+![TokTrak build and contributor workflow](.system/overview-build.svg)
+
 ## Contribute
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for platform requirements, repository

@@ -1,0 +1,100 @@
+direction: down
+
+vars: {
+  d2-config: {
+    theme-id: 0
+    dark-theme-id: 200
+  }
+}
+
+title: |md
+  # Tracker upload flow
+  One personalized `tracker.mjs`, plain Node stdlib, user-scoped install.
+  It runs pinned `ccusage` local usage reader, uploads bounded JSON, then self-updates by SHA-256.
+|
+title.shape: document
+title.style.stroke-width: 2
+
+scheduled: "2 · Scheduled upload" {
+  shape: sequence_diagram
+
+  scheduler: "native scheduler"
+  tracker: "tracker.mjs"
+  ccusage: "npx ccusage@20.0.17\nlocal usage reader"
+  api: "TokTrak API"
+  writer: "server Writer"
+  update: "self-update"
+
+  scheduler -> tracker: "daily --scheduled"
+  tracker -> tracker: "random jitter <= 30m"
+  tracker -> ccusage: "daily, session, blocks reports"
+  tracker -> api: "POST /api/usage Bearer tt_*"
+  api -> writer: "USAGE_UPLOADED"
+  tracker -> update: "GET /api/tracker"
+  update -> tracker: "replace only when SHA-256 matches"
+}
+
+install: "1 · Install on workstation" {
+  shape: package
+  style.stroke-width: 2
+
+  developer: "developer" {shape: person}
+  script: "personal tracker.mjs\nbase URL + one `tt_*` token baked in" {
+    shape: hexagon
+    style.stroke-width: 2
+  }
+  path: "user install path\nLocalAppData | App Support | XDG data" {shape: stored_data}
+  scheduler: "user scheduler\nschtasks · LaunchAgent · systemd --user" {shape: queue}
+  sessions: "local harness session data\nClaude · Codex · Pi · others" {shape: stored_data}
+  pi: "Pi fallback lookup\nPI_* env, settings.json, saved scheduler path" {shape: document}
+
+  developer -> script: "download + run install"
+  script -> path: "atomic copy"
+  script -> scheduler: "register daily run"
+  scheduler -> script: "daily"
+  script -> pi: "find Pi sessions"
+  script -> sessions: "read only through ccusage"
+}
+
+server: "3 · Server API touched by tracker" {
+  shape: package
+  style.stroke-width: 2
+
+  payload: {
+    shape: sql_table
+    trackerVersion: string
+    ccusageVersion: string
+    clientTimeZone: string
+    full: boolean
+    generatedAt: instant
+    reports: json
+  }
+  token_auth: "Bearer token auth\nHMAC-SHA-256 with stable pepper" {shape: diamond}
+  verify: "POST /api/tracker/verify" {shape: hexagon}
+  upload: "POST /api/usage" {shape: hexagon}
+  download: "GET /api/tracker" {shape: page}
+  validate: "UsageUpload.parse\nknown reports, row limits, future tolerance" {shape: hexagon}
+  writer: "Writer\nappend USAGE_UPLOADED" {shape: queue}
+
+  verify -> token_auth: "check token"
+  upload -> token_auth: "authenticate owner"
+  upload -> validate: "parse body"
+  validate -> writer: "event"
+  download -> token_auth: "auth before update"
+}
+
+safety: |md
+  ## Bounds and safety
+  - No package manifest, app deps, transpilation, or bundling.
+  - `ccusage` execution is pinned, timed, and output-limited.
+  - Upload body is size-limited; source-detail reports may be dropped to fit.
+  - Logs redact the token.
+  - Scheduler is user-scoped, no root or administrator install.
+|
+safety.shape: callout
+safety.style.stroke-width: 2
+
+title -> install: "start"
+install -> scheduled: "creates scheduler"
+scheduled -> server: "uploads to"
+server -> safety: "bounded by"

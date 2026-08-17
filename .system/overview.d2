@@ -1,0 +1,65 @@
+direction: down
+
+vars: {
+  d2-config: {
+    theme-id: 0
+    dark-theme-id: 200
+  }
+}
+
+title: |md
+  # TokTrak overview
+  Internal projected-cost visibility from local coding-harness usage.
+  Not billing. Not work-content monitoring. Local `ccusage` data only.
+|
+title.shape: document
+title.style.stroke-width: 2
+
+cards: "Read in this order" {
+  shape: package
+
+  tracker: "1 · Tracker upload flow\nplain Node .mjs · native scheduler · ccusage" {
+    shape: package
+    link: "overview-tracker.d2"
+    style.stroke-width: 2
+  }
+  runtime: "2 · Runtime\nJava 26+ service · auth · UI · event log" {
+    shape: package
+    link: "overview-runtime.d2"
+    style.stroke-width: 2
+  }
+  build: "3 · Build + contributor workflow\nBuild.java · mise · JPMS · quality gates" {
+    shape: package
+    link: "overview-build.d2"
+    style.stroke-width: 2
+  }
+
+  tracker -> runtime: "POST /api/usage"
+  build -> runtime: "packages runtime + image"
+}
+
+state: "Durable state\nevents.ndjson under TOKTRAK_DATA_DIR" {
+  shape: cylinder
+  style.stroke-width: 2
+}
+
+not_normal: |md
+  ## Non-normal Java facts
+  - No Maven, Gradle, Spring, servlet container, npm install, bundler, or DB server.
+  - `mise` is the public entry; `java -ea tools/Build.java ...` is the build authority.
+  - Runtime uses JPMS, `jdk.httpserver`, virtual threads, JStachio, Datastar.
+  - State is append-only event log plus replayed in-memory projection.
+  - Assertions are mandatory in dev, test, and prod.
+  - Tracker is generated/personalized `.mjs`, self-updating, user-scoped.
+|
+not_normal.shape: callout
+not_normal.style.stroke-width: 2
+
+reader: "fresh contributor" {shape: person}
+user: "company user" {shape: person}
+
+reader -> title: "start"
+title -> cards: "detail diagrams are clickable"
+user -> cards.tracker: "installs once"
+cards.runtime -> state: "append + replay"
+not_normal -> cards: "surprises to notice"
