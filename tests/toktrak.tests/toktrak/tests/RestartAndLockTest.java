@@ -2,6 +2,10 @@ package toktrak.tests;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -24,6 +28,25 @@ final class RestartAndLockTest {
     }
     try (var app = App.start(new String[] {}, env)) {
       assertEquals(1, app.projection().eventCount());
+    }
+  }
+
+  @Test
+  void given_developmentSessionCookie_when_restartingApp_then_acceptsCookie() throws Exception {
+    var env =
+        Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0", "TOKTRAK_DATA_DIR", dir.toString());
+    Path corpus = dir.resolve("corpus.ndjson");
+    Files.writeString(corpus, "");
+    String[] args = {"--corpus", corpus.toString()};
+    var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+    String cookie;
+    try (var app = App.start(args, env)) {
+      var response = get(client, app, "/login", null);
+      assertEquals(302, response.statusCode());
+      cookie = response.headers().firstValue("Set-Cookie").orElseThrow().split(";", 2)[0];
+    }
+    try (var app = App.start(args, env)) {
+      assertEquals(200, get(client, app, "/tokens", cookie).statusCode());
     }
   }
 
@@ -60,5 +83,12 @@ final class RestartAndLockTest {
       var ex = assertThrows(IllegalStateException.class, () -> App.start(new String[] {}, env));
       assertEquals("TokTrak data directory is already locked", ex.getMessage());
     }
+  }
+
+  private static HttpResponse<String> get(HttpClient client, App app, String path, String cookie)
+      throws Exception {
+    var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + app.port() + path)).GET();
+    if (cookie != null) builder.header("Cookie", cookie);
+    return client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
   }
 }

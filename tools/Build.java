@@ -57,6 +57,13 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 
+/// ## TokTrak Build System
+///
+/// This java source file script is meant to be directly invoked by `java tools/Build.java`. It
+/// implements the complete build system of toktrak together with the vendored dependency
+/// `jresolve.jar`, which downloads maven dependencies transitivly. Typically, this script is not
+/// invoked directly, but through `mise`, such that `mise.toml` also serves as its usage
+/// documentation.
 public final class Build {
   private static final Path ROOT = Path.of("").toAbsolutePath().normalize();
   private static final Path OUTPUT = ROOT.resolve("output");
@@ -3507,7 +3514,7 @@ public final class Build {
     arguments.add("-m");
     arguments.add("toktrak/toktrak.Main");
     arguments.addAll(args.stream().filter(arg -> !arg.equals("--")).toList());
-    runArgFile(runtimeJava(runtime), "run-toktrak-development-server", arguments);
+    runArgFileUntilExit(runtimeJava(runtime), "run-toktrak-development-server", arguments);
   }
 
   private static Path ensureDevRuntime() throws Exception {
@@ -3897,6 +3904,18 @@ public final class Build {
     runArgFile(executable, argFile, PROCESS_TIMEOUT, false);
   }
 
+  private static void runArgFileUntilExit(String executable, String name, List<String> arguments)
+      throws Exception {
+    runArgFileUntilExit(executable, writeArgFile(name, arguments));
+  }
+
+  private static void runArgFileUntilExit(String executable, Path argFile) throws Exception {
+    assert executable != null;
+    assert argFile != null;
+    printInvocation(executable, argFile);
+    runProcessUntilExit(new ProcessBuilder(executable, "@" + argFile));
+  }
+
   private static void runArgFile(
       String executable, Path argFile, Duration timeout, boolean forceAtTimeout) throws Exception {
     assert executable != null;
@@ -4079,6 +4098,28 @@ public final class Build {
 
   private static void runProcess(ProcessBuilder builder) throws Exception {
     runProcess(builder, PROCESS_TIMEOUT, false);
+  }
+
+  private static void runProcessUntilExit(ProcessBuilder builder) throws Exception {
+    assert builder != null;
+    long started = System.nanoTime();
+    Process process = builder.inheritIO().start();
+    int code;
+    try {
+      code = waitForProcess(process);
+    } catch (InterruptedException ex) {
+      terminate(process, PROCESS_KILL_TIMEOUT);
+      Thread.currentThread().interrupt();
+      throw ex;
+    }
+    String cpu =
+        process
+            .info()
+            .totalCpuDuration()
+            .map(duration -> formatDuration(duration.toNanos()))
+            .orElse(null);
+    printCompletion(code == 0 ? "done" : "failed", System.nanoTime() - started, cpu);
+    if (code != 0) throw new IllegalStateException("command failed with exit code " + code);
   }
 
   private static void runProcess(ProcessBuilder builder, Duration timeout, boolean forceAtTimeout)
@@ -4678,6 +4719,15 @@ public final class Build {
       Process process, Duration timeout, Duration killTimeout, boolean forceAtTimeout)
       throws InterruptedException {
     return waitForProcess(process, timeout, killTimeout, forceAtTimeout);
+  }
+
+  static int waitForProcessForTest(Process process) throws InterruptedException {
+    return waitForProcess(process);
+  }
+
+  private static int waitForProcess(Process process) throws InterruptedException {
+    assert process != null;
+    return process.waitFor();
   }
 
   private static int waitForProcess(

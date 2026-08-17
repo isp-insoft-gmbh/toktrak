@@ -22,6 +22,11 @@ public final class AuthService {
   private static final Duration SESSION_LIFETIME = Duration.ofHours(12);
   private static final Duration TRANSACTION_LIFETIME = Duration.ofMinutes(10);
 
+  private static final UserKey DEVELOPMENT_KEY = new UserKey("urn:toktrak:development", "viewer");
+  private static final String DEVELOPMENT_EMAIL = "viewer@development.invalid";
+  private static final String DEVELOPMENT_NAME = "Development Viewer";
+  private static final String DEVELOPMENT_COLOR = "#a8dadc";
+
   private final boolean dev;
   private final URI baseUri;
   private final ClockSource clock;
@@ -78,14 +83,7 @@ public final class AuthService {
 
   public Login beginLogin() {
     if (dev) {
-      var key = new UserKey("urn:toktrak:development", "viewer");
-      User user =
-          projection
-              .activeUser(key)
-              .orElseGet(
-                  () ->
-                      identities.authenticateUser(
-                          key, "viewer@development.invalid", "Development Viewer", "#a8dadc"));
+      User user = developmentUser();
       return new Login(tokensUri(), null, issueSession(user.key()));
     }
     OidcClient.Authorization authorization = oidc.begin(callbackUri());
@@ -132,8 +130,24 @@ public final class AuthService {
     User user =
         projection
             .activeUser(key)
-            .orElseThrow(() -> new IllegalArgumentException("login required"));
+            .orElseGet(
+                () -> {
+                  if (dev && DEVELOPMENT_KEY.equals(key) && projection.user(key).isEmpty()) {
+                    return developmentUser();
+                  }
+                  throw new IllegalArgumentException("login required");
+                });
     return new Session(user, required(fields.get("csrf")));
+  }
+
+  private User developmentUser() {
+    assert dev;
+    return projection
+        .activeUser(DEVELOPMENT_KEY)
+        .orElseGet(
+            () ->
+                identities.authenticateUser(
+                    DEVELOPMENT_KEY, DEVELOPMENT_EMAIL, DEVELOPMENT_NAME, DEVELOPMENT_COLOR));
   }
 
   public void requireCsrf(Session session, String supplied) {

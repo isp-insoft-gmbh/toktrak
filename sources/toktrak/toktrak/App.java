@@ -4,8 +4,8 @@ import com.sun.net.httpserver.HttpServer;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.security.SecureRandom;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -37,6 +37,8 @@ public final class App implements AutoCloseable {
   private static final int HTTP_BACKLOG = 128;
   private static final int HTTP_WORKER_COUNT = 64;
   private static final int HTTP_QUEUE_CAPACITY = 256;
+  private static final byte[] DEVELOPMENT_SESSION_SECRET =
+      "toktrak-development-cookie-signing".getBytes(StandardCharsets.UTF_8);
   private final HttpServer server;
   private final ExecutorService executor;
   private final DataLock dataLock;
@@ -153,11 +155,10 @@ public final class App implements AutoCloseable {
     assert writer != null;
     assert baseUri != null;
     if (config.devAuth()) {
-      byte[] sessionSecret = randomSecret();
       byte[] tokenPepper = new byte[32];
       var identities = new IdentityService(writer, projection, tokenPepper);
       return AuthService.development(
-          baseUri, config.clock(), projection, identities, sessionSecret);
+          baseUri, config.clock(), projection, identities, DEVELOPMENT_SESSION_SECRET);
     }
     var identities = new IdentityService(writer, projection, config.tokenPepperBytes());
     var oidc =
@@ -169,12 +170,6 @@ public final class App implements AutoCloseable {
             config.clock());
     return AuthService.production(
         baseUri, config.clock(), projection, identities, config.sessionSecretBytes(), oidc);
-  }
-
-  private static byte[] randomSecret() {
-    byte[] bytes = new byte[32];
-    new SecureRandom().nextBytes(bytes);
-    return bytes;
   }
 
   private static void configureLogging() {

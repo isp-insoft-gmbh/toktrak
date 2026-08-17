@@ -87,6 +87,7 @@ public final class BuildTest {
     given_runtimeAssets_when_fingerprintingCompilation_then_changesFingerprint();
     given_explodedAssets_when_fingerprintingRuntime_then_changesFingerprint();
     given_completedProcess_when_waitingForExit_then_returnsExitCode();
+    given_completedProcess_when_waitingWithoutTimeout_then_returnsExitCode();
     given_argumentsContainingSpaces_when_buildingCommand_then_preservesArguments();
     given_markdownPath_when_selectingJavaFormatSources_then_ignoresIt();
     given_manyFormatterSources_when_batchingSources_then_preservesSourceCount();
@@ -1437,6 +1438,13 @@ public final class BuildTest {
     if (!Build.testTimeout("--tagged").equals(Duration.ofMinutes(10))) {
       throw new AssertionError("tagged test timeout changed");
     }
+  }
+
+  private static void given_completedProcess_when_waitingWithoutTimeout_then_returnsExitCode()
+      throws Exception {
+    Process process = child("done");
+    int exitCode = Build.waitForProcessForTest(process);
+    if (exitCode != 0) throw new AssertionError("completed process exit code changed");
   }
 
   private static void
