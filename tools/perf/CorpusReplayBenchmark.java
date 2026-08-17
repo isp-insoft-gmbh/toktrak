@@ -1,6 +1,5 @@
 package toktrak.perf;
 
-import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -34,28 +33,19 @@ import toktrak.store.EventLog;
 @State(Scope.Benchmark)
 public class CorpusReplayBenchmark {
   private static final Path CORPUS = Path.of("tests/corpus/dev.jsonl");
-  private static final long CORPUS_BYTES = 473_834;
   private static final String CORPUS_SHA256 =
       "4172025f12970c4efabb3cb19f6081905ef5d90ea87a1a6102ac741cb757d3e4";
   private static final int EVENT_COUNT = 14;
-  private static final BigDecimal COST_USD = new BigDecimal("6439.3490222899988205311");
 
+  /// The digest pins the corpus bytes, so the canonical totals it produces stay asserted once in
+  /// `CorpusUsageTest` rather than being duplicated here.
   @Setup(Level.Trial)
   public void validateCorpus() throws Exception {
     if (!Files.isRegularFile(CORPUS)
-        || Files.size(CORPUS) != CORPUS_BYTES
         || !HexFormat.of()
             .formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(CORPUS)))
             .equals(CORPUS_SHA256)) {
       throw new IllegalStateException("development corpus fixture changed");
-    }
-    Projection projection = replay();
-    if (projection.eventCount() != EVENT_COUNT
-        || projection.usageSummary().dailyRows() != 300
-        || projection.usageSummary().sessionRows() != 315
-        || projection.usageSummary().blockRows() != 335
-        || projection.usageSummary().costUsd().compareTo(COST_USD) != 0) {
-      throw new IllegalStateException("development corpus semantics changed");
     }
   }
 

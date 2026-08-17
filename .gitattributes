@@ -1,0 +1,4 @@
+* text=auto
+
+# Byte-identity pinned by tools/perf/CorpusReplayBenchmark.java: never rewrite line endings.
+tests/corpus/*.jsonl -text

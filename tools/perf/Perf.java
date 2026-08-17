@@ -9,6 +9,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 
@@ -101,7 +102,7 @@ public final class Perf {
     assert requested != null;
     if (requested.isEmpty()) return benchmarks;
     var selected = new ArrayList<Benchmark>();
-    for (String id : requested) {
+    for (String id : new LinkedHashSet<>(requested)) {
       selected.add(
           benchmarks.stream()
               .filter(benchmark -> benchmark.id().equals(id))
