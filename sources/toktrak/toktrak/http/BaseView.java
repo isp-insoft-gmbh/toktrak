@@ -11,16 +11,9 @@ public record BaseView(
     String logoWordmarkDarkUrl,
     String logoLockupUrl,
     String logoLockupDarkUrl,
-    boolean development,
-    boolean navigation,
-    boolean overviewCurrent,
-    boolean visualizationsCurrent,
-    boolean scopeCurrent,
-    boolean trackerCurrent,
-    boolean currencySwitch,
-    boolean usd,
-    String currencySwitchUrl,
-    String currencySwitchLabel) {
+    RuntimeMode runtimeMode,
+    CurrentPage currentPage,
+    CurrencySwitch currencyControl) {
   public BaseView {
     Objects.requireNonNull(title, "title");
     Objects.requireNonNull(stylesheetUrl, "stylesheetUrl");
@@ -30,8 +23,9 @@ public record BaseView(
     Objects.requireNonNull(logoWordmarkDarkUrl, "logoWordmarkDarkUrl");
     Objects.requireNonNull(logoLockupUrl, "logoLockupUrl");
     Objects.requireNonNull(logoLockupDarkUrl, "logoLockupDarkUrl");
-    Objects.requireNonNull(currencySwitchUrl, "currencySwitchUrl");
-    Objects.requireNonNull(currencySwitchLabel, "currencySwitchLabel");
+    Objects.requireNonNull(runtimeMode, "runtimeMode");
+    Objects.requireNonNull(currentPage, "currentPage");
+    Objects.requireNonNull(currencyControl, "currencyControl");
     if (title.isBlank() || title.length() > 128) {
       throw new IllegalArgumentException("title is invalid");
     }
@@ -46,23 +40,49 @@ public record BaseView(
     requireSvgAsset(logoWordmarkDarkUrl, "logo-wordmark-dark", "logoWordmarkDarkUrl");
     requireSvgAsset(logoLockupUrl, "logo-lockup", "logoLockupUrl");
     requireSvgAsset(logoLockupDarkUrl, "logo-lockup-dark", "logoLockupDarkUrl");
-    int currentPages =
-        (overviewCurrent ? 1 : 0)
-            + (visualizationsCurrent ? 1 : 0)
-            + (scopeCurrent ? 1 : 0)
-            + (trackerCurrent ? 1 : 0);
-    if (currentPages != (navigation ? 1 : 0)) {
-      throw new IllegalArgumentException("navigation state is invalid");
+    if (currencyControl.enabled() && currentPage == CurrentPage.NONE) {
+      throw new IllegalArgumentException("currency switch is invalid");
     }
-    if (currencySwitch) {
-      if (!navigation
-          || !currencySwitchUrl.matches("/(?:visualizations|scope)?\\?currency=(?:USD|EUR)")
-          || !currencySwitchLabel.matches("USD|EUR")) {
-        throw new IllegalArgumentException("currency switch is invalid");
-      }
-    } else if (!currencySwitchUrl.isEmpty() || !currencySwitchLabel.isEmpty()) {
-      throw new IllegalArgumentException("currency switch is disabled");
-    }
+  }
+
+  public boolean development() {
+    return runtimeMode == RuntimeMode.DEVELOPMENT;
+  }
+
+  public boolean navigation() {
+    return currentPage != CurrentPage.NONE;
+  }
+
+  public boolean overviewCurrent() {
+    return currentPage == CurrentPage.OVERVIEW;
+  }
+
+  public boolean visualizationsCurrent() {
+    return currentPage == CurrentPage.VISUALIZATIONS;
+  }
+
+  public boolean scopeCurrent() {
+    return currentPage == CurrentPage.SCOPE;
+  }
+
+  public boolean trackerCurrent() {
+    return currentPage == CurrentPage.TRACKER;
+  }
+
+  public boolean currencySwitch() {
+    return currencyControl.enabled();
+  }
+
+  public boolean usd() {
+    return currencyControl.current() == Currency.USD;
+  }
+
+  public String currencySwitchUrl() {
+    return currencyControl.url();
+  }
+
+  public String currencySwitchLabel() {
+    return currencyControl.label();
   }
 
   private static void requireSvgAsset(String url, String name, String field) {
@@ -72,5 +92,65 @@ public record BaseView(
     if (!url.matches("/assets/" + name + "\\.[0-9a-f]{32}\\.svg")) {
       throw new IllegalArgumentException(field + " is invalid");
     }
+  }
+
+  public enum RuntimeMode {
+    DEVELOPMENT,
+    PRODUCTION
+  }
+
+  public enum CurrentPage {
+    NONE,
+    OVERVIEW,
+    VISUALIZATIONS,
+    SCOPE,
+    TRACKER
+  }
+
+  public enum Currency {
+    USD,
+    EUR;
+
+    static Currency from(DashboardCurrency currency) {
+      assert currency != null;
+      return valueOf(currency.name());
+    }
+  }
+
+  public record CurrencySwitch(
+      CurrencySwitchState state, Currency current, String url, String label) {
+    public CurrencySwitch {
+      Objects.requireNonNull(state, "state");
+      Objects.requireNonNull(current, "current");
+      Objects.requireNonNull(url, "url");
+      Objects.requireNonNull(label, "label");
+      if (state == CurrencySwitchState.ENABLED) {
+        if (!url.matches("/(?:visualizations|scope)?\\?currency=(?:USD|EUR)")
+            || !label.matches("USD|EUR")
+            || label.equals(current.name())) {
+          throw new IllegalArgumentException("currency switch is invalid");
+        }
+      } else if (!url.isEmpty() || !label.isEmpty()) {
+        throw new IllegalArgumentException("currency switch is disabled");
+      }
+    }
+
+    public static CurrencySwitch enabled(Currency current, String url, Currency target) {
+      Objects.requireNonNull(target, "target");
+      return new CurrencySwitch(CurrencySwitchState.ENABLED, current, url, target.name());
+    }
+
+    public static CurrencySwitch disabled() {
+      return new CurrencySwitch(CurrencySwitchState.DISABLED, Currency.USD, "", "");
+    }
+
+    public boolean enabled() {
+      return state == CurrencySwitchState.ENABLED;
+    }
+  }
+
+  public enum CurrencySwitchState {
+    ENABLED,
+    DISABLED
   }
 }

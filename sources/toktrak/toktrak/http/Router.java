@@ -17,6 +17,14 @@ import java.util.concurrent.RejectedExecutionException;
 import toktrak.auth.AuthService;
 import toktrak.auth.AuthService.Session;
 import toktrak.health.HealthState;
+import toktrak.http.BaseView.Currency;
+import toktrak.http.BaseView.CurrencySwitch;
+import toktrak.http.BaseView.CurrentPage;
+import toktrak.http.BaseView.RuntimeMode;
+import toktrak.http.HomeView.SessionState;
+import toktrak.http.TokenListView.LastUsage;
+import toktrak.http.TokenListView.PageLink;
+import toktrak.http.TokenListView.TokenState;
 import toktrak.identity.IdentityService.PreparedToken;
 import toktrak.json.Json;
 import toktrak.projection.Projection;
@@ -309,10 +317,10 @@ public final class Router implements HttpHandler {
               session.csrf(),
               rows,
               page,
-              page > 1,
-              page > 1 ? tokenPageUrl(page - 1) : "",
-              page < tokens.pageCount(),
-              page < tokens.pageCount() ? tokenPageUrl(page + 1) : "",
+              page > 1 ? PageLink.available(tokenPageUrl(page - 1)) : PageLink.unavailable(),
+              page < tokens.pageCount()
+                  ? PageLink.available(tokenPageUrl(page + 1))
+                  : PageLink.unavailable(),
               assets.publicUrl("platform.js"));
       HttpSupport.encodedHtml(
           exchange,
@@ -558,7 +566,7 @@ public final class Router implements HttpHandler {
     try {
       session = auth.requireSession(exchange.getRequestHeaders().getFirst("Cookie"));
     } catch (IllegalArgumentException exception) {
-      var view = new HomeView(base("TokTrak"), false);
+      var view = new HomeView(base("TokTrak"), SessionState.SIGNED_OUT);
       HttpSupport.encodedHtml(
           exchange,
           200,
@@ -570,7 +578,7 @@ public final class Router implements HttpHandler {
     DashboardCurrency effective = effectiveCurrency(currency);
     var view =
         new OverviewView(
-            dashboardBase("Overview · TokTrak", "/", true, false, effective),
+            dashboardBase("Overview · TokTrak", "/", CurrentPage.OVERVIEW, effective),
             projection.revision(),
             session.user().displayName(),
             DashboardFactory.create(projection, health, effective));
@@ -593,7 +601,11 @@ public final class Router implements HttpHandler {
     DashboardCurrency effective = effectiveCurrency(currency);
     var view =
         new VisualizationsView(
-            dashboardBase("Visualizations · TokTrak", "/visualizations", false, true, effective),
+            dashboardBase(
+                "Visualizations · TokTrak",
+                "/visualizations",
+                CurrentPage.VISUALIZATIONS,
+                effective),
             projection.revision(),
             session.user().displayName(),
             DashboardFactory.create(projection, health, effective));
@@ -616,7 +628,7 @@ public final class Router implements HttpHandler {
     DashboardCurrency effective = effectiveCurrency(currency);
     var view =
         new ScopeView(
-            dashboardBase("Data scope · TokTrak", "/scope", false, false, effective),
+            dashboardBase("Data scope · TokTrak", "/scope", CurrentPage.SCOPE, effective),
             session.user().displayName());
     HttpSupport.encodedHtml(
         exchange,
@@ -774,15 +786,12 @@ public final class Router implements HttpHandler {
 
   private static TokenListView.TokenRow tokenRow(TrackerToken token) {
     assert token != null;
-    boolean active = token.revokedAt() == null;
-    String lastUsed = token.lastUsedAt() == null ? "" : token.lastUsedAt().toString();
-    return new TokenListView.TokenRow(
-        token.label(),
-        token.id().toString(),
-        active ? "active" : "revoked",
-        !lastUsed.isEmpty(),
-        lastUsed,
-        active);
+    TokenState state = token.revokedAt() == null ? TokenState.ACTIVE : TokenState.REVOKED;
+    LastUsage lastUsage =
+        token.lastUsedAt() == null
+            ? LastUsage.never()
+            : LastUsage.at(token.lastUsedAt().toString());
+    return new TokenListView.TokenRow(token.label(), token.id().toString(), state, lastUsage);
   }
 
   private static Page page(String query) {
