@@ -5,9 +5,7 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^sources\\/[^/]+-deps\\.txt$/"],
-      "matchStrings": [
-        "pkg:maven/(?<groupId>[^/\\s]+)/(?<artifactId>[^@\\s]+)@(?<currentValue>[^?\\s]+)"
-      ],
+      "matchStrings": ["pkg:maven/(?<groupId>[^/\\s]+)/(?<artifactId>[^@\\s]+)@(?<currentValue>[^?\\s]+)"],
       "datasourceTemplate": "maven",
       "packageNameTemplate": "{{{groupId}}}:{{{artifactId}}}"
     }
