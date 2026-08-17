@@ -38,6 +38,13 @@ public final class App implements AutoCloseable {
   private static final int HTTP_BACKLOG = 128;
   private static final int HTTP_WORKER_COUNT = 64;
   private static final int HTTP_QUEUE_CAPACITY = 256;
+  private static final int HTTP_IDLE_CONNECTIONS_MAX = 64;
+  private static final int HTTP_CONNECTIONS_MAX =
+      HTTP_WORKER_COUNT + HTTP_QUEUE_CAPACITY + HTTP_IDLE_CONNECTIONS_MAX;
+  private static final int HTTP_REQUEST_HEADERS_MAX = 64;
+  private static final int HTTP_REQUEST_HEADER_BYTES_MAX = 32 * 1024;
+  private static final int HTTP_REQUEST_SECONDS_MAX = 30;
+  private static final int HTTP_RESPONSE_SECONDS_MAX = 60;
   private static final byte[] DEVELOPMENT_SESSION_SECRET =
       "toktrak-development-cookie-signing".getBytes(StandardCharsets.UTF_8);
   private HttpServer server;
@@ -67,6 +74,7 @@ public final class App implements AutoCloseable {
   public static App start(String[] args, Map<String, String> environment) {
     Objects.requireNonNull(args, "args");
     Objects.requireNonNull(environment, "environment");
+    configureHttpServer();
     configureLogging();
     Config config = Config.from(args, environment);
     Assets assets = Assets.load();
@@ -161,6 +169,26 @@ public final class App implements AutoCloseable {
     console.setFormatter(new JsonLogFormatter());
     root.addHandler(console);
     root.setLevel(quiet ? Level.OFF : Level.INFO);
+  }
+
+  private static void configureHttpServer() {
+    // HttpServer reads these process properties once when its implementation initializes.
+    setHttpServerProperty("jdk.httpserver.maxConnections", HTTP_CONNECTIONS_MAX);
+    setHttpServerProperty("sun.net.httpserver.maxIdleConnections", HTTP_IDLE_CONNECTIONS_MAX);
+    setHttpServerProperty("sun.net.httpserver.maxReqHeaders", HTTP_REQUEST_HEADERS_MAX);
+    setHttpServerProperty("sun.net.httpserver.maxReqHeaderSize", HTTP_REQUEST_HEADER_BYTES_MAX);
+    setHttpServerProperty("sun.net.httpserver.maxReqTime", HTTP_REQUEST_SECONDS_MAX);
+    setHttpServerProperty("sun.net.httpserver.maxRspTime", HTTP_RESPONSE_SECONDS_MAX);
+  }
+
+  private static void setHttpServerProperty(String name, int value) {
+    assert name != null && !name.isBlank();
+    assert value > 0;
+    String expected = Integer.toString(value);
+    System.setProperty(name, expected);
+    if (!expected.equals(System.getProperty(name))) {
+      throw new IllegalStateException("cannot configure HTTP server limit: " + name);
+    }
   }
 
   public int port() {

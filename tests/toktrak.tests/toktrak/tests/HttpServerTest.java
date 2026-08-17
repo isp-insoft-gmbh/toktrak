@@ -3,6 +3,7 @@ package toktrak.tests;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.net.HttpURLConnection;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -10,6 +11,7 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Map;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import toktrak.*;
@@ -80,6 +82,39 @@ final class HttpServerTest {
       assertEquals(414, rejected.statusCode());
       assertEquals("application/json; charset=utf-8", rejected.header("content-type"));
       assertTrue(rejected.body().contains("\"code\":\"uri_too_long\""));
+    }
+  }
+
+  @Tag("network")
+  @Test
+  void given_oversizedRequestHeader_when_reachingHttpServer_then_rejectsBeforeApplicationRouting()
+      throws Exception {
+    Map<String, String> limits =
+        Map.of(
+            "jdk.httpserver.maxConnections", "384",
+            "sun.net.httpserver.maxIdleConnections", "64",
+            "sun.net.httpserver.maxReqHeaders", "64",
+            "sun.net.httpserver.maxReqHeaderSize", "32768",
+            "sun.net.httpserver.maxReqTime", "30",
+            "sun.net.httpserver.maxRspTime", "60");
+    for (String name : limits.keySet()) System.clearProperty(name);
+    try (var app = App.start(new String[] {}, devEnvironment())) {
+      for (Map.Entry<String, String> limit : limits.entrySet()) {
+        assertEquals(limit.getValue(), System.getProperty(limit.getKey()), limit.getKey());
+      }
+      try (var socket = new Socket(app.bindAddress(), app.port())) {
+        socket.setSoTimeout(2_000);
+        String request =
+            "GET /health HTTP/1.1\r\n"
+                + "Host: 127.0.0.1\r\n"
+                + "X-Padding: "
+                + "a".repeat(32 * 1024)
+                + "\r\nConnection: close\r\n\r\n";
+        socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
+        socket.shutdownOutput();
+        assertTrue(closedWithoutResponse(socket));
+      }
+      assertEquals(200, get(app, "/health").statusCode());
     }
   }
 
@@ -188,6 +223,15 @@ final class HttpServerTest {
       }
     } finally {
       connection.disconnect();
+    }
+  }
+
+  private static boolean closedWithoutResponse(Socket socket) throws java.io.IOException {
+    assertNotNull(socket);
+    try {
+      return socket.getInputStream().read() < 0;
+    } catch (java.net.SocketException exception) {
+      return true;
     }
   }
 
