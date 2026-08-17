@@ -30,8 +30,7 @@ weekday: monday
 Find one defect.
 `;
 
-const failure = (source, pattern) =>
-  assert.throws(() => parseTask(source, "bugs.md"), pattern);
+const failure = (source, pattern) => assert.throws(() => parseTask(source, "bugs.md"), pattern);
 
 test("accepts one complete strict task definition", () => {
   assert.deepEqual(parseTask(valid, "bugs.md"), {
@@ -61,7 +60,10 @@ test("rejects invalid values, empty prompts, and provider billing drift", () => 
   failure(valid.replace("model: openai-codex/gpt-5.5", `model: ${"m".repeat(45)}`), /model: exceeds 44/);
   failure(valid.replace("thinking: max", `thinking: ${"x".repeat(33)}`), /thinking: exceeds 32/);
   failure(valid.replace("model: openai-codex/gpt-5.5", "model: anthropic/claude"), /Pi must use ChatGPT/);
-  failure(valid.replace("harness: pi\nmodel: openai-codex/gpt-5.5", "harness: codex\nmodel: openai/gpt"), /must be native to codex/);
+  failure(
+    valid.replace("harness: pi\nmodel: openai-codex/gpt-5.5", "harness: codex\nmodel: openai/gpt"),
+    /must be native to codex/,
+  );
   failure(valid.replace("Find one defect.", "   "), /prompt: Markdown body is empty/);
 });
 
@@ -195,37 +197,53 @@ test("terminates the complete process tree on timeout", async () => {
 
 test("encrypts, binds, and restores rotating subscription authentication", () => {
   const home = mkdtempSync(join(tmpdir(), "toktrak-golem-auth-"));
-  const script = join(process.cwd(), "tools", "GolemAuth.java");
+  const script = join(process.cwd(), "tools", "golem.mjs");
   const cache = join(home, "pi.cache");
   const secondCache = join(home, "pi-second.cache");
   const secret = Buffer.from('{"openai-codex":{"type":"oauth","refresh":"secret"}}');
   const key = randomBytes(32).toString("base64");
   const run = (arguments_, environment) =>
-    spawnSync("java", ["-ea", `-Duser.home=${home}`, script, ...arguments_], {
+    spawnSync(process.execPath, [script, "auth", ...arguments_], {
       encoding: "utf8",
-      env: { ...process.env, ...environment },
+      env: { ...process.env, HOME: home, USERPROFILE: home, ...environment },
       timeout: 30_000,
     });
   try {
-    const seeded = run(["seed", "pi"], { GOLEM_AUTH_SEED: secret.toString("base64") });
+    const seeded = run(["seed", "pi"], {
+      GOLEM_AUTH_SEED: secret.toString("base64"),
+    });
     assert.equal(seeded.status, 0, seeded.stderr);
     const authentication = join(home, ".pi", "agent", "auth.json");
     assert.deepEqual(readFileSync(authentication), secret);
     if (process.platform !== "win32") assert.equal(statSync(authentication).mode & 0o777, 0o600);
 
-    const encrypted = run(["encrypt", "pi", cache], { GOLEM_AUTH_CACHE_KEY: key });
-    const encryptedAgain = run(["encrypt", "pi", secondCache], { GOLEM_AUTH_CACHE_KEY: key });
+    const encrypted = run(["encrypt", "pi", cache], {
+      GOLEM_AUTH_CACHE_KEY: key,
+    });
+    const encryptedAgain = run(["encrypt", "pi", secondCache], {
+      GOLEM_AUTH_CACHE_KEY: key,
+    });
     assert.equal(encrypted.status, 0, encrypted.stderr);
     assert.equal(encryptedAgain.status, 0, encryptedAgain.stderr);
     assert.equal(readFileSync(cache).includes(secret), false);
     assert.notDeepEqual(readFileSync(cache), readFileSync(secondCache));
+    const firstCache = readFileSync(cache);
+    const overwritten = run(["encrypt", "pi", cache], {
+      GOLEM_AUTH_CACHE_KEY: key,
+    });
+    assert.equal(overwritten.status, 0, overwritten.stderr);
+    assert.notDeepEqual(readFileSync(cache), firstCache);
 
     rmSync(authentication);
-    const restored = run(["decrypt", "pi", cache], { GOLEM_AUTH_CACHE_KEY: key });
+    const restored = run(["decrypt", "pi", cache], {
+      GOLEM_AUTH_CACHE_KEY: key,
+    });
     assert.equal(restored.status, 0, restored.stderr);
     assert.deepEqual(readFileSync(authentication), secret);
 
-    const wrongProvider = run(["decrypt", "codex", cache], { GOLEM_AUTH_CACHE_KEY: key });
+    const wrongProvider = run(["decrypt", "codex", cache], {
+      GOLEM_AUTH_CACHE_KEY: key,
+    });
     assert.notEqual(wrongProvider.status, 0);
     assert.doesNotMatch(wrongProvider.stderr, /secret/);
     const wrongKey = run(["decrypt", "pi", cache], {
@@ -238,18 +256,49 @@ test("encrypts, binds, and restores rotating subscription authentication", () =>
   }
 });
 
+test("keeps workflow authentication on the tested golem entrypoint", () => {
+  const workflow = readFileSync(join(process.cwd(), ".github", "workflows", "golem.yml"), "utf8");
+  assert.doesNotMatch(workflow, /GolemAuth/);
+  assert.match(workflow, /node tools\/golem\.mjs auth decrypt/);
+  assert.match(workflow, /node tools\/golem\.mjs auth encrypt/);
+  assert.match(workflow, /node tools\/golem\.mjs auth seed/);
+});
+
 test("builds explicit ephemeral harness adapters", () => {
+  assert.deepEqual(harnessArguments({ harness: "pi", model: "openai-codex/gpt-5.5", thinking: "max" }, true), [
+    "--print",
+    "--no-session",
+    "--no-tools",
+    "--model",
+    "openai-codex/gpt-5.5",
+    "--thinking",
+    "max",
+  ]);
+  assert.deepEqual(harnessArguments({ harness: "claude", model: "fable", thinking: "high" }), [
+    "--print",
+    "--no-session-persistence",
+    "--model",
+    "fable",
+    "--effort",
+    "high",
+    "--dangerously-skip-permissions",
+  ]);
   assert.deepEqual(
-    harnessArguments({ harness: "pi", model: "openai-codex/gpt-5.5", thinking: "max" }, true),
-    ["--print", "--no-session", "--no-tools", "--model", "openai-codex/gpt-5.5", "--thinking", "max"],
-  );
-  assert.deepEqual(
-    harnessArguments({ harness: "claude", model: "fable", thinking: "high" }),
-    ["--print", "--no-session-persistence", "--model", "fable", "--effort", "high", "--dangerously-skip-permissions"],
-  );
-  assert.deepEqual(
-    harnessArguments({ harness: "codex", model: "gpt-5.6-sol", thinking: "max" }),
-    ["exec", "--ephemeral", "--model", "gpt-5.6-sol", "--config", 'model_reasoning_effort="max"', "--dangerously-bypass-approvals-and-sandbox", "-"],
+    harnessArguments({
+      harness: "codex",
+      model: "gpt-5.6-sol",
+      thinking: "max",
+    }),
+    [
+      "exec",
+      "--ephemeral",
+      "--model",
+      "gpt-5.6-sol",
+      "--config",
+      'model_reasoning_effort="max"',
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-",
+    ],
   );
 });
 
@@ -305,9 +354,6 @@ test("requires a rendered golem pull-request body", () => {
   const body = "See ![diagram]([evidence:flow.svg]).";
   const evidence = new Map([["flow.svg", "https://gatebridge.link/1y/flow.svg"]]);
 
-  assert.equal(
-    renderedPullRequestBody(body, evidence),
-    "See ![diagram](https://gatebridge.link/1y/flow.svg).",
-  );
+  assert.equal(renderedPullRequestBody(body, evidence), "See ![diagram](https://gatebridge.link/1y/flow.svg).");
   assert.throws(() => renderedPullRequestBody(body, new Map()), /references missing evidence/);
 });
