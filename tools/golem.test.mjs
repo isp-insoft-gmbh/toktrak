@@ -9,6 +9,7 @@ import {
   authCheckTargets,
   evidenceBody,
   harnessArguments,
+  renderedPullRequestBody,
   runDetailsBody,
   parseTask,
   protectedChanges,
@@ -286,4 +287,15 @@ test("replaces evidence placeholders without footer metadata", () => {
     evidenceBody(body, evidence),
     "See ![diagram](https://gatebridge.link/1y/flow.svg) and [demo](https://gatebridge.link/1y/demo.webm).",
   );
+});
+
+test("requires a rendered golem pull-request body", () => {
+  const body = "See ![diagram]([evidence:flow.svg]).";
+  const evidence = new Map([["flow.svg", "https://gatebridge.link/1y/flow.svg"]]);
+
+  assert.equal(
+    renderedPullRequestBody(body, evidence),
+    "See ![diagram](https://gatebridge.link/1y/flow.svg).",
+  );
+  assert.throws(() => renderedPullRequestBody(body, new Map()), /references missing evidence/);
 });

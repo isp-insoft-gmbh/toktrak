@@ -46,8 +46,18 @@ expose credentials. Write human commit and pull-request prose without AI
 attribution or trailers.
 
 Pull-request prose must help a human understand the original issue and the rough
-solution. Keep it terse. Use a small inline diagram, before/after snippet, or
-publicly safe uploaded screenshot/video when that explains the change faster
-than prose. Do not add `Checks:` sections or repeat task, harness, model,
+solution. Keep it terse, focused, and well formatted. For every useful change or
+continued pull request, write the full Markdown description to
+`output/golem-pr.md`; the parent process publishes exactly that file plus the
+hidden run link. Use the `make-pr` skill's human-review guidance when shaping
+this description.
+
+Prefer visual communication when it makes review faster: a small inline diagram,
+before/after snippet, screenshot, short video, or other publicly safe evidence.
+Put evidence files under `output/golem-evidence` and reference them from
+`output/golem-pr.md` as `[evidence:<filename>]`, including inline image syntax
+such as `![Dashboard before/after]([evidence:dashboard.webp])` when useful. The
+parent process validates and uploads those files, then replaces placeholders
+with public URLs. Do not add `Checks:` sections or repeat task, harness, model,
 thinking, weekday, or prompt-revision metadata; labels and the hidden run link
 carry run metadata.

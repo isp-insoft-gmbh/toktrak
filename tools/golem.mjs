@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const GOLEMS = join(ROOT, ".github", "golems");
+const GOLEM_PULL_REQUEST_BODY = join("output", "golem-pr.md");
 const TASK_ID = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 const KEYS = ["harness", "model", "thinking", "weekday"];
 const HARNESSES = new Set(["pi", "claude", "codex"]);
@@ -406,12 +407,31 @@ export const evidenceBody = (body, evidence) => {
   return result;
 };
 
+export const pullRequestBody = (worktree) => {
+  const path = join(worktree, GOLEM_PULL_REQUEST_BODY);
+  if (!existsSync(path)) fail(`${GOLEM_PULL_REQUEST_BODY}: missing; write focused human review prose`);
+  const body = strictSource(path).trim();
+  if (!body) fail(`${GOLEM_PULL_REQUEST_BODY}: pull-request body is empty; write focused human review prose`);
+  if (body.includes(RUN_DETAILS_START) || body.includes(OLD_METADATA_START)) {
+    fail(`${GOLEM_PULL_REQUEST_BODY}: must not contain golem metadata; the parent process adds the hidden run link`);
+  }
+  return body;
+};
+
+export const renderedPullRequestBody = (body, evidence) => {
+  const result = evidenceBody(body, evidence);
+  if (result.includes("[evidence:")) {
+    fail(`${GOLEM_PULL_REQUEST_BODY}: references missing evidence; create the file under output/golem-evidence or remove the placeholder`);
+  }
+  return result;
+};
+
 const promptFor = (task, target, branch, pullRequestContext) => {
   const documents = ["SYSTEM.md", "MISSION.md", "RULES.md"]
     .map((name) => `# .system/${name}\n\n${strictSource(join(ROOT, ".system", name)).trim()}`)
     .join("\n\n");
   const common = strictSource(join(GOLEMS, "_golem.md")).trim();
-  return `${documents}\n\n# .github/golems/_golem.md\n\n${common}\n\n# Deterministic run context\n\nTask: ${task.id}\nTarget: ${target}\nDedicated branch: ${branch}\nTask revision: ${git(["rev-parse", `HEAD:.github/golems/${task.id}.md`])}\n\nThe parent process owns branch publication, pull-request creation, labels, hidden run link, evidence upload, and final checks. Commit every useful repository change with a human title and explanatory body. Leave no uncommitted changes. Do not push or merge. A no-change result must leave HEAD, the worktree, and GitHub unchanged. Evidence, only when useful and publicly safe, goes under output/golem-evidence and is referenced in pull-request prose as [evidence:<filename>].\n\n${pullRequestContext}\n\n# Task prompt\n\n${task.body}\n`;
+  return `${documents}\n\n# .github/golems/_golem.md\n\n${common}\n\n# Deterministic run context\n\nTask: ${task.id}\nTarget: ${target}\nDedicated branch: ${branch}\nTask revision: ${git(["rev-parse", `HEAD:.github/golems/${task.id}.md`])}\n\nThe parent process owns branch publication, pull-request creation, labels, hidden run link, evidence upload, and final checks. Commit every useful repository change with a human title and explanatory body. Leave no uncommitted changes. Do not push or merge. A no-change result must leave HEAD, the worktree, and GitHub unchanged. For every useful change or continued pull request, write the full human pull-request description to ${GOLEM_PULL_REQUEST_BODY}. Evidence, only when useful and publicly safe, goes under output/golem-evidence and is referenced in pull-request prose as [evidence:<filename>].\n\n${pullRequestContext}\n\n# Task prompt\n\n${task.body}\n`;
 };
 
 const targetHead = (target) => git(["ls-remote", "--exit-code", "origin", `refs/heads/${target}`]).split(/\s+/)[0];
@@ -616,22 +636,22 @@ const publishRun = async (run) => {
     git(["push", "origin", `HEAD:refs/heads/${run.branch}`, ...lease], run.worktree, "publish golem branch");
     remoteHead = run.headAfter;
   }
+  const descriptionTemplate = pullRequestBody(run.worktree);
+  const evidence = uploadEvidence(run.worktree);
+  const description = renderedPullRequestBody(descriptionTemplate, evidence);
   if (!pullRequest) {
     const message = git(["log", "-1", "--pretty=%B"], run.worktree);
-    const [title, ...bodyLines] = message.split("\n");
-    const body = bodyLines.join("\n").trim();
-    if (!title.trim() || !body) fail("new golem commit requires a human title and explanatory body for pull-request prose");
-    const url = gh(["pr", "create", "--head", run.branch, "--base", run.target, "--title", title.trim(), "--body", body], run.worktree, "create golem pull request");
+    const [title] = message.split("\n");
+    if (!title.trim()) fail("new golem commit requires a human title");
+    const url = gh(["pr", "create", "--head", run.branch, "--base", run.target, "--title", title.trim(), "--body", description], run.worktree, "create golem pull request");
     pullRequest = JSON.parse(gh(["pr", "view", url, "--json", "number"]));
   }
   const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
     ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : "local";
   ensureLabels(run.task, pullRequest.number, run.worktree);
-  const evidence = uploadEvidence(run.worktree);
-  const currentBody = JSON.parse(gh(["pr", "view", String(pullRequest.number), "--json", "body"], run.worktree)).body;
-  const body = runDetailsBody(evidenceBody(currentBody, evidence), runUrl);
-  gh(["pr", "edit", String(pullRequest.number), "--body", body], run.worktree, "update golem pull-request run link");
+  const body = runDetailsBody(description, runUrl);
+  gh(["pr", "edit", String(pullRequest.number), "--body", body], run.worktree, "update golem pull-request body");
   if (unresolvedReviewThreads(run.repository, pullRequest.number) !== 0) fail(`pull request #${pullRequest.number} has unresolved review threads`);
   const finalRemoteHead = branchHead(run.branch);
   if (finalRemoteHead !== remoteHead) fail(`remote ${run.branch} changed concurrently`);
