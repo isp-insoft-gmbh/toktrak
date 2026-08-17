@@ -45,9 +45,8 @@ layout, generated-code boundaries, and verification commands.
 3. Create a tracker token.
 4. Download and run the generated installer for your OS. <
 
-> For Windows Developers: Enable Dev Mode on your machine <br>
-> `System -> Erweitert -> Entwicklermodus` or
-> <br>`System -> Advanced -> Developer Mode`
+> For Windows Developers: Enable Dev Mode on your machine
+> `System -> Erweitert -> Entwicklermodus` or `System -> Advanced -> Developer Mode`
 
 The installer contains the one-time token. Do not share it. If it is lost,
 revoke it and create another.
