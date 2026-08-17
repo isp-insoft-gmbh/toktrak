@@ -48,6 +48,8 @@ Generate the two Base64 secrets separately:
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 ```
 
+`TOKTRAK_BASE_URL` is the public external URL used for redirects and tracker
+downloads; production accepts HTTPS, plus local HTTP for verification only.
 `TOKTRAK_SESSION_SECRET` signs login cookies. `TOKTRAK_TOKEN_PEPPER` hashes
 tracker tokens and must remain stable; changing it invalidates every tracker
 token. Never set `TOKTRAK_DEV_AUTH` in production.
