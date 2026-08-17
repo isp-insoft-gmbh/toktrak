@@ -77,6 +77,7 @@ public final class BuildTest {
     given_malformedArtifactMarkers_when_checkingInventory_then_rejectsMarker();
     given_artifactFailpoints_when_rebuilding_then_nextRunPublishesCompleteTree();
     given_generatedSymbolicLinks_when_checkingInventory_then_preservesInternalTargetsAndRejectsEscapes();
+    given_outputArtifacts_when_cleaning_then_deletesEverythingExceptHeldLock();
     given_runningBuildCommand_when_acquiringBuildLock_then_rejectsCommand();
     given_runningDevelopmentServer_when_requiringExclusiveBuild_then_rejectsCommand();
     given_validRuntimeAssets_when_buildingBundle_then_returnsCanonicalIndex();
@@ -803,6 +804,24 @@ public final class BuildTest {
     Files.createSymbolicLink(logging.resolve("LICENSE"), Path.of("../java.base/LICENSE"));
   }
 
+  private static void given_outputArtifacts_when_cleaning_then_deletesEverythingExceptHeldLock()
+      throws Exception {
+    Path output = Files.createTempDirectory("toktrak-clean-");
+    Path lock = Files.writeString(output.resolve(".build.lock"), "");
+    Files.writeString(output.resolve("unknown.txt"), "disposable");
+    Files.createDirectories(output.resolve("unknown/nested"));
+    Files.writeString(output.resolve("unknown/nested/artifact.bin"), "disposable");
+    try {
+      Build.cleanOutputForTest(output, lock);
+      if (!Files.readString(lock).isEmpty()
+          || !Build.treePathsForTest(output, 10).equals(List.of(output, lock))) {
+        throw new AssertionError("clean did not preserve only its held lock");
+      }
+    } finally {
+      deleteTestTree(output);
+    }
+  }
+
   private static void given_runningBuildCommand_when_acquiringBuildLock_then_rejectsCommand()
       throws Exception {
     Path lockPath = Files.createTempFile("toktrak-build-lock-", ".lock");
@@ -811,7 +830,10 @@ public final class BuildTest {
         FileLock lock = Build.acquireBuildLockForTest(first)) {
       if (!lock.isValid()) throw new AssertionError("build lock is invalid");
       expectFailure(
-          () -> Build.acquireBuildLockForTest(second), "another TokTrak build command is running");
+          () ->
+              Build.acquireBuildLockForTest(
+                  second, "clean", lockPath.resolveSibling("missing-data")),
+          "cannot run clean while another TokTrak build command is running; wait for it to finish");
     } finally {
       Files.deleteIfExists(lockPath);
     }
@@ -828,6 +850,17 @@ public final class BuildTest {
               FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
           FileLock lock = channel.lock()) {
         if (!lock.isValid()) throw new AssertionError("development lock is invalid");
+        Path buildLockPath = directory.resolve("build.lock");
+        try (var first =
+                FileChannel.open(
+                    buildLockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+            var second = FileChannel.open(buildLockPath, StandardOpenOption.WRITE);
+            FileLock buildLock = Build.acquireBuildLockForTest(first)) {
+          if (!buildLock.isValid()) throw new AssertionError("build lock is invalid");
+          expectFailure(
+              () -> Build.acquireBuildLockForTest(second, "clean", directory),
+              "cannot run clean while mise run dev is running; stop it with Ctrl+C");
+        }
         for (String command :
             List.of(
                 "check",

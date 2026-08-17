@@ -323,14 +323,14 @@ public final class Build {
       Files.createDirectories(OUTPUT);
       try (var channel =
               FileChannel.open(BUILD_LOCK, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-          FileLock lock = acquireBuildLock(channel)) {
+          FileLock lock = acquireBuildLock(channel, args[0], DEV_DATA_DIRECTORY)) {
         assert lock.isValid();
         requireDevelopmentServerStopped(args[0], DEV_DATA_DIRECTORY);
         if (args[0].equals("pit")) {
           pitCommand(commandArguments);
           return;
         }
-        deleteTree(ARGFILES);
+        if (!args[0].equals("clean")) deleteTree(ARGFILES);
         switch (args[0]) {
           case "clean" -> clean();
           case "check" -> check();
@@ -358,15 +358,40 @@ public final class Build {
     return acquireBuildLock(channel);
   }
 
+  static FileLock acquireBuildLockForTest(FileChannel channel, String command, Path dataDirectory)
+      throws IOException {
+    return acquireBuildLock(channel, command, dataDirectory);
+  }
+
+  private static FileLock acquireBuildLock(FileChannel channel, String command, Path dataDirectory)
+      throws IOException {
+    assert command != null && !command.isBlank();
+    assert dataDirectory != null;
+    try {
+      return acquireBuildLock(channel);
+    } catch (IllegalStateException exception) {
+      if (developmentServerRunning(dataDirectory)) {
+        throw new IllegalStateException(
+            "cannot run " + command + " while mise run dev is running; stop it with Ctrl+C",
+            exception);
+      }
+      throw new IllegalStateException(
+          "cannot run "
+              + command
+              + " while another TokTrak build command is running; wait for it to finish",
+          exception);
+    }
+  }
+
   private static FileLock acquireBuildLock(FileChannel channel) throws IOException {
     assert channel != null;
     try {
       FileLock lock = channel.tryLock();
       if (lock != null) return lock;
     } catch (OverlappingFileLockException exception) {
-      throw new IllegalStateException("another TokTrak build command is running", exception);
+      throw new IllegalStateException("build lock is held", exception);
     }
-    throw new IllegalStateException("another TokTrak build command is running");
+    throw new IllegalStateException("build lock is held");
   }
 
   static void requireDevelopmentServerStoppedForTest(String command, Path dataDirectory) {
@@ -402,26 +427,20 @@ public final class Build {
   }
 
   private static void clean() throws IOException {
-    cleanGeneratedTree(MODULES);
-    cleanGeneratedTree(MAIN_DEPS);
-    cleanGeneratedTree(TEST_DEPS);
-    cleanGeneratedTree(SNAPSHOT_DEPS);
-    cleanGeneratedTree(BUILD_DEPS);
-    cleanGeneratedTree(REFASTER_DEPS);
-    cleanGeneratedTree(PIT_DEPS);
-    cleanGeneratedTree(COVERAGE_DEPS);
-    cleanGeneratedTree(COVERAGE);
-    cleanGeneratedTree(PERF);
-    cleanGeneratedTree(PERF_DEPS);
-    cleanGeneratedTree(MUTATIONS);
-    Files.deleteIfExists(PIT_HISTORY);
-    cleanGeneratedTree(RUNTIMES);
-    cleanGeneratedTree(CONTAINER_VERIFY);
-    cleanGeneratedTree(IDE);
-    cleanIntellijMetadata(INTELLIJ_IDEA);
-    deleteTree(ARGFILES);
-    cleanGeneratedTree(BUILD_TESTS);
-    cleanGeneratedTree(REFASTER_OUTPUT);
+    cleanOutput(OUTPUT, BUILD_LOCK);
+  }
+
+  static void cleanOutputForTest(Path output, Path lock) throws IOException {
+    cleanOutput(output, lock);
+  }
+
+  private static void cleanOutput(Path output, Path lock) throws IOException {
+    assert output != null;
+    assert lock != null;
+    Path normalizedLock = lock.toAbsolutePath().normalize();
+    for (Path path : directoryEntries(output, TREE_ENTRIES_MAX)) {
+      if (!path.toAbsolutePath().normalize().equals(normalizedLock)) deleteTree(path);
+    }
   }
 
   private static void deps() throws Exception {
@@ -3823,23 +3842,6 @@ public final class Build {
     return path.getFileName().toString().endsWith(".jar");
   }
 
-  private static void cleanGeneratedTree(Path path) throws IOException {
-    assert path != null;
-    deleteStaleStaging(path);
-    deleteStaleBackups(path);
-    deleteGeneratedTree(path);
-  }
-
-  private static void deleteStaleBackups(Path output) throws IOException {
-    Path normalized = output.toAbsolutePath().normalize();
-    Path parent = normalized.getParent();
-    if (!Files.isDirectory(parent)) return;
-    String prefix = "." + normalized.getFileName() + ".backup-";
-    for (Path path : directoryEntries(parent, TREE_ENTRIES_MAX)) {
-      if (path.getFileName().toString().startsWith(prefix)) deleteGeneratedTree(path);
-    }
-  }
-
   private static void deleteGeneratedTree(Path path) throws IOException {
     assert path != null;
     if (!Files.exists(path)) return;
@@ -3857,23 +3859,6 @@ public final class Build {
     var paths = new ArrayList<>(treePaths(path, TREE_ENTRIES_MAX));
     paths.sort(Comparator.reverseOrder());
     for (Path child : paths) Files.delete(child);
-  }
-
-  private static void cleanIntellijMetadata(Path idea) throws IOException {
-    assert idea != null;
-    Files.deleteIfExists(idea.resolve(ARTIFACT_MARKER));
-    for (String file : intellijFiles()) Files.deleteIfExists(idea.resolve(file));
-    deleteDirectoryIfEmpty(idea.resolve("modules"));
-    deleteDirectoryIfEmpty(idea);
-  }
-
-  private static void deleteDirectoryIfEmpty(Path directory) throws IOException {
-    assert directory != null;
-    if (!Files.isDirectory(directory)) return;
-    try (var entries = Files.newDirectoryStream(directory)) {
-      if (entries.iterator().hasNext()) return;
-    }
-    Files.delete(directory);
   }
 
   private static String runtimeName(String name) {
