@@ -84,6 +84,9 @@ public final class Build {
   private static final Path PIT_DEPS = OUTPUT.resolve("deps/pit");
   private static final Path COVERAGE_DEPS = OUTPUT.resolve("deps/coverage");
   private static final Path COVERAGE = OUTPUT.resolve("coverage");
+  private static final Path PERF = OUTPUT.resolve("perf");
+  private static final Path PERF_DEPS = OUTPUT.resolve("perf-deps");
+  private static final Path PERF_JMH_DEPS = PERF_DEPS.resolve("jmh");
   private static final Path MUTATIONS = OUTPUT.resolve("mutations");
   private static final Path PIT_HISTORY = OUTPUT.resolve("pit.history");
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
@@ -105,6 +108,7 @@ public final class Build {
   private static final Path REFASTER_APPLY_BUILD = REFASTER_OUTPUT.resolve("apply-build");
   private static final Path REFASTER_RULE = REFASTER_COMPILER.resolve("toktrak.refaster");
   private static final Path REFASTER_SOURCE = ROOT.resolve("tools/refaster/Rules.java");
+  private static final Path PERF_TOOL = ROOT.resolve("tools/perf/Perf.java");
   private static final Path APP_SOURCES = ROOT.resolve("sources/toktrak");
   private static final Path ASSET_SOURCES = APP_SOURCES.resolve("assets");
   private static final Path TEMPLATE_SOURCES = APP_SOURCES.resolve("templates");
@@ -303,7 +307,7 @@ public final class Build {
       if (args.length == 0) {
         throw new IllegalStateException(
             "command required: clean, fmt, check, test, pit, refactor, ci, verify, ide, dev, prod,"
-                + " coverage, image, container-verify, or release");
+                + " coverage, perf, image, container-verify, or release");
       }
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
@@ -338,6 +342,7 @@ public final class Build {
           case "dev" -> dev(commandArguments);
           case "prod" -> jlinkProd();
           case "coverage" -> coverage();
+          case "perf" -> perfCommand(commandArguments);
           case "image" -> imageCommand(commandArguments);
           case "container-verify" -> containerVerifyCommand(commandArguments);
           case "release" -> releaseCommand(commandArguments);
@@ -406,6 +411,8 @@ public final class Build {
     cleanGeneratedTree(PIT_DEPS);
     cleanGeneratedTree(COVERAGE_DEPS);
     cleanGeneratedTree(COVERAGE);
+    cleanGeneratedTree(PERF);
+    cleanGeneratedTree(PERF_DEPS);
     cleanGeneratedTree(MUTATIONS);
     Files.deleteIfExists(PIT_HISTORY);
     cleanGeneratedTree(RUNTIMES);
@@ -436,6 +443,20 @@ public final class Build {
   private static void ensureRefasterDependencies() throws Exception {
     ensureDependency(
         "sources/refaster-deps.txt", REFASTER_DEPS, "resolve-refaster-dependencies", false);
+  }
+
+  private static void perfCommand(List<String> arguments) throws Exception {
+    assert arguments != null;
+    if (!arguments.equals(List.of("--help"))) ensurePerfDependencies();
+    var command = new ArrayList<String>();
+    command.add("-ea");
+    command.add(PERF_TOOL.toString());
+    command.addAll(arguments);
+    runArgFile(javaExecutable(), "run-performance-suite", command, PROCESS_TIMEOUT, false);
+  }
+
+  private static void ensurePerfDependencies() throws Exception {
+    ensureDependency("sources/perf-deps.txt", PERF_JMH_DEPS, "resolve-perf-jmh-dependencies", true);
   }
 
   private static void ensureDependency(

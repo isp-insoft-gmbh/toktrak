@@ -1,6 +1,7 @@
 [tools]
 dprint = "0.55.2"
 google-java-format = "1.36.1"
+hyperfine = "1.20.0"
 java = "temurin-26.0.2+10"
 node = "26.7.0"
 markdownlint-cli2 = "0.23.2"
@@ -55,6 +56,11 @@ run = "mise watch --restart --watch sources --watch tests --watch tools --watch 
 description = "Run PIT options directly; use --history while iterating; source filters follow --"
 raw_args = true
 run = "java -ea tools/Build.java pit"
+
+[tasks.perf]
+description = "Run observational performance benchmarks and write output/perf artifacts"
+raw_args = true
+run = "java -ea tools/Build.java perf"
 
 [tasks.coverage]
 description = "Run tests with JaCoCo and generate HTML, XML, and CSV coverage reports"
