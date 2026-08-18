@@ -38,8 +38,7 @@ final class ShutdownTest {
       throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var writer =
-        Writer.startForTest(
-            log, Projection.empty(), new HealthState(), ClockSource.system(), false, 8);
+        Writer.startForTest(log, Projection.empty(), new HealthState(), ClockSource.system(), 8);
     writer.pauseForTest();
     var future = writer.submit(WriteCommand.devTest("system"));
     writer.close();

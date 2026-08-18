@@ -25,7 +25,6 @@ public final class Writer implements AutoCloseable {
   private final Projection projection;
   private final HealthState health;
   private final ClockSource clock;
-  private final boolean failWrites;
   private final ArrayBlockingQueue<Request> queue;
   private final Duration drainTimeout;
   private final Duration abortTimeout;
@@ -46,7 +45,6 @@ public final class Writer implements AutoCloseable {
       Projection projection,
       HealthState health,
       ClockSource clock,
-      boolean failWrites,
       int capacity,
       Duration drainTimeout,
       Duration abortTimeout,
@@ -69,24 +67,18 @@ public final class Writer implements AutoCloseable {
     assert afterFsync != null;
     this.afterClaim = afterClaim;
     this.afterFsync = afterFsync;
-    this.failWrites = failWrites;
     this.queue = new ArrayBlockingQueue<>(capacity);
     this.thread = Thread.ofPlatform().daemon(true).name("toktrak-writer").start(this::run);
     assert thread.isDaemon();
   }
 
   public static Writer start(
-      EventLog log,
-      Projection projection,
-      HealthState health,
-      ClockSource clock,
-      boolean failWrites) {
+      EventLog log, Projection projection, HealthState health, ClockSource clock) {
     return new Writer(
         log,
         projection,
         health,
         clock,
-        failWrites,
         QUEUE_CAPACITY,
         DRAIN_TIMEOUT,
         ABORT_TIMEOUT,
@@ -95,18 +87,12 @@ public final class Writer implements AutoCloseable {
   }
 
   public static Writer startForTest(
-      EventLog log,
-      Projection projection,
-      HealthState health,
-      ClockSource clock,
-      boolean failWrites,
-      int capacity) {
+      EventLog log, Projection projection, HealthState health, ClockSource clock, int capacity) {
     return new Writer(
         log,
         projection,
         health,
         clock,
-        failWrites,
         capacity,
         DRAIN_TIMEOUT,
         ABORT_TIMEOUT,
@@ -119,7 +105,6 @@ public final class Writer implements AutoCloseable {
       Projection projection,
       HealthState health,
       ClockSource clock,
-      boolean failWrites,
       int capacity,
       Duration drainTimeout,
       Duration abortTimeout) {
@@ -128,7 +113,6 @@ public final class Writer implements AutoCloseable {
         projection,
         health,
         clock,
-        failWrites,
         capacity,
         drainTimeout,
         abortTimeout,
@@ -141,7 +125,6 @@ public final class Writer implements AutoCloseable {
       Projection projection,
       HealthState health,
       ClockSource clock,
-      boolean failWrites,
       int capacity,
       Duration drainTimeout,
       Duration abortTimeout,
@@ -152,7 +135,6 @@ public final class Writer implements AutoCloseable {
         projection,
         health,
         clock,
-        failWrites,
         capacity,
         drainTimeout,
         abortTimeout,
@@ -283,7 +265,6 @@ public final class Writer implements AutoCloseable {
     assert request != null;
     try {
       health.requireWritable();
-      if (failWrites) throw new IllegalStateException("writes disabled by --fail-writes");
       Instant at = Objects.requireNonNull(clock.instant(), "clock instant");
       if (abort.get()) throw new IllegalStateException("writer shutdown aborted write");
       EventEnvelope event = request.command.event(at, projection);

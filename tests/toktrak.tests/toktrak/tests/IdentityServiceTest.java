@@ -145,6 +145,6 @@ final class IdentityServiceTest {
   }
 
   private static Writer writer(EventLog log, Projection projection) {
-    return Writer.start(log, projection, new HealthState(), ClockSource.fixed(NOW), false);
+    return Writer.start(log, projection, new HealthState(), ClockSource.fixed(NOW));
   }
 }

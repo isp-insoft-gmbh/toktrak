@@ -66,8 +66,7 @@ final class AuthServiceTest {
   void given_developmentSession_when_userDeactivatesAndLogsInAgain_then_checksCurrentUserState() {
     var projection = Projection.empty();
     try (var log = EventLog.open(directory.resolve("events.ndjson"));
-        var writer =
-            Writer.start(log, projection, new HealthState(), ClockSource.fixed(NOW), false)) {
+        var writer = Writer.start(log, projection, new HealthState(), ClockSource.fixed(NOW))) {
       var identities = new IdentityService(writer, projection, new byte[32]);
       var auth =
           AuthService.development(

@@ -31,8 +31,7 @@ final class WriterTest {
             log,
             projection,
             new HealthState(),
-            ClockSource.fixed(Instant.parse("2026-07-10T00:00:00Z")),
-            false);
+            ClockSource.fixed(Instant.parse("2026-07-10T00:00:00Z")));
     try (writer) {
       var result = writer.submit(WriteCommand.devTest("system")).get(2, TimeUnit.SECONDS);
       assertTrue(result.eventId().isPresent());
@@ -49,11 +48,7 @@ final class WriterTest {
     var health = new HealthState();
     var writer =
         Writer.start(
-            log,
-            projection,
-            health,
-            ClockSource.fixed(Instant.parse("2026-07-10T00:00:00Z")),
-            false);
+            log, projection, health, ClockSource.fixed(Instant.parse("2026-07-10T00:00:00Z")));
     try (writer) {
       var owner = new Projection.UserKey("issuer", "subject");
       var tokenId = java.util.UUID.randomUUID();
@@ -86,7 +81,7 @@ final class WriterTest {
             java.util.Map.of(
                 "projectionVersion", Projection.VERSION,
                 "eventCount", Integer.MAX_VALUE)));
-    var writer = Writer.start(log, projection, new HealthState(), ClockSource.system(), false);
+    var writer = Writer.start(log, projection, new HealthState(), ClockSource.system());
     try (writer) {
       assertThrows(
           Exception.class,
@@ -100,8 +95,7 @@ final class WriterTest {
   void given_fullWriterQueue_when_tryingCommand_then_reportsNotAccepted() throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var writer =
-        Writer.startForTest(
-            log, Projection.empty(), new HealthState(), ClockSource.system(), false, 1);
+        Writer.startForTest(log, Projection.empty(), new HealthState(), ClockSource.system(), 1);
     try (writer) {
       writer.pauseForTest();
       assertTrue(writer.trySubmit(WriteCommand.devTest("a")).accepted());
@@ -122,8 +116,7 @@ final class WriterTest {
             log,
             projection,
             new HealthState(),
-            ClockSource.fixed(Instant.parse("2026-07-10T01:00:00Z")),
-            false);
+            ClockSource.fixed(Instant.parse("2026-07-10T01:00:00Z")));
     try (writer) {
       var result = writer.submit(WriteCommand.snapshot("system")).get(2, TimeUnit.SECONDS);
       assertTrue(result.eventId().isPresent());
@@ -142,12 +135,7 @@ final class WriterTest {
           IllegalArgumentException.class,
           () ->
               Writer.startForTest(
-                  log,
-                  Projection.empty(),
-                  new HealthState(),
-                  ClockSource.system(),
-                  false,
-                  capacity));
+                  log, Projection.empty(), new HealthState(), ClockSource.system(), capacity));
     }
     for (Duration timeout :
         new Duration[] {Duration.ZERO, Duration.ofSeconds(-1), Duration.ofSeconds(61)}) {
@@ -159,7 +147,6 @@ final class WriterTest {
                   Projection.empty(),
                   new HealthState(),
                   ClockSource.system(),
-                  false,
                   1,
                   timeout,
                   Duration.ofSeconds(1)));
@@ -169,8 +156,7 @@ final class WriterTest {
   @Test
   void given_closedWriter_when_submittingCommand_then_reportsClosed() throws Exception {
     var log = EventLog.open(dir.resolve("events.ndjson"));
-    var writer =
-        Writer.start(log, Projection.empty(), new HealthState(), ClockSource.system(), false);
+    var writer = Writer.start(log, Projection.empty(), new HealthState(), ClockSource.system());
     writer.close();
 
     var future = writer.submit(WriteCommand.devTest("system"));
@@ -203,14 +189,7 @@ final class WriterTest {
     var health = new HealthState();
     var writer =
         Writer.startForTest(
-            log,
-            projection,
-            health,
-            blockedClock,
-            false,
-            1,
-            Duration.ofMillis(20),
-            Duration.ofMillis(20));
+            log, projection, health, blockedClock, 1, Duration.ofMillis(20), Duration.ofMillis(20));
     try {
       var future = writer.submit(WriteCommand.devTest("system"));
       assertTrue(enteredClock.await(2, TimeUnit.SECONDS));
@@ -237,7 +216,6 @@ final class WriterTest {
             projection,
             new HealthState(),
             ClockSource.system(),
-            false,
             1,
             Duration.ofMillis(20),
             Duration.ofMillis(20),
@@ -269,7 +247,6 @@ final class WriterTest {
             projection,
             new HealthState(),
             ClockSource.system(),
-            false,
             1,
             Duration.ofMillis(20),
             Duration.ofMillis(20),
@@ -295,7 +272,7 @@ final class WriterTest {
     var log = EventLog.open(eventLogPath);
     var projection = Projection.empty();
     var health = new HealthState();
-    var writer = Writer.start(log, projection, health, ClockSource.system(), false);
+    var writer = Writer.start(log, projection, health, ClockSource.system());
     try (writer) {
       Files.delete(eventLogPath);
       Files.createDirectory(eventLogPath);
@@ -311,23 +288,6 @@ final class WriterTest {
       assertEquals("writes_failed", exception.getMessage());
       assertEquals(0, projection.eventCount());
       assertEquals(0, log.replay(_ -> {}));
-    }
-  }
-
-  @Test
-  void given_injectedWriteFailure_when_submittingCommand_then_marksHealthDegraded()
-      throws Exception {
-    var health = new HealthState();
-    var log = EventLog.open(dir.resolve("events.ndjson"));
-    var writer = Writer.start(log, Projection.empty(), health, ClockSource.system(), true);
-    try (writer) {
-      var exception =
-          assertThrows(
-              Exception.class,
-              () -> writer.submit(WriteCommand.devTest("system")).get(2, TimeUnit.SECONDS));
-      assertTrue(exception.getMessage().contains("writes disabled by --fail-writes"));
-      assertFalse(health.healthy());
-      assertEquals("writes_failed", health.reason());
     }
   }
 
