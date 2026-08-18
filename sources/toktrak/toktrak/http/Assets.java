@@ -204,9 +204,9 @@ public final class Assets {
           "runtime asset index exceeds " + ASSET_INDEX_BYTES_MAX + " bytes");
     }
     if (index.length >= 3
-        && index[0] == (byte) 0xEF
-        && index[1] == (byte) 0xBB
-        && index[2] == (byte) 0xBF) {
+        && Byte.toUnsignedInt(index[0]) == 0xEF
+        && Byte.toUnsignedInt(index[1]) == 0xBB
+        && Byte.toUnsignedInt(index[2]) == 0xBF) {
       throw new IllegalStateException("runtime asset index must not contain a BOM");
     }
     String text;

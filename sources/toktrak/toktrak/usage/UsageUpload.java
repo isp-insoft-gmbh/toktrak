@@ -79,7 +79,7 @@ public final class UsageUpload {
     String ccusageVersion = string(data, "ccusageVersion", VERSION_CHARACTERS_MAX);
     String clientTimeZone = string(data, "clientTimeZone", TIME_ZONE_CHARACTERS_MAX);
     try {
-      ZoneId.of(clientTimeZone);
+      var _ = ZoneId.of(clientTimeZone);
     } catch (DateTimeException exception) {
       throw new IllegalArgumentException("clientTimeZone is invalid", exception);
     }

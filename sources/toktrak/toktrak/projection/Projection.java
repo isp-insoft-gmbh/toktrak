@@ -32,6 +32,7 @@ public final class Projection {
   private static final int TOKENS_MAX = 100_000;
   private static final Duration REVISION_WAIT_MAX = Duration.ofSeconds(30);
 
+  private final Object monitor = new Object();
   private State state = new State(0, Map.of(), Map.of(), UsageProjection.empty(), null);
   private long revision;
 
@@ -42,21 +43,21 @@ public final class Projection {
   }
 
   public int eventCount() {
-    synchronized (this) {
+    synchronized (monitor) {
       assert state.eventCount >= 0;
       return state.eventCount;
     }
   }
 
   public Optional<User> user(UserKey key) {
-    synchronized (this) {
+    synchronized (monitor) {
       Objects.requireNonNull(key, "key");
       return Optional.ofNullable(state.users.get(key));
     }
   }
 
   public Optional<User> activeUser(UserKey key) {
-    synchronized (this) {
+    synchronized (monitor) {
       Objects.requireNonNull(key, "key");
       User user = state.users.get(key);
       return user != null && user.active ? Optional.of(user) : Optional.empty();
@@ -64,7 +65,7 @@ public final class Projection {
   }
 
   public List<User> users() {
-    synchronized (this) {
+    synchronized (monitor) {
       return state.users.values().stream()
           .sorted(Comparator.comparing(user -> user.key.toString()))
           .toList();
@@ -72,7 +73,7 @@ public final class Projection {
   }
 
   public List<TrackerToken> trackerTokens(UserKey owner) {
-    synchronized (this) {
+    synchronized (monitor) {
       Objects.requireNonNull(owner, "owner");
       return state.tokens.values().stream()
           .filter(token -> token.owner.equals(owner))
@@ -82,7 +83,7 @@ public final class Projection {
   }
 
   public TokenPage trackerTokenPage(UserKey owner, int page, int pageSize) {
-    synchronized (this) {
+    synchronized (monitor) {
       Objects.requireNonNull(owner, "owner");
       if (page < 1) throw new IllegalArgumentException("page is invalid");
       if (pageSize < 1 || pageSize > 100) throw new IllegalArgumentException("pageSize is invalid");
@@ -103,14 +104,14 @@ public final class Projection {
   }
 
   public Optional<TrackerToken> trackerToken(UUID id) {
-    synchronized (this) {
+    synchronized (monitor) {
       Objects.requireNonNull(id, "id");
       return Optional.ofNullable(state.tokens.get(id));
     }
   }
 
   public Optional<TrackerToken> activeTrackerToken(byte[] digest) {
-    synchronized (this) {
+    synchronized (monitor) {
       Objects.requireNonNull(digest, "digest");
       TrackerToken match = null;
       for (TrackerToken token : state.tokens.values()) {
@@ -126,38 +127,38 @@ public final class Projection {
   }
 
   public Summary usageSummary() {
-    synchronized (this) {
+    synchronized (monitor) {
       return state.usage.summary();
     }
   }
 
   public List<Row> usageRows(Report report) {
-    synchronized (this) {
+    synchronized (monitor) {
       return state.usage.rows(report);
     }
   }
 
   public List<Ingestion> ingestion() {
-    synchronized (this) {
+    synchronized (monitor) {
       return state.usage.ingestion();
     }
   }
 
   public Optional<FxRate> fxRate() {
-    synchronized (this) {
+    synchronized (monitor) {
       return Optional.ofNullable(state.fxRate);
     }
   }
 
   public long revision() {
-    synchronized (this) {
+    synchronized (monitor) {
       assert revision >= 0;
       return revision;
     }
   }
 
   public long awaitRevision(long after, Duration timeout) throws InterruptedException {
-    synchronized (this) {
+    synchronized (monitor) {
       if (after < 0) throw new IllegalArgumentException("revision must be nonnegative");
       Objects.requireNonNull(timeout, "timeout");
       if (timeout.isNegative() || timeout.isZero() || timeout.compareTo(REVISION_WAIT_MAX) > 0) {
@@ -169,14 +170,14 @@ public final class Projection {
         if (remaining < 1) return revision;
         long millis = remaining / 1_000_000;
         int nanos = (int) (remaining % 1_000_000);
-        wait(millis, nanos);
+        monitor.wait(millis, nanos);
       }
       return revision;
     }
   }
 
   public Transition prepare(EventEnvelope event) {
-    synchronized (this) {
+    synchronized (monitor) {
       Objects.requireNonNull(event, "event");
       State after = transition(state, event);
       return new Transition(revision, state, after);
@@ -184,7 +185,7 @@ public final class Projection {
   }
 
   public void commit(Transition transition) {
-    synchronized (this) {
+    synchronized (monitor) {
       Objects.requireNonNull(transition, "transition");
       if (revision != transition.revisionBefore) {
         throw new IllegalStateException("projection changed before prepared transition commit");
@@ -192,19 +193,19 @@ public final class Projection {
       assert state.equals(transition.before);
       state = transition.after;
       revision = Math.addExact(revision, 1);
-      notifyAll();
+      monitor.notifyAll();
       assert state.eventCount >= 0;
     }
   }
 
   public void apply(EventEnvelope event) {
-    synchronized (this) {
+    synchronized (monitor) {
       commit(prepare(event));
     }
   }
 
   public Map<String, Object> snapshotData() {
-    synchronized (this) {
+    synchronized (monitor) {
       var users = new ArrayList<Map<String, Object>>(state.users.size());
       state.users.values().stream()
           .sorted(Comparator.comparing(user -> user.key.toString()))

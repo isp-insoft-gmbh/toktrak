@@ -450,7 +450,7 @@ public final class Router implements HttpHandler {
     UserKey owner = trackerOwner(exchange);
     if (owner == null) return;
     String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
-    if (contentType == null || !contentType.equalsIgnoreCase("application/json")) {
+    if (!"application/json".equalsIgnoreCase(contentType)) {
       apiError(exchange, 415, "unsupported_media_type", "application/json is required");
       return;
     }
@@ -768,7 +768,7 @@ public final class Router implements HttpHandler {
 
   private Map<String, String> form(HttpExchange exchange) throws IOException {
     String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
-    if (contentType == null || !contentType.equalsIgnoreCase("application/x-www-form-urlencoded")) {
+    if (!"application/x-www-form-urlencoded".equalsIgnoreCase(contentType)) {
       throw new IllegalArgumentException("form content type is required");
     }
     byte[] bytes = HttpSupport.readLimited(exchange.getRequestBody(), FORM_BYTES_MAX);

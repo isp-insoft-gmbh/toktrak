@@ -262,7 +262,7 @@ public final class Writer implements AutoCloseable {
           paused = false;
           return;
         }
-        pauseMonitor.wait();
+        pauseMonitor.wait(POLL_MILLIS);
       }
     }
   }

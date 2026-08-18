@@ -20,6 +20,7 @@ public final class EventLog implements AutoCloseable {
   public static final int MAX_EVENT_COUNT = 1_000_000;
   private static final int READ_BUFFER_BYTES = 64 * 1024;
 
+  private final Object monitor = new Object();
   private final Path path;
   private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -45,7 +46,7 @@ public final class EventLog implements AutoCloseable {
   }
 
   public void appendAndFsync(EventEnvelope event) {
-    synchronized (this) {
+    synchronized (monitor) {
       Objects.requireNonNull(event, "event");
       requireOpen();
       byte[] line = (Json.write(event) + "\n").getBytes(StandardCharsets.UTF_8);
@@ -74,13 +75,13 @@ public final class EventLog implements AutoCloseable {
   }
 
   public int replay(Consumer<EventEnvelope> consumer) {
-    synchronized (this) {
+    synchronized (monitor) {
       return replay(consumer, MAX_EVENT_COUNT);
     }
   }
 
   public int replayForTest(Consumer<EventEnvelope> consumer, int eventCountMax) {
-    synchronized (this) {
+    synchronized (monitor) {
       if (eventCountMax <= 0 || eventCountMax > MAX_EVENT_COUNT) {
         throw new IllegalArgumentException("eventCountMax must be 1.." + MAX_EVENT_COUNT);
       }
@@ -100,7 +101,8 @@ public final class EventLog implements AutoCloseable {
       int eventCount = 0;
       try (var input = Files.newInputStream(path)) {
         while (fileBytesRead < fileBytes) {
-          int requestedBytes = (int) Math.min(inputBuffer.length, fileBytes - fileBytesRead);
+          int requestedBytes =
+              Math.toIntExact(Math.min(inputBuffer.length, fileBytes - fileBytesRead));
           int readBytes = input.read(inputBuffer, 0, requestedBytes);
           if (readBytes <= 0) throw new IllegalStateException("event log changed during replay");
           fileBytesRead = Math.addExact(fileBytesRead, readBytes);
@@ -177,7 +179,8 @@ public final class EventLog implements AutoCloseable {
         long truncateBytes = -1;
         while (position > 0 && scannedBytes < MAX_LINE_BYTES) {
           int blockBytes =
-              (int) Math.min(bytes.length, Math.min(position, MAX_LINE_BYTES - scannedBytes));
+              Math.toIntExact(
+                  Math.min(bytes.length, Math.min(position, MAX_LINE_BYTES - scannedBytes)));
           assert blockBytes > 0;
           position -= blockBytes;
           ByteBuffer buffer = ByteBuffer.wrap(bytes, 0, blockBytes);

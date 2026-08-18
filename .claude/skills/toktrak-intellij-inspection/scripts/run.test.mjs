@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -13,6 +13,14 @@ test("profile disables unselected known inspections", () => {
 
 test("profile rejects unknown inspection IDs", () => {
   assert.throws(() => writeProfileXml(["A"], ["B"]), /unknown IntelliJ inspection IDs: B/);
+});
+
+test("profile disables every wontfix inspection", () => {
+  const references = join(dirname(import.meta.filename), "..", "references");
+  const accepted = readFileSync(join(references, "accepted-inspection-ids.txt"), "utf8").trim().split(/\s+/);
+  const wontfix = readFileSync(join(references, "wontfix-inspection-ids.txt"), "utf8").trim().split(/\s+/);
+  const xml = writeProfileXml([...accepted, ...wontfix], accepted);
+  for (const id of wontfix) assert.match(xml, new RegExp(`class="${id}" enabled="false"`));
 });
 
 test("finds IntelliJ inspect executable from override", () => {

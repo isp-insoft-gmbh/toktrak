@@ -1861,9 +1861,10 @@ public final class Build {
     assert bytes != null;
     assert offset >= 0;
     assert signature != null && signature.length() == 4;
+    assert signature.chars().allMatch(character -> character <= 0x7F);
     if (offset + signature.length() > bytes.length) return false;
     for (int index = 0; index < signature.length(); index++) {
-      if (bytes[offset + index] != (byte) signature.charAt(index)) return false;
+      if (Byte.toUnsignedInt(bytes[offset + index]) != signature.charAt(index)) return false;
     }
     return true;
   }
@@ -4678,7 +4679,7 @@ public final class Build {
     long readOperationsMax = Math.addExact(fileBytes, 1);
     try (var input = Files.newInputStream(path)) {
       while (fileBytesRead < fileBytes && readOperations < readOperationsMax) {
-        int requestedBytes = (int) Math.min(buffer.length, fileBytes - fileBytesRead);
+        int requestedBytes = Math.toIntExact(Math.min(buffer.length, fileBytes - fileBytesRead));
         int readBytes = input.read(buffer, 0, requestedBytes);
         readOperations = Math.addExact(readOperations, 1);
         if (readBytes <= 0) throw new IllegalStateException("file changed while hashing: " + path);
@@ -5081,7 +5082,7 @@ public final class Build {
     if (milliseconds < 1_000) return milliseconds + " ms";
     double seconds = nanoseconds / 1_000_000_000.0;
     if (seconds < 60) return String.format(Locale.ROOT, "%.2f s", seconds);
-    long minutes = (long) seconds / 60;
+    long minutes = nanoseconds / 60_000_000_000L;
     return String.format(Locale.ROOT, "%d min %.1f s", minutes, seconds - minutes * 60);
   }
 

@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
+  linkSync,
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -18,7 +20,6 @@ const skillDirectory = resolve(scriptDirectory, "..");
 const root = resolve(skillDirectory, "../../..");
 const references = join(skillDirectory, "references");
 const outputRoot = join(root, "output", "intellij-inspections");
-const workspace = join(root, ".idea", "workspace.xml");
 
 export function writeProfileXml(allIds, enabledIds) {
   const ids = [...new Set(allIds)].sort();
@@ -26,7 +27,7 @@ export function writeProfileXml(allIds, enabledIds) {
   const enabled = new Set(enabledIds);
   const unknown = enabledIds.filter((id) => !known.has(id));
   if (unknown.length > 0) throw new Error(`unknown IntelliJ inspection IDs: ${unknown.join(", ")}`);
-  const lines = ['<profile version="1.0">', '  <option name="myName" value="TokTrak Triaged IntelliJ Inspections" />'];
+  const lines = ['<profile version="1.0">', '  <option name="myName" value="TokTrak Accepted IntelliJ Inspections" />'];
   for (const id of ids) {
     const on = enabled.has(id);
     lines.push(`  <inspection_tool class="${xml(id)}" enabled="${on}" level="WARNING" enabled_by_default="${on}" />`);
@@ -151,39 +152,90 @@ function main() {
   mkdirSync(profileDirectory, { recursive: true });
 
   const allInspectionIds = readIds("intellij-inspection-ids.txt");
-  const enabledIds = readIds("triaged-inspection-ids.txt");
-  writeFileSync(profile, writeProfileXml(allInspectionIds, enabledIds));
+  const acceptedIds = readIds("accepted-inspection-ids.txt");
+  writeFileSync(profile, writeProfileXml(allInspectionIds, acceptedIds));
 
   const log = join(runDirectory, "run.log");
-  append(log, `inspect=${inspect}\nprofile=${profile}\nresults=${results}\n\n`);
+  const scopes = inspectionScopes();
+  append(
+    log,
+    [
+      `startedAt=${new Date().toISOString()}`,
+      `inspect=${inspect}`,
+      `profile=${profile}`,
+      `results=${results}`,
+      `acceptedInspections=${acceptedIds.length}`,
+      `scopes=${scopes.map((scope) => `${scope.name}:${scope.path}`).join(",")}`,
+      "",
+    ].join("\n"),
+  );
+  console.error(`[intellij] metadata`);
   run(log, "mise", ["run", "ide", "intellij"]);
-  const restoreWorkspace = suspendWorkspace(runDirectory);
+  console.error(`[intellij] isolated project`);
+  const project = mirrorProject(runDirectory, log);
   try {
-    for (const scope of inspectionScopes()) runInspectionScope(log, inspect, profile, results, scope);
+    for (const [index, scope] of scopes.entries()) {
+      runInspectionScope(log, inspect, profile, results, project, scope, index + 1, scopes.length);
+    }
   } finally {
-    restoreWorkspace();
+    rmSync(project, { recursive: true, force: true });
   }
-
   const findings = parseInspectionResults(results);
   const report = join(runDirectory, "report.md");
   const tsv = join(runDirectory, "findings.tsv");
   writeFileSync(report, renderReport({ runDirectory, profile, results, findings }));
   writeFileSync(tsv, findingsTsv(findings));
   writeFileSync(join(outputRoot, "latest-triaged-run.txt"), `${runDirectory}\n`);
+  append(log, `completedAt=${new Date().toISOString()} findings=${findings.length} report=${report}\n`);
+  console.error(`[intellij] complete findings=${findings.length}`);
   console.log(report);
 }
 
-function runInspectionScope(log, inspect, profile, results, scope) {
-  if (isFile(workspace)) unlinkSync(workspace);
+function runInspectionScope(log, inspect, profile, results, project, scope, scopeNumber, scopeCount) {
   const scopeResults = join(results, scope.name);
-  mkdirSync(scopeResults, { recursive: true });
-  const output = run(log, inspect, [root, profile, scopeResults, "-d", join(root, scope.path), "-v2"]);
-  if (!output.includes("Scanning scope")) {
-    throw new Error(`IntelliJ did not scan inspection scope: ${scope.name}`);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    console.error(`[intellij] scope ${scopeNumber}/${scopeCount} ${scope.name} attempt ${attempt}/2`);
+    append(log, `scope=${scope.name} attempt=${attempt} startedAt=${new Date().toISOString()}\n`);
+    rmSync(scopeResults, { recursive: true, force: true });
+    mkdirSync(scopeResults, { recursive: true });
+    const output = run(log, inspect, [project, profile, scopeResults, "-d", join(project, scope.path), "-v2"]);
+    const scanned = output.includes("Scanning scope");
+    const resultFiles = readdirSync(scopeResults).filter((file) => file.endsWith(".xml")).length;
+    append(log, `scope=${scope.name} attempt=${attempt} scanned=${scanned} resultFiles=${resultFiles}\n\n`);
+    if (scanned) return;
   }
+  throw new Error(`IntelliJ did not scan ${scope.name} after 2 attempts; see ${log}`);
+}
+
+function mirrorProject(runDirectory, log) {
+  const project = join(runDirectory, "project");
+  rmSync(project, { recursive: true, force: true });
+  mkdirSync(project, { recursive: true });
+  let copiedFiles = 0;
+  for (const name of ["sources", "tests", "tools", ".idea"]) {
+    const source = join(root, name);
+    copiedFiles += walk(source).length;
+    cpSync(source, join(project, name), { recursive: true });
+  }
+  const sandboxWorkspace = join(project, ".idea", "workspace.xml");
+  if (isFile(sandboxWorkspace)) unlinkSync(sandboxWorkspace);
+  let linkedFiles = 0;
+  for (const relativePath of [join("output", "deps"), join("output", "ide", "intellij", "generated")]) {
+    const source = join(root, relativePath);
+    const target = join(project, relativePath);
+    for (const file of walk(source)) {
+      const mirrored = join(target, file.slice(source.length + 1));
+      mkdirSync(dirname(mirrored), { recursive: true });
+      linkSync(file, mirrored);
+      linkedFiles += 1;
+    }
+  }
+  append(log, `isolatedProject=${project} copiedFiles=${copiedFiles} linkedFiles=${linkedFiles}\n\n`);
+  return project;
 }
 
 function run(log, executable, args) {
+  const started = performance.now();
   append(log, `$ ${[executable, ...args].map(quote).join(" ")}\n`);
   const command = windowsBatch(executable)
     ? ["cmd.exe", ["/d", "/c", "call", executable, ...args]]
@@ -195,13 +247,20 @@ function run(log, executable, args) {
   });
   append(log, result.stdout ?? "");
   append(log, result.stderr ?? "");
-  append(log, `\nexit=${result.status}\n\n`);
-  if (result.error) throw result.error;
   const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  append(
+    log,
+    `\nexit=${result.status} signal=${result.signal ?? ""} durationMillis=${Math.round(performance.now() - started)} stdoutChars=${result.stdout?.length ?? 0} stderrChars=${result.stderr?.length ?? 0}\n\n`,
+  );
+  if (result.error) throw result.error;
+  if (output.includes("Only one instance of IDEA can be run at a time")) {
+    throw new Error("IntelliJ is already running; close it before running offline inspections");
+  }
+  if (output.includes("The JDK is not configured properly") || output.includes("Cannot configure project")) {
+    throw new Error(`IntelliJ project configuration is invalid; see ${log}`);
+  }
+  if (output.includes("**Start Failed**")) throw new Error(`IntelliJ failed to start; see ${log}`);
   if (result.status !== 0) {
-    if (output.includes("Only one instance of IDEA can be run at a time")) {
-      throw new Error("IntelliJ is already running; close it before running offline inspections");
-    }
     throw new Error(`${executable} failed with exit code ${result.status}; see ${log}`);
   }
   return output;
@@ -209,17 +268,6 @@ function run(log, executable, args) {
 
 function readIds(name) {
   return readFileSync(join(references, name), "utf8").split(/\r?\n/).filter(Boolean);
-}
-
-function suspendWorkspace(runDirectory) {
-  if (!isFile(workspace)) return () => {};
-  const backup = join(runDirectory, "workspace.xml.backup");
-  renameSync(workspace, backup);
-  return () => {
-    if (!isFile(backup)) return;
-    if (isFile(workspace)) unlinkSync(workspace);
-    renameSync(backup, workspace);
-  };
 }
 
 function inspectionScopes() {
