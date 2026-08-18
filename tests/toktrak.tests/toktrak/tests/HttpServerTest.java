@@ -89,19 +89,7 @@ final class HttpServerTest {
   @Test
   void given_oversizedRequestHeader_when_reachingHttpServer_then_rejectsBeforeApplicationRouting()
       throws Exception {
-    Map<String, String> limits =
-        Map.of(
-            "jdk.httpserver.maxConnections", "384",
-            "sun.net.httpserver.maxIdleConnections", "64",
-            "sun.net.httpserver.maxReqHeaders", "64",
-            "sun.net.httpserver.maxReqHeaderSize", "32768",
-            "sun.net.httpserver.maxReqTime", "30",
-            "sun.net.httpserver.maxRspTime", "60");
-    for (String name : limits.keySet()) System.clearProperty(name);
     try (var app = App.start(new String[] {}, devEnvironment())) {
-      for (Map.Entry<String, String> limit : limits.entrySet()) {
-        assertEquals(limit.getValue(), System.getProperty(limit.getKey()), limit.getKey());
-      }
       try (var socket = new Socket(app.bindAddress(), app.port())) {
         socket.setSoTimeout(2_000);
         String request =

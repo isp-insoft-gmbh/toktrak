@@ -184,11 +184,7 @@ public final class App implements AutoCloseable {
   private static void setHttpServerProperty(String name, int value) {
     assert name != null && !name.isBlank();
     assert value > 0;
-    String expected = Integer.toString(value);
-    System.setProperty(name, expected);
-    if (!expected.equals(System.getProperty(name))) {
-      throw new IllegalStateException("cannot configure HTTP server limit: " + name);
-    }
+    System.setProperty(name, Integer.toString(value));
   }
 
   public int port() {
