@@ -3,6 +3,7 @@ package toktrak.usage;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,37 +15,34 @@ public final class UsageProjection {
   private static final int ROWS_MAX = 100_000;
   private static final int USERS_MAX = 10_000;
 
-  private final Map<Key, Row> daily;
-  private final Map<Key, Row> sessions;
-  private final Map<Key, Row> blocks;
+  private final Map<Report, Map<Key, Row>> rowsByReport;
   private final Map<UserKey, Ingestion> ingestion;
 
   private UsageProjection(
-      Map<Key, Row> daily,
-      Map<Key, Row> sessions,
-      Map<Key, Row> blocks,
-      Map<UserKey, Ingestion> ingestion) {
-    assert daily != null && daily.size() <= ROWS_MAX;
-    assert sessions != null && sessions.size() <= ROWS_MAX;
-    assert blocks != null && blocks.size() <= ROWS_MAX;
+      Map<Report, Map<Key, Row>> rowsByReport, Map<UserKey, Ingestion> ingestion) {
+    assert rowsByReport != null && rowsByReport.size() == Report.values().length;
+    for (Report report : Report.values()) {
+      assert rowsByReport.get(report) != null && rowsByReport.get(report).size() <= ROWS_MAX;
+    }
     assert ingestion != null && ingestion.size() <= USERS_MAX;
-    this.daily = daily;
-    this.sessions = sessions;
-    this.blocks = blocks;
+    this.rowsByReport = Map.copyOf(rowsByReport);
     this.ingestion = ingestion;
   }
 
   public static UsageProjection empty() {
-    return new UsageProjection(Map.of(), Map.of(), Map.of(), Map.of());
+    var rowsByReport = new EnumMap<Report, Map<Key, Row>>(Report.class);
+    for (Report report : Report.values()) rowsByReport.put(report, Map.of());
+    return new UsageProjection(rowsByReport, Map.of());
   }
 
   public UsageProjection apply(UserKey owner, UsageUpload upload, Instant receivedAt) {
     Objects.requireNonNull(owner, "owner");
     Objects.requireNonNull(upload, "upload");
     Objects.requireNonNull(receivedAt, "receivedAt");
-    Map<Key, Row> nextDaily = update(daily, owner, upload, Report.DAILY);
-    Map<Key, Row> nextSessions = update(sessions, owner, upload, Report.SESSION);
-    Map<Key, Row> nextBlocks = update(blocks, owner, upload, Report.BLOCKS);
+    var nextRowsByReport = new EnumMap<Report, Map<Key, Row>>(Report.class);
+    for (Report report : Report.values()) {
+      nextRowsByReport.put(report, update(rowsByReport.get(report), owner, upload, report));
+    }
     Map<UserKey, Ingestion> nextIngestion = ingestion;
     Ingestion previous = ingestion.get(owner);
     if (previous == null || !upload.generatedAt().isBefore(previous.generatedAt)) {
@@ -66,12 +64,14 @@ public final class UsageProjection {
         throw new IllegalStateException("usage users exceed " + USERS_MAX);
       nextIngestion = Map.copyOf(mutable);
     }
-    return new UsageProjection(nextDaily, nextSessions, nextBlocks, nextIngestion);
+    return new UsageProjection(nextRowsByReport, nextIngestion);
   }
 
   public List<Row> rows(Report report) {
     Objects.requireNonNull(report, "report");
-    return map(report).values().stream()
+    Map<Key, Row> rows = rowsByReport.get(report);
+    assert rows != null;
+    return rows.values().stream()
         .sorted(
             Comparator.comparing((Row row) -> row.owner().toString())
                 .thenComparing(Row::firstKey)
@@ -93,6 +93,8 @@ public final class UsageProjection {
     long cacheReadTokens = 0;
     long totalTokens = 0;
     var users = new java.util.HashSet<UserKey>();
+    Map<Key, Row> daily = rowsByReport.get(Report.DAILY);
+    assert daily != null;
     for (Row row : daily.values()) {
       costUsd = costUsd.add(UsageUpload.nonnegativeDecimal(row.data, "totalCost"));
       inputTokens =
@@ -116,17 +118,9 @@ public final class UsageProjection {
         cacheReadTokens,
         totalTokens,
         daily.size(),
-        sessions.size(),
-        blocks.size(),
+        rowsByReport.get(Report.SESSION).size(),
+        rowsByReport.get(Report.BLOCKS).size(),
         users.size());
-  }
-
-  private Map<Key, Row> map(Report report) {
-    return switch (report) {
-      case DAILY -> daily;
-      case SESSION -> sessions;
-      case BLOCKS -> blocks;
-    };
   }
 
   private static Map<Key, Row> update(
