@@ -88,7 +88,8 @@ public final class App implements AutoCloseable {
     projection = Projection.empty();
     eventLog.replay(projection::apply);
     HealthState health = new HealthState();
-    writer = Writer.start(eventLog, projection, health, config.clock(), config.failWrites());
+    if (config.failWrites()) health.degrade("writes_failed");
+    writer = Writer.start(eventLog, projection, health, config.clock());
     executor =
         new ThreadPoolExecutor(
             HTTP_WORKER_COUNT,
@@ -109,7 +110,6 @@ public final class App implements AutoCloseable {
     server.setExecutor(Runnable::run);
     server.start();
     if (!config.devAuth()) fxService = FxService.start(writer);
-    if (config.failWrites()) health.degrade("writes_failed");
     port = server.getAddress().getPort();
     if (port < 0 || port > 65_535)
       throw new IllegalStateException("HTTP server returned invalid port");
