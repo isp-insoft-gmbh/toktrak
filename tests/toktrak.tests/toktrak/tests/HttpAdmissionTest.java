@@ -52,7 +52,7 @@ final class HttpAdmissionTest {
     var health = new HealthState();
     var projection = Projection.empty();
     try (var log = EventLog.open(directory.resolve("events.ndjson"));
-        var writer = Writer.start(log, projection, health, ClockSource.system(), false)) {
+        var writer = Writer.start(log, projection, health, ClockSource.system())) {
       var identities = new IdentityService(writer, projection, new byte[32]);
       var auth =
           AuthService.development(

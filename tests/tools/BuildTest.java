@@ -1,5 +1,6 @@
 package tools;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.ByteBuffer;
@@ -14,6 +15,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -125,7 +127,9 @@ public final class BuildTest {
     try {
       try (var channel = FileChannel.open(path, StandardOpenOption.WRITE)) {
         channel.position(512L * 1024 * 1024);
-        channel.write(ByteBuffer.wrap(new byte[] {0}));
+        if (channel.write(ByteBuffer.wrap(new byte[] {0})) != 1) {
+          throw new IOException("failed to write oversized-file fixture");
+        }
       }
       var digest = MessageDigest.getInstance("SHA-256");
       expectFailure(
@@ -729,7 +733,7 @@ public final class BuildTest {
         throw new AssertionError("unlisted artifact matched inventory");
       }
       Build.rebuildArtifactForTest(artifact, "expected", BuildTest::writeArtifact, null);
-      Files.write(artifact.resolve(".toktrak-artifact"), new byte[] {(byte) 0xC3});
+      Files.write(artifact.resolve(".toktrak-artifact"), HexFormat.of().parseHex("c3"));
       if (Build.artifactMatchesForTest(artifact, "expected")) {
         throw new AssertionError("malformed marker matched inventory");
       }
@@ -985,7 +989,7 @@ public final class BuildTest {
       if (!indexText.startsWith("toktrak-assets-v1\n")
           || indexText.contains("\r")
           || index.length < 2
-          || index[0] == (byte) 0xEF
+          || Byte.toUnsignedInt(index[0]) == 0xEF
           || index[index.length - 1] != '\n'
           || index[index.length - 2] == '\n'
           || !indexText.substring("toktrak-assets-v1\n".length()).contains("\t")) {
@@ -1036,7 +1040,7 @@ public final class BuildTest {
         "logo.png",
         new byte[] {0},
         "convert it to optimized WebP or AVIF, or use SVG for vector artwork");
-    assertRejectedAsset("main.css", new byte[] {(byte) 0xC3}, "save the asset as valid UTF-8");
+    assertRejectedAsset("main.css", HexFormat.of().parseHex("c3"), "save the asset as valid UTF-8");
     assertRejectedAsset(
         "logo.webp",
         "invalid".getBytes(StandardCharsets.UTF_8),
@@ -1256,7 +1260,9 @@ public final class BuildTest {
     try (var channel =
         FileChannel.open(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
       channel.position(bytes - 1);
-      channel.write(ByteBuffer.wrap(new byte[] {0}));
+      if (channel.write(ByteBuffer.wrap(new byte[] {0})) != 1) {
+        throw new IOException("failed to write sparse-file fixture");
+      }
     }
   }
 

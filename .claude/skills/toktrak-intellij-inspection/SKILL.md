@@ -13,14 +13,19 @@ description: "Use when running TokTrak IntelliJ IDEA inspections, regenerating t
   is not installed or cannot be found. Set `TOKTRAK_INTELLIJ_INSPECT` to an
   explicit `inspect`, `inspect.sh`, or `inspect.bat` path when autodetection is
   insufficient.
-- The runner enables the 98 triaged IDs in
-  `references/triaged-inspection-ids.txt` and disables all known IDs from
-  `references/intellij-inspection-ids.txt`.
+- The runner enables the 9 accepted IDs in
+  `references/accepted-inspection-ids.txt` and disables all known IDs from
+  `references/intellij-inspection-ids.txt`. Rejected IDs remain recorded in
+  `references/wontfix-inspection-ids.txt`.
 - The runner first regenerates IntelliJ metadata with `mise run ide intellij`,
-  temporarily moves `.idea/workspace.xml` aside because stale workspace state
-  can make CLI inspections return only descriptions, then restores it after the
-  run. It runs offline inspections over `sources/toktrak`,
-  `tests/toktrak.tests`, `tests/tools`, and `tools`, and writes:
+  mirrors the current project into the run directory, and inspects that isolated
+  copy so IntelliJ's persistent VFS cannot read or write stale working-tree
+  content. Dependencies are hard-linked, not copied. Each scope retries once
+  when IntelliJ exits without scanning it.
+- Progress goes to stderr. Detailed commands, timings, output sizes, scan
+  markers, retries, and mirror counts go to `run.log`.
+- It runs offline inspections over `sources/toktrak`, `tests/toktrak.tests`,
+  `tests/tools`, and `tools`, and writes:
   - `output/intellij-inspections/run-*-triaged/report.md`
   - `output/intellij-inspections/run-*-triaged/findings.tsv`
   - `output/intellij-inspections/latest-triaged-run.txt`

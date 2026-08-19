@@ -1,0 +1,9 @@
+CastThatLosesPrecision
+DeclareCollectionAsInterface
+IgnoreResultOfCall
+InterfaceMayBeAnnotatedFunctional
+Java9RedundantRequiresStatement
+SimplifiableEqualsExpression
+SynchronizeOnThis
+SynchronizedMethod
+WaitOrAwaitWithoutTimeout

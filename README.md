@@ -98,10 +98,12 @@ Install and authenticate all three CLIs with their provider subscriptions:
 - Claude Code uses Claude Max authentication.
 - `gh` uses an account authorized for this repository.
 
-Then validate every configured combination and run one task:
+Then validate task definitions, check one authenticated task per configured
+harness, and run one task:
 
 ```sh
 mise run golem-check
+mise run golem-auth-check
 mise run golem bugs
 ```
 

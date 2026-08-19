@@ -7,7 +7,6 @@ BooleanMethodIsAlwaysInverted
 BooleanMethodNameMustStartWithQuestion
 BooleanParameter
 CallToSuspiciousStringMethod
-CastThatLosesPrecision
 ChainedMethodCall
 CheckForOutOfMemoryOnLargeArrayAllocation
 ClassComplexity
@@ -21,7 +20,6 @@ ConstantValue
 CyclicClassDependency
 CyclomaticComplexity
 DataFlowIssue
-DeclareCollectionAsInterface
 DuplicateStringLiteralInspection
 EnumClass
 ExceptionFromCatchWhichDoesntWrap
@@ -34,14 +32,11 @@ HardCodedStringLiteral
 HardcodedFileSeparators
 HardcodedLineSeparators
 IfCanBeSwitch
-IgnoreResultOfCall
 ImplicitCallToSuper
 ImplicitNumericConversion
 IncrementDecrementUsedAsExpression
 InstanceVariableInitialization
 InstanceofChain
-InterfaceMayBeAnnotatedFunctional
-Java9RedundantRequiresStatement
 LawOfDemeter
 LiteralAsArgToStringEquals
 LocalCanBeFinal
@@ -74,13 +69,10 @@ QuestionableName
 ReturnNull
 SameParameterValue
 SerializableHasSerializationMethods
-SimplifiableEqualsExpression
 SingleClassImport
 StaticMethodOnlyUsedInOneClass
 StringConcatenation
 SwitchStatement
-SynchronizeOnThis
-SynchronizedMethod
 ThrowCaughtLocally
 TooBroadCatch
 TooBroadThrows
@@ -94,5 +86,4 @@ UseOfConcreteClass
 UtilityClass
 UtilityClassCanBeEnum
 VariableNotUsedInsideIf
-WaitOrAwaitWithoutTimeout
 WeakerAccess
