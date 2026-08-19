@@ -6,8 +6,9 @@
 - [mise](https://mise.jdx.dev/).
 - Windows, macOS, or Linux.
 
-Run `mise install`; mise installs the pinned Java, Node.js, formatter, and
-watcher versions. No Maven, Gradle, npm install, or JavaScript build is used.
+Run `mise install`; mise installs the pinned Java, Node.js, hyperfine,
+formatter, and watcher versions. No Maven, Gradle, npm install, or JavaScript
+build is used.
 
 Rootless Podman is required only for image, container, and release work. Start a
 Podman machine first on Windows or macOS. `mise run release` selects the
@@ -39,6 +40,7 @@ dev server before running build tasks; `mise run fmt` remains available.
 - `sources`: production Java, templates, and runtime assets.
 - `tests`: Java tests, snapshots, and the development corpus.
 - `tools/Build.java`: build authority.
+- `tools/perf`: observational performance suite behind `mise run perf`.
 - `tools`: Refaster rules and build support.
 - `vendored`: pinned build bootstrap artifacts.
 - `output`: disposable generated output.
@@ -91,6 +93,7 @@ Additional gates:
 | Unit tests              | `mise run pit --history -- [production paths...]` |
 | Coverage-sensitive code | `mise run coverage`                               |
 | Runtime or packaging    | `mise run prod`                                   |
+| Performance evidence    | `mise run perf`                                   |
 | Container behavior      | `mise run container-verify`                       |
 | Before pushing          | `mise run ci`, then `mise run coverage`           |
 

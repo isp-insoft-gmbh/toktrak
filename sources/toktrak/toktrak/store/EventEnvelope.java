@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -93,10 +94,7 @@ public record EventEnvelope(
   }
 
   private static void inspectDataValue(
-      Object value,
-      int depth,
-      ArrayDeque<Container> pending,
-      IdentityHashMap<Object, Boolean> seen) {
+      Object value, int depth, Deque<Container> pending, Map<Object, Boolean> seen) {
     assert depth > 0;
     assert pending != null;
     assert seen != null;

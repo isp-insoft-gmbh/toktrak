@@ -77,13 +77,29 @@ final class UsageHttpTest {
               .statusCode());
 
       HttpResponse<String> stream =
-          send(client, base.resolve("/api/stream?revision=0"), "GET", null, cookie, null);
+          send(
+              client,
+              base.resolve("/api/stream?revision=0&datastar=%7B%7D"),
+              "GET",
+              null,
+              cookie,
+              null);
       assertEquals(200, stream.statusCode());
       assertEquals(
           "text/event-stream; charset=utf-8",
           stream.headers().firstValue("Content-Type").orElseThrow());
       assertTrue(stream.body().startsWith("event: datastar-patch-signals\n"), stream.body());
       assertTrue(stream.body().contains("\"_usageRevision\":"), stream.body());
+      assertEquals(
+          400,
+          send(
+                  client,
+                  base.resolve("/api/stream?revision=0&datastar=%7B%22unexpected%22%3A1%7D"),
+                  "GET",
+                  null,
+                  cookie,
+                  null)
+              .statusCode());
 
       assertEquals(
           400,

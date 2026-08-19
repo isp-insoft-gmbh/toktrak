@@ -78,9 +78,11 @@ public final class TrackerScript {
     assert target != null && !target.isEmpty();
     int count = 0;
     int offset = 0;
-    while ((offset = value.indexOf(target, offset)) >= 0) {
+    int match = value.indexOf(target, offset);
+    while (match >= 0) {
       count = Math.addExact(count, 1);
-      offset = Math.addExact(offset, target.length());
+      offset = Math.addExact(match, target.length());
+      match = value.indexOf(target, offset);
     }
     return count;
   }

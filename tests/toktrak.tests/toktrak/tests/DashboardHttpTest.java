@@ -31,7 +31,8 @@ final class DashboardHttpTest {
       HttpResponse<String> overview = send(client, base.resolve("/"), session);
       assertEquals(200, overview.statusCode());
       assertEquals(
-          "default-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+          "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri"
+              + " 'none'",
           overview.headers().firstValue("Content-Security-Policy").orElseThrow());
       assertTrue(overview.body().contains("<h1>Overview</h1>"), overview.body());
       assertTrue(overview.body().contains("href=\"/\" aria-current=\"page\">Overview</a>"));

@@ -179,10 +179,8 @@ public final class OidcClient {
       }
       String displayName = required(claims.getStringClaim("name"), "display name");
       return new Profile(new UserKey(metadata.issuer, subject), email, displayName);
-    } catch (IllegalArgumentException exception) {
-      throw exception;
-    } catch (Exception exception) {
-      throw invalid();
+    } catch (com.nimbusds.jose.JOSEException | java.text.ParseException exception) {
+      throw invalid(exception);
     }
   }
 
@@ -336,6 +334,10 @@ public final class OidcClient {
 
   private static IllegalArgumentException invalid() {
     return new IllegalArgumentException("OIDC response is invalid");
+  }
+
+  private static IllegalArgumentException invalid(Exception cause) {
+    return new IllegalArgumentException("OIDC response is invalid", cause);
   }
 
   private record Metadata(

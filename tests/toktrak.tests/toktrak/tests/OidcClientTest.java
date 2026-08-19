@@ -118,8 +118,128 @@ final class OidcClientTest {
   }
 
   @Test
+  void given_fakeProvider_when_idTokenClaimsViolatePolicy_then_rejectsEachClaimViolation()
+      throws Exception {
+    RSAKey key = rsaKey();
+    var transaction = new AtomicReference<OidcClient.Transaction>();
+    var customizer =
+        new AtomicReference<java.util.function.UnaryOperator<JWTClaimsSet.Builder>>(
+            builder -> builder);
+    HttpServer provider =
+        HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 16);
+    String issuer = "http://127.0.0.1:" + provider.getAddress().getPort();
+    provider.createContext(
+        "/.well-known/openid-configuration",
+        exchange ->
+            json(
+                exchange,
+                Json.write(
+                    Map.of(
+                        "issuer", issuer,
+                        "authorization_endpoint", issuer + "/authorize",
+                        "token_endpoint", issuer + "/token",
+                        "jwks_uri", issuer + "/jwks"))));
+    provider.createContext(
+        "/jwks", exchange -> json(exchange, new JWKSet(key.toPublicJWK()).toString()));
+    provider.createContext(
+        "/token",
+        exchange ->
+            json(
+                exchange,
+                Json.write(
+                    Map.of(
+                        "id_token",
+                        token(key, issuer, transaction.get().nonce(), customizer.get())))));
+    provider.start();
+    try {
+      var client =
+          new OidcClient(
+              URI.create(issuer + "/.well-known/openid-configuration"),
+              "client",
+              "secret",
+              "example.com",
+              ClockSource.fixed(NOW));
+      URI callback = URI.create("http://127.0.0.1/callback");
+
+      // A multi-audience token is accepted only when azp names this client.
+      customizer.set(
+          builder -> builder.audience(java.util.List.of("client", "other")).claim("azp", "client"));
+      assertEquals("subject-1", complete(client, callback, transaction).key().subject());
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> {
+            customizer.set(builder -> builder.audience(java.util.List.of("client", "other")));
+            complete(client, callback, transaction);
+          });
+
+      // A future not-before claim is rejected; one within clock skew is accepted.
+      customizer.set(builder -> builder.notBeforeTime(Date.from(NOW)));
+      assertEquals("user@example.com", complete(client, callback, transaction).email());
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> {
+            customizer.set(builder -> builder.notBeforeTime(Date.from(NOW.plusSeconds(360))));
+            complete(client, callback, transaction);
+          });
+
+      // An address without a local part must not pass the allowed-domain check.
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> {
+            customizer.set(builder -> builder.claim("email", "@example.com"));
+            complete(client, callback, transaction);
+          });
+    } finally {
+      provider.stop(0);
+    }
+  }
+
+  @Test
+  void given_insecureOrMalformedUris_when_constructingAndBeginningFlows_then_rejectsEachUri() {
+    var clock = ClockSource.fixed(NOW);
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new OidcClient(
+                URI.create("http://attacker.example/.well-known/openid-configuration"),
+                "client",
+                "secret",
+                "example.com",
+                clock));
+    var client =
+        new OidcClient(
+            URI.create("http://localhost:1/.well-known/openid-configuration"),
+            "client",
+            "secret",
+            "example.com",
+            clock);
+    assertThrows(IllegalArgumentException.class, () -> client.begin(URI.create("/callback")));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> client.begin(URI.create("http://127.0.0.1/callback?extra=1")));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            client.complete(
+                URI.create("http://127.0.0.1/callback#fragment"),
+                "code=valid&state=state-1",
+                new OidcClient.Transaction("state-1", "nonce-1", "verifier-1")));
+  }
+
+  @Test
   void given_invalidFormValues_when_parsingProviderInput_then_rejectsBoundedMalformedValues() {
     assertEquals(Map.of(), OidcClient.parseForm(""));
+    assertEquals(
+        Map.of("a", "b".repeat(8 * 1024 - 2)),
+        OidcClient.parseForm("a=" + "b".repeat(8 * 1024 - 2)));
+    assertEquals(Map.of("a".repeat(128), "b"), OidcClient.parseForm("a".repeat(128) + "=b"));
+    assertEquals(
+        64,
+        OidcClient.parseForm(
+                java.util.stream.IntStream.range(0, 64)
+                    .mapToObj(index -> "a" + index + "=b")
+                    .collect(java.util.stream.Collectors.joining("&")))
+            .size());
     assertThrows(IllegalArgumentException.class, () -> OidcClient.parseForm(null));
     assertThrows(
         IllegalArgumentException.class, () -> OidcClient.parseForm("x".repeat(8 * 1024 + 1)));
@@ -176,9 +296,28 @@ final class OidcClientTest {
     return generator.generate();
   }
 
+  private static OidcClient.Profile complete(
+      OidcClient client, URI callback, AtomicReference<OidcClient.Transaction> transaction) {
+    OidcClient.Authorization authorization = client.begin(callback);
+    transaction.set(authorization.transaction());
+    return client.complete(
+        callback,
+        "code=valid&state=" + authorization.transaction().state(),
+        authorization.transaction());
+  }
+
   private static String token(RSAKey key, String issuer, String nonce, String domain)
       throws IOException {
-    JWTClaimsSet claims =
+    return token(key, issuer, nonce, builder -> builder.claim("hd", domain));
+  }
+
+  private static String token(
+      RSAKey key,
+      String issuer,
+      String nonce,
+      java.util.function.UnaryOperator<JWTClaimsSet.Builder> customizer)
+      throws IOException {
+    JWTClaimsSet.Builder builder =
         new JWTClaimsSet.Builder()
             .issuer(issuer)
             .subject("subject-1")
@@ -188,12 +327,12 @@ final class OidcClientTest {
             .claim("nonce", nonce)
             .claim("email", "user@example.com")
             .claim("email_verified", true)
-            .claim("hd", domain)
-            .claim("name", "Example User")
-            .build();
+            .claim("hd", "example.com")
+            .claim("name", "Example User");
     var jwt =
         new SignedJWT(
-            new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), claims);
+            new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(),
+            customizer.apply(builder).build());
     try {
       jwt.sign(new RSASSASigner(key));
       return jwt.serialize();

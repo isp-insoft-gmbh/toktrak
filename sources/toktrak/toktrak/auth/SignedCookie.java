@@ -70,7 +70,7 @@ public final class SignedCookie {
       supplied = Base64.getUrlDecoder().decode(value.substring(separator + 1));
       decoded = Base64.getUrlDecoder().decode(payload);
     } catch (IllegalArgumentException exception) {
-      throw new IllegalArgumentException("cookie is invalid");
+      throw invalid(exception);
     }
     if (!MessageDigest.isEqual(hmac(payload), supplied)) {
       throw new IllegalArgumentException("cookie is invalid");
@@ -97,9 +97,13 @@ public final class SignedCookie {
         throw new IllegalArgumentException("cookie is expired");
       }
     } catch (NumberFormatException | java.time.DateTimeException exception) {
-      throw new IllegalArgumentException("cookie is invalid");
+      throw invalid(exception);
     }
     return Map.copyOf(fields);
+  }
+
+  private static IllegalArgumentException invalid(Exception cause) {
+    return new IllegalArgumentException("cookie is invalid", cause);
   }
 
   private byte[] hmac(String payload) {

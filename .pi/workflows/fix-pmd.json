@@ -1,0 +1,272 @@
+{
+  "name": "fix-pmd",
+  "description": "Fix all PMD findings in file/package groups, independently review them, then verify once centrally.",
+  "schemas": {
+    "LintInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checkOutcome": {
+          "type": "string"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "groupId": {
+                "type": "string"
+              },
+              "package": {
+                "type": "string"
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "file": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "rule": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["file", "line", "rule", "message"]
+                },
+                "minItems": 1
+              }
+            },
+            "required": ["groupId", "package", "files", "findings"]
+          }
+        }
+      },
+      "required": ["checkOutcome", "groups"]
+    },
+    "FixPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "groupId": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "rules": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "change": {
+                "type": "string"
+              },
+              "behaviorRisk": {
+                "type": "string"
+              },
+              "testFocus": {
+                "type": "string"
+              }
+            },
+            "required": ["file", "rules", "change", "behaviorRisk", "testFocus"]
+          },
+          "minItems": 1
+        }
+      },
+      "required": ["groupId", "package", "files", "edits"]
+    },
+    "ApplyResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "changedFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "appliedGroupIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unresolvedGroupIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["changedFiles", "appliedGroupIds", "unresolvedGroupIds", "notes"]
+    },
+    "GroupReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "groupId": {
+          "type": "string"
+        },
+        "clean": {
+          "type": "boolean"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "rule": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "requiredChange": {
+                "type": "string"
+              }
+            },
+            "required": ["file", "rule", "detail", "requiredChange"]
+          }
+        }
+      },
+      "required": ["groupId", "clean", "issues"]
+    },
+    "FinalResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "changedFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "remainingFindings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": ["success", "changedFiles", "commands", "remainingFindings", "summary"]
+    }
+  },
+  "phases": [
+    {
+      "id": "inventory",
+      "kind": "single",
+      "step": {
+        "prompt": "Establish one fresh PMD baseline for this TokTrak working tree. Run `mise run check` exactly once, even though PMD findings may make it exit nonzero. Do not run test, verify, ci, coverage, pit, or another check. Read `output/pmd/report.txt` after the command and inspect source paths as needed. Return every PMD finding, with no triage omissions, grouped for efficient independent fixing: keep all findings for one file together; combine small files from the same Java package; give a large or high-coupling file its own group. Use a stable concise groupId derived from the package and files. Record the command result in checkOutcome. Do not modify source files.",
+        "tools": ["read", "bash", "grep", "find", "ls"],
+        "model": "medium",
+        "thinkingLevel": "low",
+        "schema": "LintInventory"
+      }
+    },
+    {
+      "id": "fixers",
+      "kind": "fanout",
+      "over": "{inventory.results[].groups[]}",
+      "concurrency": 6,
+      "step": {
+        "prompt": "Act as the fixer for this complete PMD file/package group: {item}. Read every listed file and enough nearby code and tests to understand behavior. Design the smallest behavior-preserving source edits that fix every listed lint. Return one coherent plan for the whole group and echo groupId, package, and files exactly. Do not mutate anything. Do not run mise, Java, builds, formatters, linters, or tests; those blocking calls are centralized in the final phase. You may use only quick read-only inspection commands.",
+        "tools": ["read", "bash", "grep", "find", "ls"],
+        "model": "medium",
+        "thinkingLevel": "high",
+        "schema": "FixPlan"
+      }
+    },
+    {
+      "id": "apply",
+      "kind": "single",
+      "step": {
+        "prompt": "Implement all PMD fixes from the inventory and fixer plans. Inventory: {inventory.results}. Successful plans: {fixers.results}. Failed fixer agents: {fixers.failures}. For any failed or incomplete plan, inspect that inventory group and design the missing fix yourself. Preserve unrelated working-tree changes and existing behavior; make only the smallest edits needed for every listed finding. Do not suppress a rule unless the finding is demonstrably intentional and no clearer code fix exists. Do not run mise, Java, builds, formatters, linters, or tests; validation belongs to the final phase. Return every changed file and any genuinely unresolved group.",
+        "tools": ["read", "edit", "bash", "grep", "find", "ls"],
+        "model": "medium",
+        "thinkingLevel": "medium",
+        "schema": "ApplyResult"
+      }
+    },
+    {
+      "id": "reviewers",
+      "kind": "fanout",
+      "over": "{inventory.results[].groups[]}",
+      "concurrency": 6,
+      "step": {
+        "prompt": "Independently review the implemented PMD fixes for this complete file/package group: {item}. Application summary: {apply.results}. Read current source, relevant tests, and the scoped git diff. Check that every listed lint is actually resolved, semantics and exception/resource/concurrency behavior are preserved, and no unrelated churn was introduced. Echo groupId exactly. Return clean=true only if no correction is needed. Do not mutate anything. Do not run mise, Java, builds, formatters, linters, or tests; those blocking calls are centralized in the final phase. You may use only quick read-only inspection commands.",
+        "tools": ["read", "bash", "grep", "find", "ls"],
+        "model": "big",
+        "thinkingLevel": "high",
+        "schema": "GroupReview"
+      }
+    },
+    {
+      "id": "finalize",
+      "kind": "single",
+      "step": {
+        "prompt": "Finish the PMD cleanup. Inventory: {inventory.results}. Fixer plans: {fixers.results}. Application: {apply.results}. Independent reviews: {reviewers.results}. Reviewer failures: {reviewers.failures}. Inspect and correct every real review issue, every unresolved group, and every group whose reviewer failed. Preserve unrelated working-tree changes. After all code edits are complete, centralize the blocking work here: format only the changed Java paths, then run `mise run verify` once. Read `output/pmd/report.txt` and require zero PMD findings plus a successful full test suite. If verification exposes a real remaining issue, fix it and rerun only the necessary formatting and `mise run verify`; never rerun a blocking command without an intervening relevant edit. Do not run ci, coverage, or pit. Return success=true only when formatting, compilation, all configured lints, PMD, and the full tests pass. List exact commands run, all changed files, and any remaining finding or blocker.",
+        "tools": ["read", "edit", "bash", "grep", "find", "ls"],
+        "model": "medium",
+        "thinkingLevel": "high",
+        "schema": "FinalResult"
+      }
+    }
+  ],
+  "return": "{finalize.results}"
+}

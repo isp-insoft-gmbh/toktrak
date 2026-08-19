@@ -115,6 +115,12 @@ Use responsive, accessible, brutalist light/dark presentation with reduced
 motion, initials avatars, and semantic/per-user pastel colors. Use simple SVG or
 canvas, not a chart library. Dashboard updates use safe patch/signals SSE only.
 
+CSP may include `script-src 'self' 'unsafe-eval'` solely because pinned,
+same-origin Datastar requires `Function()` for expressions. CSP cannot scope
+`unsafe-eval` to one script, so no other string-to-code execution is allowed.
+Datastar expressions remain author-controlled and never contain user-controlled
+HTML or code.
+
 ## Deployment
 
 Serve plain HTTP behind a TLS/compression proxy. Package a minimal linked

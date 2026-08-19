@@ -5,6 +5,7 @@ import static toktrak.store.EventTypes.*;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -31,6 +32,7 @@ public final class Projection {
   private static final int TOKENS_MAX = 100_000;
   private static final Duration REVISION_WAIT_MAX = Duration.ofSeconds(30);
 
+  private final Object monitor = new Object();
   private State state = new State(0, Map.of(), Map.of(), UsageProjection.empty(), null);
   private long revision;
 
@@ -40,150 +42,186 @@ public final class Projection {
     return new Projection();
   }
 
-  public synchronized int eventCount() {
-    assert state.eventCount >= 0;
-    return state.eventCount;
+  public int eventCount() {
+    synchronized (monitor) {
+      assert state.eventCount >= 0;
+      return state.eventCount;
+    }
   }
 
-  public synchronized Optional<User> user(UserKey key) {
-    Objects.requireNonNull(key, "key");
-    return Optional.ofNullable(state.users.get(key));
+  public Optional<User> user(UserKey key) {
+    synchronized (monitor) {
+      Objects.requireNonNull(key, "key");
+      return Optional.ofNullable(state.users.get(key));
+    }
   }
 
-  public synchronized Optional<User> activeUser(UserKey key) {
-    Objects.requireNonNull(key, "key");
-    User user = state.users.get(key);
-    return user != null && user.active ? Optional.of(user) : Optional.empty();
+  public Optional<User> activeUser(UserKey key) {
+    synchronized (monitor) {
+      Objects.requireNonNull(key, "key");
+      User user = state.users.get(key);
+      return user != null && user.active ? Optional.of(user) : Optional.empty();
+    }
   }
 
-  public synchronized List<User> users() {
-    return state.users.values().stream()
-        .sorted(Comparator.comparing(user -> user.key.toString()))
-        .toList();
+  public List<User> users() {
+    synchronized (monitor) {
+      return state.users.values().stream()
+          .sorted(Comparator.comparing(user -> user.key.toString()))
+          .toList();
+    }
   }
 
-  public synchronized List<TrackerToken> trackerTokens(UserKey owner) {
-    Objects.requireNonNull(owner, "owner");
-    return state.tokens.values().stream()
-        .filter(token -> token.owner.equals(owner))
-        .sorted(Comparator.comparing(TrackerToken::createdAt).thenComparing(TrackerToken::id))
-        .toList();
+  public List<TrackerToken> trackerTokens(UserKey owner) {
+    synchronized (monitor) {
+      Objects.requireNonNull(owner, "owner");
+      return state.tokens.values().stream()
+          .filter(token -> token.owner.equals(owner))
+          .sorted(Comparator.comparing(TrackerToken::createdAt).thenComparing(TrackerToken::id))
+          .toList();
+    }
   }
 
-  public synchronized TokenPage trackerTokenPage(UserKey owner, int page, int pageSize) {
-    Objects.requireNonNull(owner, "owner");
-    if (page < 1) throw new IllegalArgumentException("page is invalid");
-    if (pageSize < 1 || pageSize > 100) throw new IllegalArgumentException("pageSize is invalid");
-    List<TrackerToken> tokens =
-        state.tokens.values().stream()
-            .filter(token -> token.owner.equals(owner))
-            .sorted(
-                Comparator.comparing(TrackerToken::createdAt)
-                    .reversed()
-                    .thenComparing(TrackerToken::id))
-            .toList();
-    int pageCount = Math.max(1, Math.ceilDiv(tokens.size(), pageSize));
-    if (page > pageCount) throw new IllegalArgumentException("page is out of range");
-    int from = Math.multiplyExact(page - 1, pageSize);
-    int to = Math.min(tokens.size(), Math.addExact(from, pageSize));
-    return new TokenPage(tokens.subList(from, to), tokens.size(), page, pageCount);
+  public TokenPage trackerTokenPage(UserKey owner, int page, int pageSize) {
+    synchronized (monitor) {
+      Objects.requireNonNull(owner, "owner");
+      if (page < 1) throw new IllegalArgumentException("page is invalid");
+      if (pageSize < 1 || pageSize > 100) throw new IllegalArgumentException("pageSize is invalid");
+      List<TrackerToken> tokens =
+          state.tokens.values().stream()
+              .filter(token -> token.owner.equals(owner))
+              .sorted(
+                  Comparator.comparing(TrackerToken::createdAt)
+                      .reversed()
+                      .thenComparing(TrackerToken::id))
+              .toList();
+      int pageCount = Math.max(1, Math.ceilDiv(tokens.size(), pageSize));
+      if (page > pageCount) throw new IllegalArgumentException("page is out of range");
+      int from = Math.multiplyExact(page - 1, pageSize);
+      int to = Math.min(tokens.size(), Math.addExact(from, pageSize));
+      return new TokenPage(tokens.subList(from, to), tokens.size(), page, pageCount);
+    }
   }
 
-  public synchronized Optional<TrackerToken> trackerToken(UUID id) {
-    Objects.requireNonNull(id, "id");
-    return Optional.ofNullable(state.tokens.get(id));
+  public Optional<TrackerToken> trackerToken(UUID id) {
+    synchronized (monitor) {
+      Objects.requireNonNull(id, "id");
+      return Optional.ofNullable(state.tokens.get(id));
+    }
   }
 
-  public synchronized Optional<TrackerToken> activeTrackerToken(byte[] digest) {
-    Objects.requireNonNull(digest, "digest");
-    TrackerToken match = null;
-    for (TrackerToken token : state.tokens.values()) {
-      byte[] candidate = Base64.getUrlDecoder().decode(token.digest);
-      boolean equal = MessageDigest.isEqual(digest, candidate);
-      if (equal && token.revokedAt == null && activeUser(token.owner).isPresent()) {
-        if (match != null) throw new IllegalStateException("duplicate tracker token digest");
-        match = token;
+  public Optional<TrackerToken> activeTrackerToken(byte[] digest) {
+    synchronized (monitor) {
+      Objects.requireNonNull(digest, "digest");
+      TrackerToken match = null;
+      for (TrackerToken token : state.tokens.values()) {
+        byte[] candidate = Base64.getUrlDecoder().decode(token.digest);
+        boolean equal = MessageDigest.isEqual(digest, candidate);
+        if (equal && token.revokedAt == null && activeUser(token.owner).isPresent()) {
+          if (match != null) throw new IllegalStateException("duplicate tracker token digest");
+          match = token;
+        }
       }
+      return Optional.ofNullable(match);
     }
-    return Optional.ofNullable(match);
   }
 
-  public synchronized Summary usageSummary() {
-    return state.usage.summary();
-  }
-
-  public synchronized List<Row> usageRows(Report report) {
-    return state.usage.rows(report);
-  }
-
-  public synchronized List<Ingestion> ingestion() {
-    return state.usage.ingestion();
-  }
-
-  public synchronized Optional<FxRate> fxRate() {
-    return Optional.ofNullable(state.fxRate);
-  }
-
-  public synchronized long revision() {
-    assert revision >= 0;
-    return revision;
-  }
-
-  public synchronized long awaitRevision(long after, Duration timeout) throws InterruptedException {
-    if (after < 0) throw new IllegalArgumentException("revision must be nonnegative");
-    Objects.requireNonNull(timeout, "timeout");
-    if (timeout.isNegative() || timeout.isZero() || timeout.compareTo(REVISION_WAIT_MAX) > 0) {
-      throw new IllegalArgumentException("timeout must be positive and at most 30 seconds");
+  public Summary usageSummary() {
+    synchronized (monitor) {
+      return state.usage.summary();
     }
-    long deadline = Math.addExact(System.nanoTime(), timeout.toNanos());
-    while (revision <= after) {
-      long remaining = deadline - System.nanoTime();
-      if (remaining < 1) return revision;
-      long millis = remaining / 1_000_000;
-      int nanos = (int) (remaining % 1_000_000);
-      wait(millis, nanos);
+  }
+
+  public List<Row> usageRows(Report report) {
+    synchronized (monitor) {
+      return state.usage.rows(report);
     }
-    return revision;
   }
 
-  public synchronized Transition prepare(EventEnvelope event) {
-    Objects.requireNonNull(event, "event");
-    State after = transition(state, event);
-    return new Transition(revision, state, after);
-  }
-
-  public synchronized void commit(Transition transition) {
-    Objects.requireNonNull(transition, "transition");
-    if (revision != transition.revisionBefore) {
-      throw new IllegalStateException("projection changed before prepared transition commit");
+  public List<Ingestion> ingestion() {
+    synchronized (monitor) {
+      return state.usage.ingestion();
     }
-    assert state.equals(transition.before);
-    state = transition.after;
-    revision = Math.addExact(revision, 1);
-    notifyAll();
-    assert state.eventCount >= 0;
   }
 
-  public synchronized void apply(EventEnvelope event) {
-    commit(prepare(event));
+  public Optional<FxRate> fxRate() {
+    synchronized (monitor) {
+      return Optional.ofNullable(state.fxRate);
+    }
   }
 
-  public synchronized Map<String, Object> snapshotData() {
-    var users = new ArrayList<Map<String, Object>>(state.users.size());
-    state.users.values().stream()
-        .sorted(Comparator.comparing(user -> user.key.toString()))
-        .map(Projection::userData)
-        .forEach(users::add);
-    var tokens = new ArrayList<Map<String, Object>>(state.tokens.size());
-    state.tokens.values().stream()
-        .sorted(Comparator.comparing(token -> token.id.toString()))
-        .map(Projection::tokenData)
-        .forEach(tokens::add);
-    return Map.of(
-        "projectionVersion", VERSION,
-        "eventCount", state.eventCount,
-        "users", users,
-        "trackerTokens", tokens);
+  public long revision() {
+    synchronized (monitor) {
+      assert revision >= 0;
+      return revision;
+    }
+  }
+
+  public long awaitRevision(long after, Duration timeout) throws InterruptedException {
+    synchronized (monitor) {
+      if (after < 0) throw new IllegalArgumentException("revision must be nonnegative");
+      Objects.requireNonNull(timeout, "timeout");
+      if (timeout.isNegative() || timeout.isZero() || timeout.compareTo(REVISION_WAIT_MAX) > 0) {
+        throw new IllegalArgumentException("timeout must be positive and at most 30 seconds");
+      }
+      long deadline = Math.addExact(System.nanoTime(), timeout.toNanos());
+      while (revision <= after) {
+        long remaining = deadline - System.nanoTime();
+        if (remaining < 1) return revision;
+        long millis = remaining / 1_000_000;
+        int nanos = (int) (remaining % 1_000_000);
+        monitor.wait(millis, nanos);
+      }
+      return revision;
+    }
+  }
+
+  public Transition prepare(EventEnvelope event) {
+    synchronized (monitor) {
+      Objects.requireNonNull(event, "event");
+      State after = transition(state, event);
+      return new Transition(revision, state, after);
+    }
+  }
+
+  public void commit(Transition transition) {
+    synchronized (monitor) {
+      Objects.requireNonNull(transition, "transition");
+      if (revision != transition.revisionBefore) {
+        throw new IllegalStateException("projection changed before prepared transition commit");
+      }
+      assert state.equals(transition.before);
+      state = transition.after;
+      revision = Math.addExact(revision, 1);
+      monitor.notifyAll();
+      assert state.eventCount >= 0;
+    }
+  }
+
+  public void apply(EventEnvelope event) {
+    synchronized (monitor) {
+      commit(prepare(event));
+    }
+  }
+
+  public Map<String, Object> snapshotData() {
+    synchronized (monitor) {
+      var users = new ArrayList<Map<String, Object>>(state.users.size());
+      state.users.values().stream()
+          .sorted(Comparator.comparing(user -> user.key.toString()))
+          .map(Projection::userData)
+          .forEach(users::add);
+      var tokens = new ArrayList<Map<String, Object>>(state.tokens.size());
+      state.tokens.values().stream()
+          .sorted(Comparator.comparing(token -> token.id.toString()))
+          .map(Projection::tokenData)
+          .forEach(tokens::add);
+      return Map.of(
+          "projectionVersion", VERSION,
+          "eventCount", state.eventCount,
+          "users", users,
+          "trackerTokens", tokens);
+    }
   }
 
   private static State transition(State before, EventEnvelope event) {
@@ -330,7 +368,7 @@ public final class Projection {
     try {
       LocalDate.parse(date);
       eurPerUsd = new BigDecimal(string(event.data(), "eurPerUsd", 64));
-    } catch (RuntimeException exception) {
+    } catch (DateTimeException | NumberFormatException | IllegalStateException exception) {
       throw new IllegalStateException("FX rate is invalid", exception);
     }
     if (eurPerUsd.signum() <= 0 || eurPerUsd.compareTo(BigDecimal.TEN) > 0) {
@@ -448,7 +486,7 @@ public final class Projection {
     if (!(value instanceof String string)) throw new IllegalStateException("invalid instant");
     try {
       return Instant.parse(string);
-    } catch (RuntimeException exception) {
+    } catch (DateTimeException exception) {
       throw new IllegalStateException("invalid instant", exception);
     }
   }
@@ -582,7 +620,7 @@ public final class Projection {
       Objects.requireNonNull(updatedAt, "updatedAt");
       try {
         LocalDate.parse(date);
-      } catch (RuntimeException exception) {
+      } catch (DateTimeException exception) {
         throw new IllegalArgumentException("FX date is invalid", exception);
       }
       if (eurPerUsd.signum() <= 0 || eurPerUsd.compareTo(BigDecimal.TEN) > 0) {

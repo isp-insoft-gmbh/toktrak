@@ -1,6 +1,7 @@
 package toktrak;
 
 import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -39,40 +40,28 @@ public final class App implements AutoCloseable {
   private static final int HTTP_QUEUE_CAPACITY = 256;
   private static final byte[] DEVELOPMENT_SESSION_SECRET =
       "toktrak-development-cookie-signing".getBytes(StandardCharsets.UTF_8);
-  private final HttpServer server;
-  private final ExecutorService executor;
+  private HttpServer server;
+  private ExecutorService executor;
   private final DataLock dataLock;
-  private final EventLog eventLog;
-  private final Writer writer;
-  private final Projection projection;
-  private final FxService fxService;
-  private final int port;
+  private EventLog eventLog;
+  private Writer writer;
+  private Projection projection;
+  private FxService fxService;
+  private int port;
   private final AtomicBoolean closed = new AtomicBoolean();
 
-  private App(
-      HttpServer server,
-      ExecutorService executor,
-      DataLock dataLock,
-      EventLog eventLog,
-      Writer writer,
-      Projection projection,
-      FxService fxService,
-      int port) {
-    assert server != null;
-    assert executor != null;
+  private App(Config config, Assets assets, DataLock dataLock) throws IOException {
+    assert config != null;
+    assert assets != null;
     assert dataLock != null;
-    assert eventLog != null;
-    assert writer != null;
-    assert projection != null;
-    assert port >= 0 && port <= 65_535;
-    this.server = server;
-    this.executor = executor;
     this.dataLock = dataLock;
-    this.eventLog = eventLog;
-    this.writer = writer;
-    this.projection = projection;
-    this.fxService = fxService;
-    this.port = port;
+    boolean initialized = false;
+    try {
+      initialize(config, assets);
+      initialized = true;
+    } finally {
+      if (!initialized) close();
+    }
   }
 
   public static App start(String[] args, Map<String, String> environment) {
@@ -81,62 +70,51 @@ public final class App implements AutoCloseable {
     configureLogging();
     Config config = Config.from(args, environment);
     Assets assets = Assets.load();
-    DataLock dataLock = DataLock.acquire(config.dataDirectory());
-    EventLog eventLog = null;
-    Writer writer = null;
-    FxService fxService = null;
-    HttpServer server = null;
-    ExecutorService executor = null;
     try {
-      if (config.corpus() != null)
-        DevData.prepareDisposableCorpus(config.corpus(), config.dataDirectory());
-      Path eventPath = config.dataDirectory().resolve("events.ndjson");
-      EventLog.recoverTornTail(eventPath);
-      eventLog = EventLog.open(eventPath);
-      Projection projection = Projection.empty();
-      eventLog.replay(projection::apply);
-      HealthState health = new HealthState();
-      if (config.failWrites()) health.degrade("writes_failed");
-      writer = Writer.start(eventLog, projection, health, config.clock());
-      executor =
-          new ThreadPoolExecutor(
-              HTTP_WORKER_COUNT,
-              HTTP_WORKER_COUNT,
-              0,
-              TimeUnit.NANOSECONDS,
-              new ArrayBlockingQueue<>(HTTP_QUEUE_CAPACITY),
-              Thread.ofVirtual().name("toktrak-http-", 0).factory(),
-              new ThreadPoolExecutor.AbortPolicy());
-      server =
-          HttpServer.create(
-              new InetSocketAddress(config.bindAddress(), config.port()), HTTP_BACKLOG);
-      URI baseUri = baseUri(config, server.getAddress().getPort());
-      AuthService auth = auth(config, projection, writer, baseUri);
-      var usage = new UsageService(writer, config.clock());
-      server.createContext(
-          "/",
-          new Router(health, config.devAuth(), executor, assets, auth, usage, projection, baseUri));
-      server.setExecutor(Runnable::run);
-      server.start();
-      if (!config.devAuth()) fxService = FxService.start(writer);
-      int port = server.getAddress().getPort();
-      if (port < 0 || port > 65_535)
-        throw new IllegalStateException("HTTP server returned invalid port");
-      String readyUrl = baseUri.toString();
-      LOG.info("TokTrak ready at " + readyUrl + (readyUrl.endsWith("/") ? "" : "/"));
-      var app = new App(server, executor, dataLock, eventLog, writer, projection, fxService, port);
-      assert app.port == port;
-      return app;
-    } catch (Exception exception) {
-      if (server != null) server.stop(0);
-      if (executor != null) shutdownExecutor(executor);
-      if (fxService != null) fxService.close();
-      if (writer != null) writer.close();
-      if (eventLog != null) eventLog.close();
-      dataLock.close();
-      if (exception instanceof RuntimeException runtimeException) throw runtimeException;
+      return new App(config, assets, DataLock.acquire(config.dataDirectory()));
+    } catch (IOException exception) {
       throw new IllegalStateException("cannot start TokTrak", exception);
     }
+  }
+
+  private void initialize(Config config, Assets assets) throws IOException {
+    assert config != null;
+    assert assets != null;
+    if (config.corpus() != null)
+      DevData.prepareDisposableCorpus(config.corpus(), config.dataDirectory());
+    Path eventPath = config.dataDirectory().resolve("events.ndjson");
+    EventLog.recoverTornTail(eventPath);
+    eventLog = EventLog.open(eventPath);
+    projection = Projection.empty();
+    eventLog.replay(projection::apply);
+    HealthState health = new HealthState();
+    if (config.failWrites()) health.degrade("writes_failed");
+    writer = Writer.start(eventLog, projection, health, config.clock());
+    executor =
+        new ThreadPoolExecutor(
+            HTTP_WORKER_COUNT,
+            HTTP_WORKER_COUNT,
+            0,
+            TimeUnit.NANOSECONDS,
+            new ArrayBlockingQueue<>(HTTP_QUEUE_CAPACITY),
+            Thread.ofVirtual().name("toktrak-http-", 0).factory(),
+            new ThreadPoolExecutor.AbortPolicy());
+    server =
+        HttpServer.create(new InetSocketAddress(config.bindAddress(), config.port()), HTTP_BACKLOG);
+    URI baseUri = baseUri(config, server.getAddress().getPort());
+    AuthService auth = auth(config, projection, writer, baseUri);
+    var usage = new UsageService(writer, config.clock());
+    server.createContext(
+        "/",
+        new Router(health, config.devAuth(), executor, assets, auth, usage, projection, baseUri));
+    server.setExecutor(Runnable::run);
+    server.start();
+    if (!config.devAuth()) fxService = FxService.start(writer);
+    port = server.getAddress().getPort();
+    if (port < 0 || port > 65_535)
+      throw new IllegalStateException("HTTP server returned invalid port");
+    String readyUrl = baseUri.toString();
+    LOG.info("TokTrak ready at " + readyUrl + (readyUrl.endsWith("/") ? "" : "/"));
   }
 
   private static URI baseUri(Config config, int boundPort) {
@@ -210,7 +188,7 @@ public final class App implements AutoCloseable {
   public void close() {
     if (!closed.compareAndSet(false, true)) return;
     try {
-      server.stop(5);
+      if (server != null) server.stop(5);
     } finally {
       closeExecutorAndStorage();
     }
@@ -218,7 +196,7 @@ public final class App implements AutoCloseable {
 
   private void closeExecutorAndStorage() {
     try {
-      shutdownExecutor();
+      if (executor != null) shutdownExecutor();
     } finally {
       if (fxService != null) fxService.close();
       closeWriterAndStorage();
@@ -227,7 +205,7 @@ public final class App implements AutoCloseable {
 
   private void closeWriterAndStorage() {
     try {
-      writer.close();
+      if (writer != null) writer.close();
     } finally {
       closeStorage();
     }
@@ -235,7 +213,7 @@ public final class App implements AutoCloseable {
 
   private void closeStorage() {
     try {
-      eventLog.close();
+      if (eventLog != null) eventLog.close();
     } finally {
       dataLock.close();
     }

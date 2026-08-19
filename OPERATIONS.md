@@ -1,7 +1,11 @@
 # Operations
 
-TokTrak serves plain HTTP behind a reverse proxy. The deployment owns TLS,
-compression, authentication secrets, persistent-volume backups, and monitoring.
+TokTrak serves plain HTTP behind a reverse proxy. This document states the
+TokTrak runtime contract and recommends one deployment shape. Site operators own
+TLS, compression, authentication secrets, persistent-volume backups, monitoring,
+and rollback policy.
+
+![TokTrak production shape](.system/operations.svg)
 
 ## Requirements
 
@@ -9,7 +13,8 @@ compression, authentication secrets, persistent-volume backups, and monitoring.
 - Node.js for the shown secret-generation command.
 - Credentials for the configured OCI image repository.
 - A reverse proxy with public TLS.
-- A durable, backed-up volume writable by mapped container root.
+- A durable volume writable by mapped container root and covered by the
+  operator's backup policy.
 
 The image runs as container UID `0`; rootless user-namespace mapping keeps that
 user unprivileged on the host.
@@ -56,7 +61,7 @@ token. Never set `TOKTRAK_DEV_AUTH` in production.
 
 ## Deploy
 
-Use an immutable `vN` image tag:
+A simple recommended deployment uses an immutable `vN` image tag:
 
 ```sh
 podman volume create toktrak-data
@@ -70,15 +75,16 @@ podman run -d --name toktrak --replace --restart=always \
 Proxy public HTTPS to host loopback port `8080`. Do not expose the container
 port publicly.
 
-## Back up and recover
+## Recommended backup and recovery posture
 
-Stop TokTrak, back up the complete data volume, restart it, and test restoration
-regularly. Keep the env file and stable token pepper in the protected deployment
-secret store, separate from volume backups.
+TokTrak cannot own or verify production backup policy. A safe operator procedure
+should stop TokTrak, back up the complete data volume, restart it, and test
+restoration regularly. Keep the env file and stable token pepper in the
+protected deployment secret store, separate from volume backups.
 
-For upgrades, pull the next immutable tag, stop TokTrak, back up the volume, and
-replace the container with the new tag. Roll back by restoring the matching
-backup and replacing the container with the previous tag.
+Before upgrades, operators should pull the next immutable tag, stop TokTrak,
+back up the volume, and replace the container with the new tag. Rollback policy
+should restore the matching data backup and run the previous image tag.
 
 ## Diagnostics
 
@@ -124,6 +130,6 @@ restart/persistence check without tags or remote writes. A release pushes only
 `$TOKTRAK_IMAGE_REPOSITORY:vN` and the matching Git tag; no `latest` tag exists.
 
 If image or Git-tag push fails, retain the local candidate tag and image, fix
-authentication or networking, and rerun `mise run release`. Recovery republishes
-that exact candidate. If either local artifact was removed, inspect registry and
-Git state before retrying.
+authentication or networking, and rerun `mise run release`. Release recovery
+republishes that exact candidate. If either local artifact was removed, inspect
+registry and Git state before retrying.

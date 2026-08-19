@@ -34,7 +34,7 @@ final class AuthServiceTest {
   }
 
   @Test
-  void given_malformedCookies_when_verifying_then_rejectsEveryMalformedShape() {
+  void given_malformedCookies_when_verifying_then_rejectsEveryMalformedShape() throws Exception {
     var cookies = new SignedCookie(new byte[32]);
     assertThrows(IllegalArgumentException.class, () -> new SignedCookie(new byte[31]));
     assertThrows(IllegalArgumentException.class, () -> cookies.verify(null, NOW));
@@ -47,8 +47,35 @@ final class AuthServiceTest {
     assertThrows(
         IllegalArgumentException.class,
         () -> cookies.sign(Map.copyOf(tooMany), NOW.plusSeconds(60)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> cookies.sign(Map.of("kind", " "), NOW.plusSeconds(60)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> cookies.sign(Map.of(" ", "value"), NOW.plusSeconds(60)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> cookies.sign(Map.of("kind", "x".repeat(2_049)), NOW.plusSeconds(60)));
+    // Correctly signed payloads with blank names or values must still be rejected.
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> cookies.verify(forge("a=%20&exp=" + NOW.plusSeconds(60).getEpochSecond()), NOW));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> cookies.verify(forge("%20=a&exp=" + NOW.plusSeconds(60).getEpochSecond()), NOW));
     assertTrue(AuthService.cookie(null, AuthService.SESSION_COOKIE).isEmpty());
     assertTrue(AuthService.cookie("x".repeat(16 * 1024 + 1), AuthService.SESSION_COOKIE).isEmpty());
+    String atHeaderLimit =
+        AuthService.SESSION_COOKIE
+            + "="
+            + "v".repeat(16 * 1024 - AuthService.SESSION_COOKIE.length() - 1);
+    assertEquals(16 * 1024, atHeaderLimit.length());
+    assertTrue(AuthService.cookie(atHeaderLimit, AuthService.SESSION_COOKIE).isPresent());
+    assertTrue(
+        AuthService.cookie(
+                AuthService.SESSION_COOKIE + "=value" + ";a=b".repeat(63),
+                AuthService.SESSION_COOKIE)
+            .isPresent());
     assertTrue(
         AuthService.cookie(
                 java.util.Collections.nCopies(65, "a=b").stream()
@@ -60,6 +87,72 @@ final class AuthServiceTest {
                 AuthService.SESSION_COOKIE + "=first; " + AuthService.SESSION_COOKIE + "=second",
                 AuthService.SESSION_COOKIE)
             .isEmpty());
+  }
+
+  private static String forge(String payload) throws Exception {
+    String encoded =
+        java.util.Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    var mac = javax.crypto.Mac.getInstance("HmacSHA256");
+    mac.init(new javax.crypto.spec.SecretKeySpec(new byte[32], "HmacSHA256"));
+    return encoded
+        + "."
+        + java.util.Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(
+                mac.doFinal(encoded.getBytes(java.nio.charset.StandardCharsets.US_ASCII)));
+  }
+
+  @Test
+  void given_invalidTransactionCookies_when_completingProductionLogin_then_rejectsTransaction() {
+    var secret = new byte[32];
+    var cookies = new SignedCookie(secret);
+    var projection = Projection.empty();
+    try (var log = EventLog.open(directory.resolve("events.ndjson"));
+        var writer = Writer.start(log, projection, new HealthState(), ClockSource.fixed(NOW))) {
+      var identities = new IdentityService(writer, projection, secret);
+      var production =
+          AuthService.production(
+              URI.create("https://toktrak.example"),
+              ClockSource.fixed(NOW),
+              projection,
+              identities,
+              secret,
+              new OidcClient(
+                  URI.create("https://accounts.example/.well-known/openid-configuration"),
+                  "client",
+                  "secret",
+                  "example.com",
+                  ClockSource.fixed(NOW)));
+      Map<String, String> transaction =
+          Map.of(
+              "kind", "transaction",
+              "state", "state-1",
+              "nonce", "nonce-1",
+              "verifier", "verifier-1");
+      String expired = cookies.sign(transaction, NOW);
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> production.completeLogin("code=valid&state=state-1", expired));
+      String wrongKind =
+          cookies.sign(
+              Map.of(
+                  "kind", "session",
+                  "state", "state-1",
+                  "nonce", "nonce-1",
+                  "verifier", "verifier-1"),
+              NOW.plusSeconds(60));
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> production.completeLogin("code=valid&state=state-1", wrongKind));
+      var extraField = new java.util.HashMap<>(transaction);
+      extraField.put("extra", "forbidden");
+      String extra = cookies.sign(Map.copyOf(extraField), NOW.plusSeconds(60));
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> production.completeLogin("code=valid&state=state-1", extra));
+    }
   }
 
   @Test
@@ -109,6 +202,9 @@ final class AuthServiceTest {
       assertEquals("viewer", session.key().subject());
       assertDoesNotThrow(() -> auth.requireCsrf(session, session.csrf()));
       assertThrows(IllegalArgumentException.class, () -> auth.requireCsrf(session, "wrong"));
+
+      assertThrows(
+          IllegalStateException.class, () -> auth.completeLogin("code=valid&state=any", "cookie"));
 
       identities.deactivate(session.key());
       assertThrows(

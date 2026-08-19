@@ -4,6 +4,26 @@ type: research
 title: Refaster rule failures
 ---
 
+## 2026-08-18 — Replace exposed object monitors
+
+**Pattern:** Replace repeated `synchronized (this)` blocks with one private
+monitor field and move matching `wait`/`notifyAll` calls onto that monitor.
+
+**Attempt:** Checked Refaster 2.50.0 templates against the current Refaster
+reference. A safe rewrite must introduce a field once per target class, bind
+every synchronized block to that field, and update unqualified monitor methods.
+
+**Failure:** Refaster rewrites matched expressions and blocks; it cannot
+introduce one target-class field and bind separate matches to that shared
+symbol. An expression-only rule would reference a rule-template field, not a
+field in the transformed class.
+
+**Outcome:** Rule rejected as impossible. Apply the two class-local monitor
+refactors explicitly and verify their concurrency tests.
+
+**Upgrade trigger:** Refaster adds target-class member introduction with one
+shared symbol available across separate statement matches.
+
 ## 2026-07-16 — Test method naming convention
 
 **Pattern:** Rename every JUnit test method and manually invoked `BuildTest`

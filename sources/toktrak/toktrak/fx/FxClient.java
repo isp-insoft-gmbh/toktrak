@@ -6,6 +6,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Map;
@@ -65,7 +66,7 @@ public final class FxClient {
       throw new IllegalStateException("FX response is invalid");
     try {
       return new Rate(LocalDate.parse(dateString), new BigDecimal(number.toString()));
-    } catch (RuntimeException exception) {
+    } catch (DateTimeException | IllegalArgumentException exception) {
       throw new IllegalStateException("FX response is invalid", exception);
     }
   }

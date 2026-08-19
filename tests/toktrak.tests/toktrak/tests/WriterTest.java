@@ -174,9 +174,9 @@ final class WriterTest {
         () -> {
           enteredClock.countDown();
           boolean interrupted = false;
-          for (int waitCount = 0; waitCount < 1_000 && releaseClock.getCount() != 0; waitCount++) {
+          for (int waitCount = 0; waitCount < 1_000; waitCount++) {
             try {
-              releaseClock.await(10, TimeUnit.MILLISECONDS);
+              if (releaseClock.await(10, TimeUnit.MILLISECONDS)) break;
             } catch (InterruptedException ex) {
               interrupted = true;
             }
@@ -295,9 +295,9 @@ final class WriterTest {
     return () -> {
       entered.countDown();
       boolean interrupted = false;
-      for (int waitCount = 0; waitCount < 1_000 && release.getCount() != 0; waitCount++) {
+      for (int waitCount = 0; waitCount < 1_000; waitCount++) {
         try {
-          release.await(10, TimeUnit.MILLISECONDS);
+          if (release.await(10, TimeUnit.MILLISECONDS)) break;
         } catch (InterruptedException exception) {
           interrupted = true;
         }

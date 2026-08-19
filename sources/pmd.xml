@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="TokTrak PMD"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.github.io/pmd-7.0.0/ruleset_xml_schema.xsd">
+  <description>Curated rules matching accepted TokTrak inspection triage findings.</description>
+
+  <rule ref="category/java/bestpractices.xml/ImplicitFunctionalInterface" />
+  <rule ref="category/java/bestpractices.xml/PreserveStackTrace" />
+  <rule ref="category/java/bestpractices.xml/UseTryWithResources" />
+  <rule ref="category/java/bestpractices.xml/UnusedAssignment" />
+  <rule ref="category/java/design.xml/AvoidRethrowingException" />
+  <rule ref="category/java/design.xml/AvoidThrowingNewInstanceOfSameException" />
+  <rule ref="category/java/design.xml/AvoidThrowingNullPointerException" />
+  <rule ref="category/java/design.xml/AvoidThrowingRawExceptionTypes" />
+  <rule ref="category/java/design.xml/SignatureDeclareThrowsException" />
+  <rule ref="category/java/errorprone.xml/AssignmentInOperand" />
+  <rule ref="category/java/errorprone.xml/AvoidCatchingGenericException" />
+  <rule ref="category/java/errorprone.xml/AvoidInstanceofChecksInCatchClause" />
+  <rule ref="category/java/errorprone.xml/CheckSkipResult" />
+  <rule ref="category/java/errorprone.xml/CloseResource" />
+  <rule ref="category/java/errorprone.xml/DoNotThrowExceptionInFinally" />
+  <rule ref="category/java/errorprone.xml/NullAssignment" />
+  <rule ref="category/java/errorprone.xml/ReturnFromFinallyBlock" />
+  <rule ref="category/java/errorprone.xml/UnusedNullCheckInEquals" />
+  <rule ref="category/java/errorprone.xml/UselessPureMethodCall" />
+  <rule ref="category/java/multithreading.xml/AvoidSynchronizedAtMethodLevel" />
+</ruleset>

@@ -13,14 +13,21 @@ import java.util.logging.LogRecord;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import toktrak.http.BaseView;
+import toktrak.http.BaseView.CurrencySwitch;
+import toktrak.http.BaseView.CurrentPage;
+import toktrak.http.BaseView.RuntimeMode;
 import toktrak.http.CreatedTokenView;
 import toktrak.http.CreatedTokenViewRenderer;
 import toktrak.http.ErrorPage;
 import toktrak.http.HomeView;
+import toktrak.http.HomeView.SessionState;
 import toktrak.http.HomeViewRenderer;
 import toktrak.http.HttpSupport;
 import toktrak.http.RequestContext;
 import toktrak.http.TokenListView;
+import toktrak.http.TokenListView.LastUsage;
+import toktrak.http.TokenListView.PageLink;
+import toktrak.http.TokenListView.TokenState;
 import toktrak.http.TokenListViewRenderer;
 import toktrak.json.Json;
 import toktrak.log.JsonLogFormatter;
@@ -52,7 +59,8 @@ final class SnapshotTest {
     expectSelfie(
             decode(
                 HttpSupport.renderEncoded(
-                    HomeViewRenderer.of(), new HomeView(base("TokTrak", false), false))))
+                    HomeViewRenderer.of(),
+                    new HomeView(base("TokTrak", false), SessionState.SIGNED_OUT))))
         .toMatchDisk();
   }
 
@@ -62,7 +70,8 @@ final class SnapshotTest {
     expectSelfie(
             decode(
                 HttpSupport.renderEncoded(
-                    HomeViewRenderer.of(), new HomeView(base("TokTrak", true), true))))
+                    HomeViewRenderer.of(),
+                    new HomeView(base("TokTrak", true), SessionState.SIGNED_IN))))
         .toMatchDisk();
   }
 
@@ -75,10 +84,8 @@ final class SnapshotTest {
             "csrf-value",
             List.of(),
             1,
-            false,
-            "",
-            false,
-            "",
+            PageLink.unavailable(),
+            PageLink.unavailable(),
             PLATFORM);
     expectSelfie(decode(HttpSupport.renderEncoded(TokenListViewRenderer.of(), view))).toMatchDisk();
   }
@@ -91,27 +98,21 @@ final class SnapshotTest {
             new TokenListView.TokenRow(
                 "Laptop <primary>",
                 "00000000-0000-4000-8000-000000000001",
-                "active",
-                false,
-                "",
-                true),
+                TokenState.ACTIVE,
+                LastUsage.never()),
             new TokenListView.TokenRow(
                 "Old workstation",
                 "00000000-0000-4000-8000-000000000002",
-                "revoked",
-                true,
-                "2026-07-10T12:00:00Z",
-                false));
+                TokenState.REVOKED,
+                LastUsage.at("2026-07-10T12:00:00Z")));
     var view =
         new TokenListView(
             trackerBase("My Tracker · TokTrak", true),
             "csrf-value",
             rows,
             2,
-            true,
-            "/tokens?page=1",
-            true,
-            "/tokens?page=3",
+            PageLink.available("/tokens?page=1"),
+            PageLink.available("/tokens?page=3"),
             PLATFORM);
     expectSelfie(decode(HttpSupport.renderEncoded(TokenListViewRenderer.of(), view))).toMatchDisk();
   }
@@ -190,16 +191,9 @@ final class SnapshotTest {
         LOGO_WORDMARK_DARK,
         LOGO_LOCKUP,
         LOGO_LOCKUP_DARK,
-        development,
-        true,
-        false,
-        false,
-        false,
-        true,
-        false,
-        true,
-        "",
-        "");
+        development ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
+        CurrentPage.TRACKER,
+        CurrencySwitch.disabled());
   }
 
   private static BaseView base(String title, boolean development) {
@@ -212,16 +206,9 @@ final class SnapshotTest {
         LOGO_WORDMARK_DARK,
         LOGO_LOCKUP,
         LOGO_LOCKUP_DARK,
-        development,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        true,
-        "",
-        "");
+        development ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
+        CurrentPage.NONE,
+        CurrencySwitch.disabled());
   }
 
   private static String decode(byte[] bytes) throws Exception {

@@ -14,7 +14,10 @@ const run = (args, environment = {}) => {
   delete env.GATEBRIDGE_R2_SECRET_ACCESS_KEY;
   delete env.GATEBRIDGE_R2_ENDPOINT;
   Object.assign(env, environment);
-  return spawnSync(process.execPath, [upload, ...args], { encoding: "utf8", env });
+  return spawnSync(process.execPath, [upload, ...args], {
+    encoding: "utf8",
+    env,
+  });
 };
 
 test("requires Gatebridge S3 environment", () => {
@@ -35,10 +38,7 @@ test("creates deterministic R2 S3 PUT signature", () => {
     payloadHash,
     now: new Date("2026-08-15T12:34:56Z"),
   });
-  assert.equal(
-    request.url,
-    "https://example.r2.cloudflarestorage.com/agent-artifacts/1y/example%20file.txt",
-  );
+  assert.equal(request.url, "https://example.r2.cloudflarestorage.com/agent-artifacts/1y/example%20file.txt");
   assert.deepEqual(request.headers, {
     Authorization:
       "AWS4-HMAC-SHA256 Credential=test-access/20260815/auto/s3/aws4_request, " +
