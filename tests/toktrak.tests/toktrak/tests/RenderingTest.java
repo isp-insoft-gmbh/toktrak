@@ -11,10 +11,19 @@ import java.util.List;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import toktrak.http.BaseView;
+import toktrak.http.BaseView.Currency;
+import toktrak.http.BaseView.CurrencySwitch;
+import toktrak.http.BaseView.CurrentPage;
+import toktrak.http.BaseView.RuntimeMode;
 import toktrak.http.CreatedTokenView;
+import toktrak.http.HomeView;
+import toktrak.http.HomeView.SessionState;
 import toktrak.http.HomeViewRenderer;
 import toktrak.http.HttpSupport;
 import toktrak.http.TokenListView;
+import toktrak.http.TokenListView.LastUsage;
+import toktrak.http.TokenListView.PageLink;
+import toktrak.http.TokenListView.TokenState;
 import toktrak.http.TokenListViewRenderer;
 
 final class RenderingTest {
@@ -44,16 +53,9 @@ final class RenderingTest {
           LOGO_WORDMARK_DARK,
           LOGO_LOCKUP,
           LOGO_LOCKUP_DARK,
-          false,
-          true,
-          false,
-          false,
-          false,
-          true,
-          false,
-          true,
-          "",
-          "");
+          RuntimeMode.PRODUCTION,
+          CurrentPage.TRACKER,
+          CurrencySwitch.disabled());
 
   @Test
   void given_encodedOutputBoundary_when_rendering_then_acceptsLimitAndRejectsOverflow()
@@ -80,9 +82,16 @@ final class RenderingTest {
   void given_hostileViewText_when_rendering_then_escapesEveryDynamicValue() throws Exception {
     var row =
         new TokenListView.TokenRow(
-            "<&\"'>", "00000000-0000-4000-8000-000000000001", "active", false, "", true);
+            "<&\"'>", "00000000-0000-4000-8000-000000000001", TokenState.ACTIVE, LastUsage.never());
     var view =
-        new TokenListView(TOKEN_BASE, "<&\"'>", List.of(row), 1, false, "", false, "", PLATFORM);
+        new TokenListView(
+            TOKEN_BASE,
+            "<&\"'>",
+            List.of(row),
+            1,
+            PageLink.unavailable(),
+            PageLink.unavailable(),
+            PLATFORM);
 
     String html =
         new String(
@@ -95,27 +104,140 @@ final class RenderingTest {
   @Test
   void given_mutableRows_when_constructingView_then_defensivelyCopiesCollection() {
     var rows = new ArrayList<TokenListView.TokenRow>();
-    var view = new TokenListView(TOKEN_BASE, "csrf", rows, 1, false, "", false, "", PLATFORM);
+    var view =
+        new TokenListView(
+            TOKEN_BASE, "csrf", rows, 1, PageLink.unavailable(), PageLink.unavailable(), PLATFORM);
 
     rows.add(
         new TokenListView.TokenRow(
-            "Laptop", "00000000-0000-4000-8000-000000000001", "active", false, "", true));
+            "Laptop",
+            "00000000-0000-4000-8000-000000000001",
+            TokenState.ACTIVE,
+            LastUsage.never()));
 
     assertEquals(List.of(), view.tokens());
     assertThrows(UnsupportedOperationException.class, () -> view.tokens().clear());
   }
 
   @Test
+  void given_semanticViewStates_when_projectingTemplatePredicates_then_returnsExpectedValues() {
+    var base =
+        new BaseView(
+            "Visualizations · TokTrak",
+            STYLESHEET,
+            DATASTAR,
+            FAVICON,
+            LOGO_WORDMARK,
+            LOGO_WORDMARK_DARK,
+            LOGO_LOCKUP,
+            LOGO_LOCKUP_DARK,
+            RuntimeMode.DEVELOPMENT,
+            CurrentPage.VISUALIZATIONS,
+            CurrencySwitch.enabled(Currency.EUR, "/visualizations?currency=USD", Currency.USD));
+    var productionHome =
+        new BaseView(
+            "TokTrak",
+            STYLESHEET,
+            DATASTAR,
+            FAVICON,
+            LOGO_WORDMARK,
+            LOGO_WORDMARK_DARK,
+            LOGO_LOCKUP,
+            LOGO_LOCKUP_DARK,
+            RuntimeMode.PRODUCTION,
+            CurrentPage.NONE,
+            CurrencySwitch.disabled());
+    var token =
+        new TokenListView.TokenRow(
+            "Laptop",
+            "00000000-0000-4000-8000-000000000001",
+            TokenState.REVOKED,
+            LastUsage.at("2026-07-10T12:00:00Z"));
+    var unusedToken =
+        new TokenListView.TokenRow(
+            "Desktop",
+            "00000000-0000-4000-8000-000000000002",
+            TokenState.ACTIVE,
+            LastUsage.never());
+    var view =
+        new TokenListView(
+            TOKEN_BASE,
+            "csrf",
+            List.of(token),
+            2,
+            PageLink.available("/tokens?page=1"),
+            PageLink.available("/tokens?page=3"),
+            PLATFORM);
+    var firstPage =
+        new TokenListView(
+            TOKEN_BASE,
+            "csrf",
+            List.of(),
+            1,
+            PageLink.unavailable(),
+            PageLink.unavailable(),
+            PLATFORM);
+
+    assertAll(
+        () -> assertFalse(productionHome.development()),
+        () -> assertFalse(productionHome.navigation()),
+        () -> assertFalse(productionHome.visualizationsCurrent()),
+        () -> assertFalse(productionHome.currencySwitch()),
+        () -> assertTrue(base.development()),
+        () -> assertTrue(base.navigation()),
+        () -> assertFalse(base.overviewCurrent()),
+        () -> assertTrue(base.visualizationsCurrent()),
+        () -> assertFalse(base.scopeCurrent()),
+        () -> assertFalse(base.trackerCurrent()),
+        () -> assertTrue(base.currencySwitch()),
+        () -> assertFalse(base.usd()),
+        () -> assertEquals("/visualizations?currency=USD", base.currencySwitchUrl()),
+        () -> assertEquals("USD", base.currencySwitchLabel()),
+        () -> assertTrue(new HomeView(base, SessionState.SIGNED_IN).signedIn()),
+        () -> assertFalse(new HomeView(base, SessionState.SIGNED_OUT).signedIn()),
+        () -> assertTrue(view.hasPrevious()),
+        () -> assertEquals("/tokens?page=1", view.previousUrl()),
+        () -> assertTrue(view.hasNext()),
+        () -> assertEquals("/tokens?page=3", view.nextUrl()),
+        () -> assertFalse(firstPage.hasPrevious()),
+        () -> assertFalse(firstPage.hasNext()),
+        () -> assertEquals("revoked", token.status()),
+        () -> assertTrue(token.hasLastUsed()),
+        () -> assertEquals("2026-07-10T12:00:00Z", token.lastUsed()),
+        () -> assertFalse(token.active()),
+        () -> assertFalse(TokenListView.PageLink.unavailable().available()),
+        () -> assertFalse(unusedToken.hasLastUsed()),
+        () -> assertEquals("", unusedToken.lastUsed()),
+        () -> assertTrue(unusedToken.active()));
+  }
+
+  @Test
   void given_invalidViewStates_when_constructingModels_then_rejectsThem() {
     var row =
         new TokenListView.TokenRow(
-            "Laptop", "00000000-0000-4000-8000-000000000001", "active", false, "", true);
+            "Laptop", "00000000-0000-4000-8000-000000000001", TokenState.ACTIVE, LastUsage.never());
     assertThrows(
         IllegalArgumentException.class,
-        () -> new TokenListView(TOKEN_BASE, "", List.of(), 1, false, "", false, "", PLATFORM));
+        () ->
+            new TokenListView(
+                TOKEN_BASE,
+                "",
+                List.of(),
+                1,
+                PageLink.unavailable(),
+                PageLink.unavailable(),
+                PLATFORM));
     assertThrows(
         IllegalArgumentException.class,
-        () -> new TokenListView(TOKEN_BASE, "csrf", List.of(), 0, false, "", false, "", PLATFORM));
+        () ->
+            new TokenListView(
+                TOKEN_BASE,
+                "csrf",
+                List.of(),
+                0,
+                PageLink.unavailable(),
+                PageLink.unavailable(),
+                PLATFORM));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -124,23 +246,50 @@ final class RenderingTest {
                 "csrf",
                 java.util.Collections.nCopies(101, row),
                 1,
-                false,
-                "",
-                false,
-                "",
+                PageLink.unavailable(),
+                PageLink.unavailable(),
                 PLATFORM));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> new TokenListView.TokenRow("Laptop", "not-a-uuid", "active", false, "", true));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             new TokenListView.TokenRow(
-                "Laptop", "00000000-0000-4000-8000-000000000001", "revoked", false, "", true));
+                "Laptop", "not-a-uuid", TokenState.ACTIVE, LastUsage.never()));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new TokenListView.LastUsage(TokenListView.LastUsageState.USED, ""));
   }
 
   @Test
   void given_unvalidatedUrls_when_constructingViews_then_rejectsThem() {
+    assertDoesNotThrow(
+        () ->
+            new BaseView(
+                "x".repeat(128),
+                STYLESHEET,
+                DATASTAR,
+                FAVICON,
+                LOGO_WORDMARK,
+                LOGO_WORDMARK_DARK,
+                LOGO_LOCKUP,
+                LOGO_LOCKUP_DARK,
+                RuntimeMode.PRODUCTION,
+                CurrentPage.NONE,
+                CurrencySwitch.disabled()));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new BaseView(
+                "x".repeat(129),
+                STYLESHEET,
+                DATASTAR,
+                FAVICON,
+                LOGO_WORDMARK,
+                LOGO_WORDMARK_DARK,
+                LOGO_LOCKUP,
+                LOGO_LOCKUP_DARK,
+                RuntimeMode.PRODUCTION,
+                CurrentPage.NONE,
+                CurrencySwitch.disabled()));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -209,10 +358,8 @@ final class RenderingTest {
                 "csrf",
                 List.of(),
                 1,
-                true,
-                "https://evil.example/tokens",
-                false,
-                "",
+                PageLink.available("https://evil.example/tokens"),
+                PageLink.unavailable(),
                 PLATFORM));
     assertThrows(
         IllegalArgumentException.class,
@@ -245,16 +392,9 @@ final class RenderingTest {
         logoWordmarkDark,
         logoLockup,
         logoLockupDark,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        true,
-        "",
-        "");
+        RuntimeMode.PRODUCTION,
+        CurrentPage.NONE,
+        CurrencySwitch.disabled());
   }
 
   private record FixedSizeRenderer(int size) implements Template.EncodedTemplate<String> {

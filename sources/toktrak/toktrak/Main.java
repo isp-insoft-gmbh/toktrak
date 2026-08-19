@@ -1,17 +1,22 @@
 package toktrak;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import toktrak.http.Assets;
 import toktrak.http.BaseView;
+import toktrak.http.BaseView.CurrencySwitch;
+import toktrak.http.BaseView.CurrentPage;
+import toktrak.http.BaseView.RuntimeMode;
 import toktrak.http.HomeView;
+import toktrak.http.HomeView.SessionState;
 import toktrak.http.HomeViewRenderer;
 import toktrak.http.HttpSupport;
 
 public final class Main {
   private Main() {}
 
-  public static void main(String[] args) throws Exception {
+  public static void main(String[] args) {
     if (args == null) throw new IllegalArgumentException("args are required");
     if (!Main.class.desiredAssertionStatus()) {
       throw new IllegalStateException("Java assertions must be enabled with -ea");
@@ -29,30 +34,28 @@ public final class Main {
       String logoWordmarkDarkUrl = assets.publicUrl("logo-wordmark-dark.svg");
       String logoLockupUrl = assets.publicUrl("logo-lockup.svg");
       String logoLockupDarkUrl = assets.publicUrl("logo-lockup-dark.svg");
-      byte[] html =
-          HttpSupport.renderEncoded(
-              HomeViewRenderer.of(),
-              new HomeView(
-                  new BaseView(
-                      "TokTrak",
-                      stylesheetUrl,
-                      datastarUrl,
-                      faviconUrl,
-                      logoWordmarkUrl,
-                      logoWordmarkDarkUrl,
-                      logoLockupUrl,
-                      logoLockupDarkUrl,
-                      false,
-                      false,
-                      false,
-                      false,
-                      false,
-                      false,
-                      false,
-                      true,
-                      "",
-                      ""),
-                  false));
+      byte[] html;
+      try {
+        html =
+            HttpSupport.renderEncoded(
+                HomeViewRenderer.of(),
+                new HomeView(
+                    new BaseView(
+                        "TokTrak",
+                        stylesheetUrl,
+                        datastarUrl,
+                        faviconUrl,
+                        logoWordmarkUrl,
+                        logoWordmarkDarkUrl,
+                        logoLockupUrl,
+                        logoLockupDarkUrl,
+                        RuntimeMode.PRODUCTION,
+                        CurrentPage.NONE,
+                        CurrencySwitch.disabled()),
+                    SessionState.SIGNED_OUT));
+      } catch (IOException exception) {
+        throw new IllegalStateException("production renderer self-check failed", exception);
+      }
       String document = new String(html, StandardCharsets.UTF_8);
       if (!document.contains("class=\"home-brand\"")
           || !document.contains(logoLockupUrl)

@@ -1,0 +1,110 @@
+direction: down
+
+vars: {
+  d2-config: {
+    theme-id: 0
+    dark-theme-id: 200
+  }
+}
+
+title: |md
+  # TokTrak runtime
+  One Java 26+ JPMS service.
+  Stateless except `TOKTRAK_DATA_DIR`.
+  A single writer appends NDJSON; startup replays the in-memory projection.
+|
+title.shape: document
+title.style.stroke-width: 2
+
+flow: "Request and write path" {
+  shape: sequence_diagram
+
+  proxy: "reverse proxy"
+  router: "JDK HttpServer / Router"
+  auth: "AuthService"
+  usage: "UsageService"
+  writer: "single Writer"
+  eventlog: "events.ndjson on disk"
+  projection: "in-memory Projection"
+  ui: "Dashboard UI"
+
+  proxy -> router: "plain HTTP"
+  router -> auth: "session or Bearer token"
+  router -> usage: "POST /api/usage"
+  usage -> writer: "USAGE_UPLOADED command"
+  writer -> eventlog: "append NDJSON + fsync"
+  writer -> projection: "commit transition"
+  projection -> ui: "dashboard model + SSE revision"
+}
+
+app: "Runtime components" {
+  shape: package
+  style.stroke-width: 2
+
+  main: "Main\nrefuses to start without -ea" {shape: hexagon}
+  config: "Config\nprod env vars, dev-only args" {shape: document}
+  http: "Router\nbounded URI/body/work queues" {shape: hexagon}
+  auth_identity: "Auth + Identity\nOIDC users, HMAC tracker tokens" {shape: diamond}
+  usage_validation: "UsageUpload.parse\nversion, timezone, report rows, limits" {shape: hexagon}
+  writer: "Writer\none platform thread per process, bounded queue" {shape: queue}
+  projection: "in-memory Projection\ncurrent users, tokens, usage, FX" {shape: stored_data}
+  fx: "FxService\nFrankfurter USD→EUR every 24h" {shape: queue}
+
+  main -> config: "validate"
+  main -> http: "start"
+  http -> auth_identity: "login/tokens"
+  http -> usage_validation: "/api/usage"
+  usage_validation -> writer: "event command"
+  auth_identity -> writer: "identity events"
+  fx -> writer: "rate event"
+  writer -> projection: "commit"
+}
+
+data: "TOKTRAK_DATA_DIR" {
+  shape: package
+  style.stroke-width: 2
+
+  lock: "DataLock\none process per data dir" {shape: diamond}
+  events: {
+    shape: sql_table
+    line: ndjson {constraint: primary_key}
+    type: string
+    at: instant
+    actor: json
+    data: json
+  }
+  backup: "deployment-owned backup\ncopy the whole volume" {shape: stored_data}
+
+  lock -> events: "guards"
+  events -> backup: "operator-owned"
+}
+
+ops: |md
+  ## Production boundary
+  - Container runs linked `jlink` runtime with JFR/JMX/`jcmd` diagnostics.
+  - Reverse proxy owns TLS, compression, public port, and backups.
+  - `TOKTRAK_SESSION_SECRET` signs cookies.
+  - `TOKTRAK_TOKEN_PEPPER` hashes tracker tokens and must remain stable.
+  - Never set `TOKTRAK_DEV_AUTH` in production.
+|
+ops.shape: callout
+ops.style.stroke-width: 2
+
+startup: "Startup" {
+  shape: sequence_diagram
+
+  main
+  eventlog
+  projection
+  router
+
+  main -> eventlog: "recover torn tail"
+  eventlog -> projection: "replay compatible events"
+  main -> router: "bind HTTP"
+}
+
+title -> ops: "production contract"
+ops -> flow: "main path"
+flow -> app: "implemented by"
+app -> data: "persists to"
+data -> startup: "replayed by"

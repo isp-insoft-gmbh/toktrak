@@ -185,7 +185,8 @@ final class AssetsTest {
   @Test
   void given_invalidIndexEncodingAndSize_when_loadingAssets_then_rejectsIndex() {
     assertThrows(
-        IllegalStateException.class, () -> Assets.loadForTest(new byte[] {(byte) 0xC3}, Map.of()));
+        IllegalStateException.class,
+        () -> Assets.loadForTest(HexFormat.of().parseHex("c3"), Map.of()));
     assertThrows(
         IllegalStateException.class, () -> Assets.loadForTest(new byte[1024 * 1024 + 1], Map.of()));
   }

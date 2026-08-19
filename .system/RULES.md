@@ -56,6 +56,7 @@
 - Isolate nondeterministic I/O behind deterministic logic; push control flow
   upward and data transformation downward.
 - Prefer simple signatures and return types. Declare variables near first use.
+- Never use boolean view-model components; use semantic enums or value records.
 - Separate control and data planes; batch I/O and computation.
 - Follow Java naming conventions. Use precise nouns and verbs, suffix qualifiers
   such as `latencyMillisMax`, and avoid abbreviations.

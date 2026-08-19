@@ -157,7 +157,7 @@ jobs:
         if: matrix.harness == 'pi' || matrix.harness == 'codex'
         env:
           GOLEM_AUTH_CACHE_KEY: ${{ secrets.GOLEM_AUTH_CACHE_KEY }}
-        run: java -ea tools/GolemAuth.java decrypt "${{ matrix.harness }}" "output/golem-auth/${{ matrix.harness }}.bin"
+        run: node tools/golem.mjs auth decrypt "${{ matrix.harness }}" "output/golem-auth/${{ matrix.harness }}.bin"
       - name: Run local golem lifecycle
         if: matrix.task != ''
         id: lifecycle
@@ -173,7 +173,7 @@ jobs:
         id: encrypt
         env:
           GOLEM_AUTH_CACHE_KEY: ${{ secrets.GOLEM_AUTH_CACHE_KEY }}
-        run: java -ea tools/GolemAuth.java encrypt "${{ matrix.harness }}" "output/golem-auth/${{ matrix.harness }}.bin"
+        run: node tools/golem.mjs auth encrypt "${{ matrix.harness }}" "output/golem-auth/${{ matrix.harness }}.bin"
       - name: Save rotated authentication
         if: always() && steps.encrypt.outcome == 'success'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -209,7 +209,7 @@ jobs:
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
         with:
           version: 2026.8.6
-          install_args: node java
+          install_args: node
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - name: Install pinned harness
         run: |
@@ -223,7 +223,7 @@ jobs:
       - name: Restore fresh seed
         env:
           GOLEM_AUTH_SEED: ${{ inputs.operation == 'reseed-pi' && secrets.GOLEM_PI_AUTH_SEED || secrets.GOLEM_CODEX_AUTH_SEED }}
-        run: java -ea tools/GolemAuth.java seed "$HARNESS"
+        run: node tools/golem.mjs auth seed "$HARNESS"
       - name: Verify fresh subscription authentication
         run: |
           if [[ "$HARNESS" == "pi" ]]; then
@@ -234,7 +234,7 @@ jobs:
       - name: Encrypt fresh authentication baseline
         env:
           GOLEM_AUTH_CACHE_KEY: ${{ secrets.GOLEM_AUTH_CACHE_KEY }}
-        run: java -ea tools/GolemAuth.java encrypt "$HARNESS" "output/golem-auth/$HARNESS.bin"
+        run: node tools/golem.mjs auth encrypt "$HARNESS" "output/golem-auth/$HARNESS.bin"
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: output/golem-auth/${{ env.HARNESS }}.bin

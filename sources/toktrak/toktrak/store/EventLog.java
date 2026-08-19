@@ -20,6 +20,7 @@ public final class EventLog implements AutoCloseable {
   public static final int MAX_EVENT_COUNT = 1_000_000;
   private static final int READ_BUFFER_BYTES = 64 * 1024;
 
+  private final Object monitor = new Object();
   private final Path path;
   private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -44,42 +45,48 @@ public final class EventLog implements AutoCloseable {
     }
   }
 
-  public synchronized void appendAndFsync(EventEnvelope event) {
-    Objects.requireNonNull(event, "event");
-    requireOpen();
-    byte[] line = (Json.write(event) + "\n").getBytes(StandardCharsets.UTF_8);
-    if (line.length > MAX_LINE_BYTES) {
-      throw new IllegalStateException("event line exceeds " + MAX_LINE_BYTES + " bytes");
-    }
-    try {
-      long fileBytes = requireFileSizeWithinLimit();
-      long resultingFileBytes = resultingFileBytes(fileBytes, line.length);
-      try (var channel =
-          FileChannel.open(
-              path,
-              StandardOpenOption.CREATE,
-              StandardOpenOption.WRITE,
-              StandardOpenOption.APPEND)) {
-        ByteBuffer buffer = ByteBuffer.wrap(line);
-        writeFully(channel, buffer);
-        assert !buffer.hasRemaining();
-        channel.force(true);
+  public void appendAndFsync(EventEnvelope event) {
+    synchronized (monitor) {
+      Objects.requireNonNull(event, "event");
+      requireOpen();
+      byte[] line = (Json.write(event) + "\n").getBytes(StandardCharsets.UTF_8);
+      if (line.length > MAX_LINE_BYTES) {
+        throw new IllegalStateException("event line exceeds " + MAX_LINE_BYTES + " bytes");
       }
-      assert Files.size(path) == resultingFileBytes;
-    } catch (IOException exception) {
-      throw new IllegalStateException("cannot append event log", exception);
+      try {
+        long fileBytes = requireFileSizeWithinLimit();
+        long resultingFileBytes = resultingFileBytes(fileBytes, line.length);
+        try (var channel =
+            FileChannel.open(
+                path,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE,
+                StandardOpenOption.APPEND)) {
+          ByteBuffer buffer = ByteBuffer.wrap(line);
+          writeFully(channel, buffer);
+          assert !buffer.hasRemaining();
+          channel.force(true);
+        }
+        assert Files.size(path) == resultingFileBytes;
+      } catch (IOException exception) {
+        throw new IllegalStateException("cannot append event log", exception);
+      }
     }
   }
 
-  public synchronized int replay(Consumer<EventEnvelope> consumer) {
-    return replay(consumer, MAX_EVENT_COUNT);
+  public int replay(Consumer<EventEnvelope> consumer) {
+    synchronized (monitor) {
+      return replay(consumer, MAX_EVENT_COUNT);
+    }
   }
 
-  public synchronized int replayForTest(Consumer<EventEnvelope> consumer, int eventCountMax) {
-    if (eventCountMax <= 0 || eventCountMax > MAX_EVENT_COUNT) {
-      throw new IllegalArgumentException("eventCountMax must be 1.." + MAX_EVENT_COUNT);
+  public int replayForTest(Consumer<EventEnvelope> consumer, int eventCountMax) {
+    synchronized (monitor) {
+      if (eventCountMax <= 0 || eventCountMax > MAX_EVENT_COUNT) {
+        throw new IllegalArgumentException("eventCountMax must be 1.." + MAX_EVENT_COUNT);
+      }
+      return replay(consumer, eventCountMax);
     }
-    return replay(consumer, eventCountMax);
   }
 
   private int replay(Consumer<EventEnvelope> consumer, int eventCountMax) {
@@ -94,7 +101,8 @@ public final class EventLog implements AutoCloseable {
       int eventCount = 0;
       try (var input = Files.newInputStream(path)) {
         while (fileBytesRead < fileBytes) {
-          int requestedBytes = (int) Math.min(inputBuffer.length, fileBytes - fileBytesRead);
+          int requestedBytes =
+              Math.toIntExact(Math.min(inputBuffer.length, fileBytes - fileBytesRead));
           int readBytes = input.read(inputBuffer, 0, requestedBytes);
           if (readBytes <= 0) throw new IllegalStateException("event log changed during replay");
           fileBytesRead = Math.addExact(fileBytesRead, readBytes);
@@ -151,7 +159,7 @@ public final class EventLog implements AutoCloseable {
       EventEnvelope event = Json.read(bytes, EventEnvelope.class);
       assert event != null;
       consumer.accept(event);
-    } catch (RuntimeException exception) {
+    } catch (IllegalStateException exception) {
       throw new IllegalStateException("malformed event line " + lineNumber, exception);
     }
   }
@@ -171,7 +179,8 @@ public final class EventLog implements AutoCloseable {
         long truncateBytes = -1;
         while (position > 0 && scannedBytes < MAX_LINE_BYTES) {
           int blockBytes =
-              (int) Math.min(bytes.length, Math.min(position, MAX_LINE_BYTES - scannedBytes));
+              Math.toIntExact(
+                  Math.min(bytes.length, Math.min(position, MAX_LINE_BYTES - scannedBytes)));
           assert blockBytes > 0;
           position -= blockBytes;
           ByteBuffer buffer = ByteBuffer.wrap(bytes, 0, blockBytes);

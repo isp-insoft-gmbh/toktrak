@@ -17,6 +17,14 @@ import java.util.concurrent.RejectedExecutionException;
 import toktrak.auth.AuthService;
 import toktrak.auth.AuthService.Session;
 import toktrak.health.HealthState;
+import toktrak.http.BaseView.Currency;
+import toktrak.http.BaseView.CurrencySwitch;
+import toktrak.http.BaseView.CurrentPage;
+import toktrak.http.BaseView.RuntimeMode;
+import toktrak.http.HomeView.SessionState;
+import toktrak.http.TokenListView.LastUsage;
+import toktrak.http.TokenListView.PageLink;
+import toktrak.http.TokenListView.TokenState;
 import toktrak.identity.IdentityService.PreparedToken;
 import toktrak.json.Json;
 import toktrak.projection.Projection;
@@ -82,7 +90,7 @@ public final class Router implements HttpHandler {
         || exceedsUtf8Limit(path, PATH_BYTES_MAX)
         || exceedsUtf8Limit(rawQuery, QUERY_BYTES_MAX)) {
       String requestId = UUID.randomUUID().toString();
-      try {
+      try (exchange) {
         respondError(
             exchange,
             414,
@@ -91,15 +99,13 @@ public final class Router implements HttpHandler {
             "Request URI is too long.",
             requestId,
             null);
-      } finally {
-        exchange.close();
       }
       return;
     }
     String method = exchange.getRequestMethod();
     if (method == null || method.isBlank() || method.length() > METHOD_CHARACTERS_MAX) {
       String requestId = UUID.randomUUID().toString();
-      try {
+      try (exchange) {
         respondError(
             exchange,
             400,
@@ -108,15 +114,13 @@ public final class Router implements HttpHandler {
             "Request method is invalid.",
             requestId,
             null);
-      } finally {
-        exchange.close();
       }
       return;
     }
     try {
       requestExecutor.execute(() -> handleAccepted(exchange));
     } catch (RejectedExecutionException exception) {
-      try {
+      try (exchange) {
         respondError(
             exchange,
             503,
@@ -125,8 +129,6 @@ public final class Router implements HttpHandler {
             "Server is busy. Try again.",
             UUID.randomUUID().toString(),
             null);
-      } finally {
-        exchange.close();
       }
     }
   }
@@ -138,30 +140,49 @@ public final class Router implements HttpHandler {
             exchange.getRequestMethod(),
             exchange.getRequestURI().getPath(),
             devAuth ? "dev" : "prod");
-    try {
-      RequestContext.with(
-          context,
-          () -> {
-            route(exchange);
-            return null;
-          });
-    } catch (Exception exception) {
-      if (exchange.getResponseCode() < 0) {
-        try {
-          respondError(
-              exchange,
-              500,
-              "internal_error",
-              "internal server error",
-              "Internal server error. Try again.",
-              context.requestId(),
-              exception);
-        } catch (IOException responseException) {
-          // The peer may have disconnected; the exchange is closed below.
-        }
+    try (exchange) {
+      try {
+        RequestContext.with(
+            context,
+            () -> {
+              route(exchange);
+              return null;
+            });
+      } catch (IOException
+          | ArithmeticException
+          | ArrayStoreException
+          | ClassCastException
+          | EnumConstantNotPresentException
+          | IllegalArgumentException
+          | IllegalMonitorStateException
+          | IllegalStateException
+          | IndexOutOfBoundsException
+          | NegativeArraySizeException
+          | RenderFailure
+          | SecurityException
+          | TypeNotPresentException
+          | UnsupportedOperationException exception) {
+        internalFailure(exchange, context, exception);
       }
-    } finally {
-      exchange.close();
+    }
+  }
+
+  private void internalFailure(HttpExchange exchange, RequestContext context, Throwable exception) {
+    assert exchange != null;
+    assert context != null;
+    assert exception != null;
+    if (exchange.getResponseCode() >= 0) return;
+    try {
+      respondError(
+          exchange,
+          500,
+          "internal_error",
+          "internal server error",
+          "Internal server error. Try again.",
+          context.requestId(),
+          exception);
+    } catch (IOException responseException) {
+      // The peer may have disconnected; the exchange is closed by the caller.
     }
   }
 
@@ -275,7 +296,7 @@ public final class Router implements HttpHandler {
         exchange.getResponseHeaders().add("Set-Cookie", auth.sessionCookie(login.session()));
       }
       HttpSupport.redirect(exchange, 302, login.redirectUri());
-    } catch (RuntimeException exception) {
+    } catch (IllegalArgumentException | IllegalStateException exception) {
       authFailure(exchange, exception);
     }
   }
@@ -291,7 +312,7 @@ public final class Router implements HttpHandler {
       exchange.getResponseHeaders().add("Set-Cookie", auth.clearTransactionCookie());
       exchange.getResponseHeaders().add("Set-Cookie", auth.sessionCookie(login.session()));
       HttpSupport.redirect(exchange, 302, login.redirectUri());
-    } catch (RuntimeException exception) {
+    } catch (IllegalArgumentException | IllegalStateException exception) {
       authFailure(exchange, exception);
     }
   }
@@ -309,10 +330,10 @@ public final class Router implements HttpHandler {
               session.csrf(),
               rows,
               page,
-              page > 1,
-              page > 1 ? tokenPageUrl(page - 1) : "",
-              page < tokens.pageCount(),
-              page < tokens.pageCount() ? tokenPageUrl(page + 1) : "",
+              page > 1 ? PageLink.available(tokenPageUrl(page - 1)) : PageLink.unavailable(),
+              page < tokens.pageCount()
+                  ? PageLink.available(tokenPageUrl(page + 1))
+                  : PageLink.unavailable(),
               assets.publicUrl("platform.js"));
       HttpSupport.encodedHtml(
           exchange,
@@ -429,7 +450,7 @@ public final class Router implements HttpHandler {
     UserKey owner = trackerOwner(exchange);
     if (owner == null) return;
     String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
-    if (contentType == null || !contentType.equalsIgnoreCase("application/json")) {
+    if (!"application/json".equalsIgnoreCase(contentType)) {
       apiError(exchange, 415, "unsupported_media_type", "application/json is required");
       return;
     }
@@ -558,7 +579,7 @@ public final class Router implements HttpHandler {
     try {
       session = auth.requireSession(exchange.getRequestHeaders().getFirst("Cookie"));
     } catch (IllegalArgumentException exception) {
-      var view = new HomeView(base("TokTrak"), false);
+      var view = new HomeView(base("TokTrak"), SessionState.SIGNED_OUT);
       HttpSupport.encodedHtml(
           exchange,
           200,
@@ -570,7 +591,7 @@ public final class Router implements HttpHandler {
     DashboardCurrency effective = effectiveCurrency(currency);
     var view =
         new OverviewView(
-            dashboardBase("Overview · TokTrak", "/", true, false, effective),
+            dashboardBase("Overview · TokTrak", "/", CurrentPage.OVERVIEW, effective),
             projection.revision(),
             session.user().displayName(),
             DashboardFactory.create(projection, health, effective));
@@ -593,7 +614,11 @@ public final class Router implements HttpHandler {
     DashboardCurrency effective = effectiveCurrency(currency);
     var view =
         new VisualizationsView(
-            dashboardBase("Visualizations · TokTrak", "/visualizations", false, true, effective),
+            dashboardBase(
+                "Visualizations · TokTrak",
+                "/visualizations",
+                CurrentPage.VISUALIZATIONS,
+                effective),
             projection.revision(),
             session.user().displayName(),
             DashboardFactory.create(projection, health, effective));
@@ -616,7 +641,7 @@ public final class Router implements HttpHandler {
     DashboardCurrency effective = effectiveCurrency(currency);
     var view =
         new ScopeView(
-            dashboardBase("Data scope · TokTrak", "/scope", false, false, effective),
+            dashboardBase("Data scope · TokTrak", "/scope", CurrentPage.SCOPE, effective),
             session.user().displayName());
     HttpSupport.encodedHtml(
         exchange,
@@ -672,11 +697,7 @@ public final class Router implements HttpHandler {
   }
 
   private BaseView dashboardBase(
-      String title,
-      String path,
-      boolean overviewCurrent,
-      boolean visualizationsCurrent,
-      DashboardCurrency currency) {
+      String title, String path, CurrentPage currentPage, DashboardCurrency currency) {
     assert path.equals("/") || path.equals("/visualizations") || path.equals("/scope");
     DashboardCurrency alternative =
         currency == DashboardCurrency.USD ? DashboardCurrency.EUR : DashboardCurrency.USD;
@@ -689,16 +710,12 @@ public final class Router implements HttpHandler {
         assets.publicUrl("logo-wordmark-dark.svg"),
         assets.publicUrl("logo-lockup.svg"),
         assets.publicUrl("logo-lockup-dark.svg"),
-        devAuth,
-        true,
-        overviewCurrent,
-        visualizationsCurrent,
-        path.equals("/scope"),
-        false,
-        true,
-        currency == DashboardCurrency.USD,
-        path + "?currency=" + alternative,
-        alternative.name());
+        devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
+        currentPage,
+        CurrencySwitch.enabled(
+            Currency.from(currency),
+            path + "?currency=" + alternative,
+            Currency.from(alternative)));
   }
 
   private BaseView trackerBase(String title) {
@@ -711,16 +728,9 @@ public final class Router implements HttpHandler {
         assets.publicUrl("logo-wordmark-dark.svg"),
         assets.publicUrl("logo-lockup.svg"),
         assets.publicUrl("logo-lockup-dark.svg"),
-        devAuth,
-        true,
-        false,
-        false,
-        false,
-        true,
-        false,
-        true,
-        "",
-        "");
+        devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
+        CurrentPage.TRACKER,
+        CurrencySwitch.disabled());
   }
 
   private BaseView base(String title) {
@@ -733,16 +743,9 @@ public final class Router implements HttpHandler {
         assets.publicUrl("logo-wordmark-dark.svg"),
         assets.publicUrl("logo-lockup.svg"),
         assets.publicUrl("logo-lockup-dark.svg"),
-        devAuth,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        true,
-        "",
-        "");
+        devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
+        CurrentPage.NONE,
+        CurrencySwitch.disabled());
   }
 
   private Session browserSession(HttpExchange exchange) throws IOException {
@@ -765,7 +768,7 @@ public final class Router implements HttpHandler {
 
   private Map<String, String> form(HttpExchange exchange) throws IOException {
     String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
-    if (contentType == null || !contentType.equalsIgnoreCase("application/x-www-form-urlencoded")) {
+    if (!"application/x-www-form-urlencoded".equalsIgnoreCase(contentType)) {
       throw new IllegalArgumentException("form content type is required");
     }
     byte[] bytes = HttpSupport.readLimited(exchange.getRequestBody(), FORM_BYTES_MAX);
@@ -774,15 +777,12 @@ public final class Router implements HttpHandler {
 
   private static TokenListView.TokenRow tokenRow(TrackerToken token) {
     assert token != null;
-    boolean active = token.revokedAt() == null;
-    String lastUsed = token.lastUsedAt() == null ? "" : token.lastUsedAt().toString();
-    return new TokenListView.TokenRow(
-        token.label(),
-        token.id().toString(),
-        active ? "active" : "revoked",
-        !lastUsed.isEmpty(),
-        lastUsed,
-        active);
+    TokenState state = token.revokedAt() == null ? TokenState.ACTIVE : TokenState.REVOKED;
+    LastUsage lastUsage =
+        token.lastUsedAt() == null
+            ? LastUsage.never()
+            : LastUsage.at(token.lastUsedAt().toString());
+    return new TokenListView.TokenRow(token.label(), token.id().toString(), state, lastUsage);
   }
 
   private static Page page(String query) {
@@ -802,7 +802,9 @@ public final class Router implements HttpHandler {
   private static long revision(String query) {
     if (query == null) return 0;
     Map<String, String> fields = toktrak.auth.OidcClient.parseForm(query);
-    if (!fields.keySet().equals(java.util.Set.of("revision"))) {
+    if (!java.util.Set.of("revision", "datastar").containsAll(fields.keySet())
+        || !fields.containsKey("revision")
+        || !fields.getOrDefault("datastar", "{}").equals("{}")) {
       throw new IllegalArgumentException("query is invalid");
     }
     String value = fields.get("revision");
@@ -862,9 +864,9 @@ public final class Router implements HttpHandler {
     try {
       return HttpSupport.renderEncoded(renderer, model);
     } catch (HttpSupport.EncodedHtmlTooLargeException exception) {
-      throw new RenderFailure(templateName, modelName, rendererName, "output_limit");
-    } catch (IOException | RuntimeException exception) {
-      throw new RenderFailure(templateName, modelName, rendererName, "renderer_failure");
+      throw new RenderFailure(templateName, modelName, rendererName, "output_limit", exception);
+    } catch (IOException exception) {
+      throw new RenderFailure(templateName, modelName, rendererName, "renderer_failure", exception);
     }
   }
 

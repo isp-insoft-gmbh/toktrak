@@ -9,12 +9,18 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 public final class HttpSupport {
   public static final int MAX_REQUEST_BODY_BYTES = 5 * 1024 * 1024;
   private static final int BUFFER_BYTES = 8 * 1024;
   private static final int RESPONSE_BODY_BYTES_MAX = 5 * 1024 * 1024;
   public static final int ENCODED_HTML_BYTES_MAX = 4 * 1024 * 1024;
+  private static final String CONTENT_SECURITY_POLICY =
+      "default-src 'self'; frame-ancestors 'none'; base-uri 'none'";
+  private static final String HTML_CONTENT_SECURITY_POLICY =
+      "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri"
+          + " 'none'";
 
   private HttpSupport() {}
 
@@ -59,9 +65,11 @@ public final class HttpSupport {
       throws IOException {
     assert renderer != null;
     assert model != null;
-    var output = new BoundedOutputStream(ENCODED_HTML_BYTES_MAX);
-    renderer.write(model, Output.of(output, StandardCharsets.UTF_8));
-    byte[] result = output.toByteArray();
+    byte[] result;
+    try (var output = new BoundedOutputStream(ENCODED_HTML_BYTES_MAX)) {
+      renderer.write(model, Output.of(output, StandardCharsets.UTF_8));
+      result = output.toByteArray();
+    }
     assert result.length <= ENCODED_HTML_BYTES_MAX;
     return result;
   }
@@ -95,8 +103,7 @@ public final class HttpSupport {
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("X-Frame-Options", "DENY");
     headers.set("Referrer-Policy", "no-referrer");
-    headers.set(
-        "Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+    headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY);
     exchange.sendResponseHeaders(200, 0);
     try (var output = exchange.getResponseBody()) {
       output.write(bytes);
@@ -140,7 +147,7 @@ public final class HttpSupport {
 
     @Override
     public void write(byte[] bytes, int offset, int length) throws IOException {
-      if (bytes == null) throw new NullPointerException("bytes");
+      Objects.requireNonNull(bytes, "bytes");
       if (offset < 0 || length < 0 || offset > bytes.length - length) {
         throw new IndexOutOfBoundsException();
       }
@@ -185,7 +192,10 @@ public final class HttpSupport {
     headers.set("X-Frame-Options", "DENY");
     headers.set("Referrer-Policy", "no-referrer");
     headers.set(
-        "Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+        "Content-Security-Policy",
+        contentType.startsWith("text/html")
+            ? HTML_CONTENT_SECURITY_POLICY
+            : CONTENT_SECURITY_POLICY);
     exchange.sendResponseHeaders(status, body.length);
     try (var output = exchange.getResponseBody()) {
       output.write(body);

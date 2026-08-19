@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import java.io.IOException;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 
 public final class Json {
   private static final int NESTING_DEPTH_MAX = 32;
@@ -85,7 +86,7 @@ public final class Json {
       T result = MAPPER.readValue(value, type);
       assert result != null;
       return result;
-    } catch (IOException | RuntimeException exception) {
+    } catch (IOException | DateTimeParseException exception) {
       throw new IllegalStateException("cannot parse JSON", exception);
     }
   }
@@ -100,7 +101,7 @@ public final class Json {
       T result = MAPPER.readValue(value, type);
       assert result != null;
       return result;
-    } catch (IOException | RuntimeException exception) {
+    } catch (IOException | DateTimeParseException exception) {
       throw new IllegalStateException("cannot parse JSON", exception);
     }
   }

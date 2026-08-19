@@ -3,15 +3,7 @@
 import { execFile } from "node:child_process";
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { existsSync } from "node:fs";
-import {
-  chmod,
-  mkdir,
-  open,
-  readFile,
-  readdir,
-  rename,
-  rm,
-} from "node:fs/promises";
+import { chmod, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -52,8 +44,7 @@ const SETTINGS_BYTES_MAX = 256 * 1_024;
 const CONFIG_CHARACTERS_MAX = 8 * 1_024;
 const LOG_CHARACTERS_MAX = 1_000;
 const CURRENT_SCRIPT = fileURLToPath(import.meta.url);
-const PLATFORM_NAME =
-  process.platform === "win32" ? "Windows" : process.platform === "darwin" ? "macOS" : "Linux";
+const PLATFORM_NAME = process.platform === "win32" ? "Windows" : process.platform === "darwin" ? "macOS" : "Linux";
 const exec = promisify(execFile);
 
 function log(level, message) {
@@ -105,14 +96,13 @@ export function linuxUnits(nodePath, scriptPath, piSessions) {
   const command = `${quoted(nodePath)} ${quoted(scriptPath)} daily --scheduled${fallback}`;
   return {
     service: `[Unit]\nDescription=TokTrak usage uploader\n\n[Service]\nType=oneshot\nExecStart=${command}\n`,
-    timer: "[Unit]\nDescription=Upload TokTrak usage daily\n\n[Timer]\nOnCalendar=daily\nRandomizedDelaySec=30m\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
+    timer:
+      "[Unit]\nDescription=Upload TokTrak usage daily\n\n[Timer]\nOnCalendar=daily\nRandomizedDelaySec=30m\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
   };
 }
 
 export function macPlist(nodePath, scriptPath, piSessions) {
-  const fallback = piSessions
-    ? `<string>--pi-path</string><string>${xml(piSessions)}</string>`
-    : "";
+  const fallback = piSessions ? `<string>--pi-path</string><string>${xml(piSessions)}</string>` : "";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -129,11 +119,7 @@ export function macPlist(nodePath, scriptPath, piSessions) {
 }
 
 export function windowsTaskArgs(nodePath, scriptPath, piSessions) {
-  if (
-    /["\r\n]/.test(nodePath) ||
-    /["\r\n]/.test(scriptPath) ||
-    (piSessions && /["\r\n]/.test(piSessions))
-  ) {
+  if (/["\r\n]/.test(nodePath) || /["\r\n]/.test(scriptPath) || (piSessions && /["\r\n]/.test(piSessions))) {
     throw new Error("scheduler path is invalid");
   }
   const fallback = piSessions ? ` --pi-path "${piSessions}"` : "";
@@ -246,12 +232,7 @@ async function readBounded(file, bytesMax) {
 }
 
 function configValue(value, name) {
-  if (
-    typeof value !== "string" ||
-    !value ||
-    value.length > CONFIG_CHARACTERS_MAX ||
-    /[\u0000\r\n]/.test(value)
-  ) {
+  if (typeof value !== "string" || !value || value.length > CONFIG_CHARACTERS_MAX || /[\u0000\r\n]/.test(value)) {
     throw new Error(`${name} is invalid`);
   }
   return value;
@@ -271,14 +252,14 @@ function configPath(value, name) {
 
 async function piSessions(fallback) {
   if (process.env.PI_AGENT_DIR) {
-    return { value: configValue(process.env.PI_AGENT_DIR, "PI_AGENT_DIR"), source: "PI_AGENT_DIR" };
+    return {
+      value: configValue(process.env.PI_AGENT_DIR, "PI_AGENT_DIR"),
+      source: "PI_AGENT_DIR",
+    };
   }
   if (process.env.PI_CODING_AGENT_SESSION_DIR) {
     return {
-      value: configPath(
-        process.env.PI_CODING_AGENT_SESSION_DIR,
-        "PI_CODING_AGENT_SESSION_DIR",
-      ),
+      value: configPath(process.env.PI_CODING_AGENT_SESSION_DIR, "PI_CODING_AGENT_SESSION_DIR"),
       source: "PI_CODING_AGENT_SESSION_DIR",
     };
   }
@@ -288,9 +269,7 @@ async function piSessions(fallback) {
   );
   try {
     const settings = JSON.parse(
-      (await readBounded(path.join(agentDirectory, "settings.json"), SETTINGS_BYTES_MAX)).toString(
-        "utf8",
-      ),
+      (await readBounded(path.join(agentDirectory, "settings.json"), SETTINGS_BYTES_MAX)).toString("utf8"),
     );
     if (settings?.sessionDir !== undefined) {
       return {
@@ -336,14 +315,7 @@ function sinceDate() {
 
 async function executeCcusage(commandArguments, full, environment, byAgent = false) {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const args = [
-    "--yes",
-    `ccusage@${CCUSAGE_VERSION}`,
-    ...commandArguments,
-    "--json",
-    "--timezone",
-    timezone,
-  ];
+  const args = ["--yes", `ccusage@${CCUSAGE_VERSION}`, ...commandArguments, "--json", "--timezone", timezone];
   if (byAgent) args.push("--by-agent");
   if (!full) args.push("--since", sinceDate());
   const options = {
@@ -357,12 +329,11 @@ async function executeCcusage(commandArguments, full, environment, byAgent = fal
     if (args.some((argument) => !/^[A-Za-z0-9@._+:/-]+$/.test(argument))) {
       throw new Error("ccusage argument is invalid");
     }
-    ({ stdout } = await exec(process.env.ComSpec || "cmd.exe", [
-      "/d",
-      "/s",
-      "/c",
-      ["npx.cmd", ...args].join(" "),
-    ], options));
+    ({ stdout } = await exec(
+      process.env.ComSpec || "cmd.exe",
+      ["/d", "/s", "/c", ["npx.cmd", ...args].join(" ")],
+      options,
+    ));
   } else {
     ({ stdout } = await exec("npx", args, options));
   }
@@ -431,11 +402,11 @@ async function collectSourceReports(reports, full, environment) {
         sourceResult[report] = { ok: true, json };
         log("info", `${source} ${report} detail ready (${json[rowsName].length} rows)`);
       } catch (error) {
-        log(
-          "warning",
-          `${source} ${report} detail failed: ${error?.message || "unknown error"}`,
-        );
-        sourceResult[report] = { ok: false, error: `${source} ${report} detail failed` };
+        log("warning", `${source} ${report} detail failed: ${error?.message || "unknown error"}`);
+        sourceResult[report] = {
+          ok: false,
+          error: `${source} ${report} detail failed`,
+        };
       }
     }
     sourceReports[source] = sourceResult;
@@ -546,7 +517,9 @@ async function update(target) {
   if (!expected || !/^[0-9a-f]{64}$/.test(expected) || expected !== actual) {
     throw new Error("update SHA-256 is invalid");
   }
-  const current = createHash("sha256").update(await readFile(target)).digest("hex");
+  const current = createHash("sha256")
+    .update(await readFile(target))
+    .digest("hex");
   if (current === actual) return false;
   await atomicWrite(target, body);
   return true;
@@ -605,15 +578,12 @@ async function uninstall() {
 async function main() {
   const [mode = "install", ...options] = process.argv.slice(2);
   const scheduled = mode === "daily" && options[0] === "--scheduled";
-  const fallback =
-    scheduled && options.length === 3 && options[1] === "--pi-path" ? options[2] : undefined;
+  const fallback = scheduled && options.length === 3 && options[1] === "--pi-path" ? options[2] : undefined;
   const validOptions =
     (mode === "daily" && (options.length === 0 || (scheduled && [1, 3].includes(options.length)))) ||
     (mode !== "daily" && options.length === 0);
   if (!validOptions || (options.length === 3 && !fallback)) {
-    throw new Error(
-      "usage: node toktrak.mjs [install|full|daily [--scheduled [--pi-path path]]|uninstall]",
-    );
+    throw new Error("usage: node toktrak.mjs [install|full|daily [--scheduled [--pi-path path]]|uninstall]");
   }
   log("info", `starting ${mode} mode on ${PLATFORM_NAME}`);
   switch (mode) {
@@ -635,9 +605,7 @@ async function main() {
       await uninstall();
       break;
     default:
-      throw new Error(
-        "usage: node toktrak.mjs [install|full|daily [--scheduled [--pi-path path]]|uninstall]",
-      );
+      throw new Error("usage: node toktrak.mjs [install|full|daily [--scheduled [--pi-path path]]|uninstall]");
   }
 }
 

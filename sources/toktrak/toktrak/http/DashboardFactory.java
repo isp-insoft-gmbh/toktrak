@@ -8,6 +8,7 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -21,12 +22,14 @@ import java.util.Objects;
 import java.util.Set;
 import toktrak.health.HealthState;
 import toktrak.http.DashboardSnapshot.DashboardBlockRow;
+import toktrak.http.DashboardSnapshot.DashboardHealth;
 import toktrak.http.DashboardSnapshot.DashboardIngestionRow;
 import toktrak.http.DashboardSnapshot.DashboardMetricRow;
 import toktrak.http.DashboardSnapshot.DashboardSessionRow;
 import toktrak.http.DashboardSnapshot.DashboardSpikeRow;
 import toktrak.http.DashboardSnapshot.DashboardTrendRow;
 import toktrak.http.DashboardSnapshot.DashboardUserRow;
+import toktrak.http.DashboardSnapshot.ReportCompleteness;
 import toktrak.projection.Projection;
 import toktrak.projection.Projection.FxRate;
 import toktrak.projection.Projection.User;
@@ -79,7 +82,7 @@ final class DashboardFactory {
       LocalDate date = LocalDate.parse(row.firstKey());
       Totals totals = totals(row);
       dailyTotals.merge(date, totals, Totals::add);
-      if (month != null && YearMonth.from(date).equals(month)) {
+      if (month != null && month.equals(YearMonth.from(date))) {
         monthlyUsers.merge(row.owner(), totals, Totals::add);
       }
     }
@@ -114,8 +117,8 @@ final class DashboardFactory {
         activeUsers,
         money(average, currency, rate),
         fx(rate, currency),
-        !health.healthy(),
-        partial,
+        health.healthy() ? DashboardHealth.HEALTHY : DashboardHealth.DEGRADED,
+        partial ? ReportCompleteness.PARTIAL : ReportCompleteness.COMPLETE,
         leaderboard,
         ingestion,
         tokenTypes,
@@ -158,13 +161,14 @@ final class DashboardFactory {
       String color = colorClass(user.color());
       result.add(
           new DashboardUserRow(
-              rank++,
+              rank,
               initials(name),
               name,
               color,
               money(entry.getValue().cost, currency, rate),
               integer(entry.getValue().tokens),
               bar(entry.getValue().cost, maximum)));
+      rank = Math.addExact(rank, 1);
     }
     return List.copyOf(result);
   }
@@ -297,7 +301,7 @@ final class DashboardFactory {
             day,
             new Totals(decimal(row.data().get("costUSD")), whole(row.data().get("totalTokens"))),
             Totals::add);
-      } catch (RuntimeException ignored) {
+      } catch (DateTimeParseException ignored) {
         // Unknown optional block timestamps do not make canonical daily totals unusable.
       }
     }

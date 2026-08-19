@@ -282,7 +282,7 @@ final class EventLogTest {
     for (int index = 0; index < 10; index++) data.put("filler" + index, "a".repeat(1_000_000));
     data.put("pad", "a");
     long probeLineBytes = appendedLineBytes(EventEnvelope.create("event", at, "system", data));
-    data.put("pad", "a".repeat((int) (EventLog.MAX_LINE_BYTES - probeLineBytes) + 1));
+    data.put("pad", "a".repeat(Math.toIntExact(EventLog.MAX_LINE_BYTES - probeLineBytes) + 1));
     var event = EventEnvelope.create("event", at, "system", data);
     var path = dir.resolve("events.ndjson");
     var log = EventLog.open(path);

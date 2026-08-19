@@ -1,0 +1,54 @@
+direction: down
+
+vars: {
+  d2-config: {
+    theme-id: 0
+    dark-theme-id: 200
+  }
+}
+
+title: |md
+  # TokTrak production shape
+  TokTrak serves plain HTTP.
+  The deployment supplies TLS, compression, monitoring, backups, and rollback policy.
+|
+title.shape: document
+title.style.stroke-width: 2
+
+internet: "company users + trackers" {shape: person}
+
+ops: "operator-owned boundary" {
+  shape: package
+  style.stroke-width: 2
+
+  proxy: "reverse proxy\npublic HTTPS, compression, monitoring hook" {
+    shape: hexagon
+  }
+  env: "protected env file\nbase URL, OIDC, secrets, stable token pepper" {
+    shape: document
+  }
+  container: "rootless Podman container\n/opt/toktrak/bin/java -ea -m toktrak/toktrak.Main" {
+    shape: package
+    style.stroke-width: 2
+  }
+  volume: "toktrak-data volume\nmounted as TOKTRAK_DATA_DIR=/data" {
+    shape: cylinder
+    style.stroke-width: 2
+  }
+  backup: "operator backup + restore test\nrecommended before upgrades" {
+    shape: stored_data
+  }
+
+  proxy -> container: "plain HTTP on 127.0.0.1:8080"
+  env -> container: "env-file"
+  container -> volume: "append events.ndjson"
+  volume -> backup: "operator policy"
+}
+
+release: "project release artifact\nimmutable image tag vN, no latest" {
+  shape: package
+}
+
+internet -> ops.proxy: "HTTPS"
+release -> ops.container: "podman run registry/...:vN"
+title -> ops: "runtime contract"

@@ -80,11 +80,11 @@ public final class Build {
   private static final Path TEST_DEPS = OUTPUT.resolve("deps/test");
   private static final Path SNAPSHOT_DEPS = OUTPUT.resolve("deps/snapshot");
   private static final Path BUILD_DEPS = OUTPUT.resolve("deps/build");
+  private static final Path PMD_DEPS = OUTPUT.resolve("deps/pmd");
   private static final Path REFASTER_DEPS = OUTPUT.resolve("deps/refaster");
   private static final Path PIT_DEPS = OUTPUT.resolve("deps/pit");
   private static final Path COVERAGE_DEPS = OUTPUT.resolve("deps/coverage");
   private static final Path COVERAGE = OUTPUT.resolve("coverage");
-  private static final Path PERF = OUTPUT.resolve("perf");
   private static final Path PERF_DEPS = OUTPUT.resolve("perf-deps");
   private static final Path PERF_JMH_DEPS = PERF_DEPS.resolve("jmh");
   private static final Path PERF_CLASSES = OUTPUT.resolve("perf-classes");
@@ -126,14 +126,18 @@ public final class Build {
   private static final List<Path> GOLEM_TEST_SOURCES =
       List.of(
           ROOT.resolve("tools/golem.test.mjs"),
-          ROOT.resolve(".claude/skills/file-upload/scripts/upload.test.mjs"));
+          ROOT.resolve(".claude/skills/file-upload/scripts/upload.test.mjs"),
+          ROOT.resolve(".claude/skills/toktrak-intellij-inspection/scripts/run.test.mjs"));
   private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
+  private static final Path PMD_CONFIG = ROOT.resolve("sources/pmd.xml");
+  private static final Path PMD_REPORT = OUTPUT.resolve("pmd/report.txt");
   private static final List<Path> REPOSITORY_SKILLS =
       List.of(
           ROOT.resolve(".claude/skills/mustache"),
           ROOT.resolve(".claude/skills/toktrak-jstachio"),
           ROOT.resolve(".claude/skills/modern-css"),
           ROOT.resolve(".claude/skills/toktrak-quality"),
+          ROOT.resolve(".claude/skills/toktrak-intellij-inspection"),
           ROOT.resolve(".claude/skills/toktrak-refaster"),
           ROOT.resolve(".claude/skills/git-workflow"),
           ROOT.resolve(".claude/skills/gh-cli"),
@@ -326,14 +330,14 @@ public final class Build {
       Files.createDirectories(OUTPUT);
       try (var channel =
               FileChannel.open(BUILD_LOCK, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-          FileLock lock = acquireBuildLock(channel)) {
+          FileLock lock = acquireBuildLock(channel, args[0], DEV_DATA_DIRECTORY)) {
         assert lock.isValid();
         requireDevelopmentServerStopped(args[0], DEV_DATA_DIRECTORY);
         if (args[0].equals("pit")) {
           pitCommand(commandArguments);
           return;
         }
-        deleteTree(ARGFILES);
+        if (!args[0].equals("clean")) deleteTree(ARGFILES);
         switch (args[0]) {
           case "clean" -> clean();
           case "check" -> check();
@@ -361,15 +365,40 @@ public final class Build {
     return acquireBuildLock(channel);
   }
 
+  static FileLock acquireBuildLockForTest(FileChannel channel, String command, Path dataDirectory)
+      throws IOException {
+    return acquireBuildLock(channel, command, dataDirectory);
+  }
+
+  private static FileLock acquireBuildLock(FileChannel channel, String command, Path dataDirectory)
+      throws IOException {
+    assert command != null && !command.isBlank();
+    assert dataDirectory != null;
+    try {
+      return acquireBuildLock(channel);
+    } catch (IllegalStateException exception) {
+      if (developmentServerRunning(dataDirectory)) {
+        throw new IllegalStateException(
+            "cannot run " + command + " while mise run dev is running; stop it with Ctrl+C",
+            exception);
+      }
+      throw new IllegalStateException(
+          "cannot run "
+              + command
+              + " while another TokTrak build command is running; wait for it to finish",
+          exception);
+    }
+  }
+
   private static FileLock acquireBuildLock(FileChannel channel) throws IOException {
     assert channel != null;
     try {
       FileLock lock = channel.tryLock();
       if (lock != null) return lock;
     } catch (OverlappingFileLockException exception) {
-      throw new IllegalStateException("another TokTrak build command is running", exception);
+      throw new IllegalStateException("build lock is held", exception);
     }
-    throw new IllegalStateException("another TokTrak build command is running");
+    throw new IllegalStateException("build lock is held");
   }
 
   static void requireDevelopmentServerStoppedForTest(String command, Path dataDirectory) {
@@ -405,27 +434,20 @@ public final class Build {
   }
 
   private static void clean() throws IOException {
-    cleanGeneratedTree(MODULES);
-    cleanGeneratedTree(MAIN_DEPS);
-    cleanGeneratedTree(TEST_DEPS);
-    cleanGeneratedTree(SNAPSHOT_DEPS);
-    cleanGeneratedTree(BUILD_DEPS);
-    cleanGeneratedTree(REFASTER_DEPS);
-    cleanGeneratedTree(PIT_DEPS);
-    cleanGeneratedTree(COVERAGE_DEPS);
-    cleanGeneratedTree(COVERAGE);
-    cleanGeneratedTree(PERF);
-    cleanGeneratedTree(PERF_DEPS);
-    cleanGeneratedTree(PERF_CLASSES);
-    cleanGeneratedTree(MUTATIONS);
-    Files.deleteIfExists(PIT_HISTORY);
-    cleanGeneratedTree(RUNTIMES);
-    cleanGeneratedTree(CONTAINER_VERIFY);
-    cleanGeneratedTree(IDE);
-    cleanIntellijMetadata(INTELLIJ_IDEA);
-    deleteTree(ARGFILES);
-    cleanGeneratedTree(BUILD_TESTS);
-    cleanGeneratedTree(REFASTER_OUTPUT);
+    cleanOutput(OUTPUT, BUILD_LOCK);
+  }
+
+  static void cleanOutputForTest(Path output, Path lock) throws IOException {
+    cleanOutput(output, lock);
+  }
+
+  private static void cleanOutput(Path output, Path lock) throws IOException {
+    assert output != null;
+    assert lock != null;
+    Path normalizedLock = lock.toAbsolutePath().normalize();
+    for (Path path : directoryEntries(output, TREE_ENTRIES_MAX)) {
+      if (!path.toAbsolutePath().normalize().equals(normalizedLock)) deleteTree(path);
+    }
   }
 
   private static void deps() throws Exception {
@@ -442,6 +464,10 @@ public final class Build {
 
   private static void ensureBuildDependencies() throws Exception {
     ensureDependency("sources/build-deps.txt", BUILD_DEPS, "resolve-build-dependencies", true);
+  }
+
+  private static void ensurePmdDependencies() throws Exception {
+    ensureDependency("sources/pmd-deps.txt", PMD_DEPS, "resolve-pmd-dependencies", false);
   }
 
   private static void ensureRefasterDependencies() throws Exception {
@@ -910,36 +936,43 @@ public final class Build {
     if (Runtime.version().feature() != 26) {
       throw new IllegalStateException("IDE metadata requires Java 26");
     }
+    compile();
     ensureDependency(
         "sources/main-deps.txt", MAIN_DEPS, "resolve-toktrak-production-dependencies", true);
     ensureDependency("sources/test-deps.txt", TEST_DEPS, "resolve-toktrak-test-dependencies", true);
+    ensureDependency(
+        "sources/snapshot-deps.txt", SNAPSHOT_DEPS, "resolve-snapshot-dependencies", false);
     ensureRefasterDependencies();
     verifyModules(MAIN_DEPS);
     verifyModules(TEST_DEPS);
     List<Path> mainJars = jarPaths(List.of(MAIN_DEPS));
     List<Path> testJars = jarPaths(List.of(TEST_DEPS));
+    List<Path> snapshotJars = jarPaths(List.of(SNAPSHOT_DEPS));
     Path refaster = refasterJar();
-    String fingerprint = ideFingerprint(mainJars, testJars, refaster);
+    String fingerprint = ideFingerprint(mainJars, testJars, snapshotJars, refaster);
     if (eclipse) {
       rebuildArtifact(
           ECLIPSE_IDE,
           fingerprint,
-          staging -> generateEclipseProjects(ROOT, staging, mainJars, testJars, refaster));
+          staging ->
+              generateEclipseProjects(ROOT, staging, mainJars, testJars, snapshotJars, refaster));
     }
     if (intellij) {
       rebuildArtifact(
           INTELLIJ_METADATA,
           fingerprint,
-          staging -> generateIntellijProjects(ROOT, staging, mainJars, testJars, refaster));
+          staging ->
+              generateIntellijProjects(ROOT, staging, mainJars, testJars, snapshotJars, refaster));
       installIntellijMetadata(INTELLIJ_METADATA, INTELLIJ_IDEA);
     }
   }
 
-  private static String ideFingerprint(List<Path> mainJars, List<Path> testJars, Path refaster)
+  private static String ideFingerprint(
+      List<Path> mainJars, List<Path> testJars, List<Path> snapshotJars, Path refaster)
       throws Exception {
     var digest = MessageDigest.getInstance("SHA-256");
     update(digest, "ide\n" + platformFingerprint() + "\n");
-    for (Path path : Stream.concat(mainJars.stream(), testJars.stream()).toList()) {
+    for (Path path : Stream.of(mainJars, testJars, snapshotJars).flatMap(List::stream).toList()) {
       update(digest, path.getFileName() + "\n");
       updateDigestFromFile(digest, path);
     }
@@ -947,6 +980,7 @@ public final class Build {
     updateDigestFromFile(digest, ROOT.resolve("tools/Build.java"));
     for (Path path : jarPaths(List.of(BUILD_DEPS))) updateDigestFromFile(digest, path);
     updateTree(digest, TEMPLATE_SOURCES, ".mustache");
+    updateTree(digest, GENERATED_SOURCES, ".java");
     return HexFormat.of().formatHex(digest.digest());
   }
 
@@ -969,22 +1003,34 @@ public final class Build {
         "compiler.xml",
         "modules/toktrak.iml",
         "modules/toktrak.tests.iml",
-        "modules/toktrak.build.iml");
+        "modules/toktrak.build.iml",
+        "modules/toktrak.perf.iml");
   }
 
   static void generateEclipseProjectsForTest(
-      Path root, Path output, List<Path> mainJars, List<Path> testJars, Path refasterJar)
+      Path root,
+      Path output,
+      List<Path> mainJars,
+      List<Path> testJars,
+      List<Path> snapshotJars,
+      Path refasterJar)
       throws IOException {
-    generateEclipseProjects(root, output, mainJars, testJars, refasterJar);
+    generateEclipseProjects(root, output, mainJars, testJars, snapshotJars, refasterJar);
   }
 
   private static void generateEclipseProjects(
-      Path root, Path output, List<Path> mainJars, List<Path> testJars, Path refasterJar)
+      Path root,
+      Path output,
+      List<Path> mainJars,
+      List<Path> testJars,
+      List<Path> snapshotJars,
+      Path refasterJar)
       throws IOException {
     assert root != null;
     assert output != null;
     assert mainJars != null;
     assert testJars != null;
+    assert snapshotJars != null;
     assert refasterJar != null;
     root = root.toAbsolutePath().normalize();
     output = output.toAbsolutePath().normalize();
@@ -997,18 +1043,36 @@ public final class Build {
     requireDirectory(root.resolve("tests/tools"));
     requireCollectionSize(mainJars, "Eclipse main JARs");
     requireCollectionSize(testJars, "Eclipse test JARs");
+    requireCollectionSize(snapshotJars, "Eclipse snapshot JARs");
     requireFile(refasterJar);
     for (Path jar : mainJars) requireFile(jar);
     for (Path jar : testJars) requireFile(jar);
+    for (Path jar : snapshotJars) requireFile(jar);
+
+    List<Path> allTestJars = new ArrayList<>(mainJars);
+    if (testJars.size() > COLLECTION_ENTRIES_MAX - allTestJars.size()) {
+      throw new IllegalStateException("Eclipse test JARs exceed collection limit");
+    }
+    allTestJars.addAll(testJars);
+    if (snapshotJars.size() > COLLECTION_ENTRIES_MAX - allTestJars.size()) {
+      throw new IllegalStateException("Eclipse snapshot JARs exceed collection limit");
+    }
+    allTestJars.addAll(snapshotJars);
 
     deleteTree(output);
+    copyIdeGeneratedSources(root, output.resolve("generated/toktrak"));
     Path app = output.resolve("toktrak");
     Path tests = output.resolve("toktrak.tests");
     Path build = output.resolve("toktrak.build");
+    Path perf = output.resolve("toktrak.perf");
     writeEclipseProject(
         output,
         app,
-        eclipseProject("toktrak", "", eclipseLink("src", "sources/toktrak")),
+        eclipseProject(
+            "toktrak",
+            "",
+            eclipseLink("src", "sources/toktrak")
+                + eclipseLink("generated", "output/ide/eclipse/generated/toktrak")),
         eclipseAppClasspath(mainJars));
     writeIdeFile(
         output,
@@ -1029,7 +1093,7 @@ public final class Build {
             "toktrak.tests",
             "    <project>toktrak</project>\n",
             eclipseLink("test", "tests/toktrak.tests")),
-        eclipseTestClasspath(mainJars, testJars));
+        eclipseTestClasspath(mainJars, testJars, snapshotJars));
     Files.createDirectories(build.resolve("src"));
     Files.createDirectories(build.resolve("test"));
     writeEclipseProject(
@@ -1040,24 +1104,41 @@ public final class Build {
             "",
             eclipseLink("src/tools", "tools") + eclipseLink("test/tools", "tests/tools")),
         eclipseBuildClasspath(refasterJar));
+    writeEclipseProject(
+        output,
+        perf,
+        eclipseProject("toktrak.perf", "", eclipseLink("src", "tools/perf")),
+        eclipsePerfClasspath());
     assert Files.isRegularFile(app.resolve(".project"));
     assert Files.isRegularFile(tests.resolve(".project"));
     assert Files.isRegularFile(build.resolve(".project"));
+    assert Files.isRegularFile(perf.resolve(".project"));
   }
 
   static void generateIntellijProjectsForTest(
-      Path root, Path idea, List<Path> mainJars, List<Path> testJars, Path refasterJar)
+      Path root,
+      Path idea,
+      List<Path> mainJars,
+      List<Path> testJars,
+      List<Path> snapshotJars,
+      Path refasterJar)
       throws IOException {
-    generateIntellijProjects(root, idea, mainJars, testJars, refasterJar);
+    generateIntellijProjects(root, idea, mainJars, testJars, snapshotJars, refasterJar);
   }
 
   private static void generateIntellijProjects(
-      Path root, Path idea, List<Path> mainJars, List<Path> testJars, Path refasterJar)
+      Path root,
+      Path idea,
+      List<Path> mainJars,
+      List<Path> testJars,
+      List<Path> snapshotJars,
+      Path refasterJar)
       throws IOException {
     assert root != null;
     assert idea != null;
     assert mainJars != null;
     assert testJars != null;
+    assert snapshotJars != null;
     assert refasterJar != null;
     root = root.toAbsolutePath().normalize();
     idea = idea.toAbsolutePath().normalize();
@@ -1071,15 +1152,22 @@ public final class Build {
     requireDirectory(root.resolve("tests/tools"));
     requireCollectionSize(mainJars, "IntelliJ main JARs");
     requireCollectionSize(testJars, "IntelliJ test JARs");
+    requireCollectionSize(snapshotJars, "IntelliJ snapshot JARs");
     requireFile(refasterJar);
     for (Path jar : mainJars) requireFile(jar);
     for (Path jar : testJars) requireFile(jar);
+    for (Path jar : snapshotJars) requireFile(jar);
 
     List<Path> allTestJars = new ArrayList<>(mainJars);
     if (testJars.size() > COLLECTION_ENTRIES_MAX - allTestJars.size()) {
       throw new IllegalStateException("IntelliJ test JARs exceed collection limit");
     }
     allTestJars.addAll(testJars);
+    if (snapshotJars.size() > COLLECTION_ENTRIES_MAX - allTestJars.size()) {
+      throw new IllegalStateException("IntelliJ snapshot JARs exceed collection limit");
+    }
+    allTestJars.addAll(snapshotJars);
+    copyIdeGeneratedSources(root, idea.resolve("generated/toktrak"));
     writeIdeFile(idea, idea.resolve("modules.xml"), intellijModules());
     writeIdeFile(idea, idea.resolve("misc.xml"), intellijMisc());
     writeIdeFile(
@@ -1093,7 +1181,7 @@ public final class Build {
         idea.resolve("modules/toktrak.tests.iml"),
         intellijModule(
             "toktrak.tests",
-            intellijContent("tests/toktrak.tests", true, null),
+            intellijTestsContent(),
             "    <orderEntry type=\"module\" module-name=\"toktrak\" scope=\"TEST\"/>\n"
                 + intellijLibrary(root, allTestJars, true)));
     writeIdeFile(
@@ -1101,18 +1189,41 @@ public final class Build {
         idea.resolve("modules/toktrak.build.iml"),
         intellijModule(
             "toktrak.build",
-            intellijContent("tools", false, "tools")
+            intellijContent("tools", false, "tools", List.of("tools/perf"))
                 + intellijContent("tests/tools", true, "tools"),
             intellijLibrary(root, List.of(refasterJar), false)));
+    writeIdeFile(
+        idea,
+        idea.resolve("modules/toktrak.perf.iml"),
+        intellijModule("toktrak.perf", intellijContent("tools/perf", false, null), ""));
     assert Files.isRegularFile(idea.resolve("modules.xml"));
     assert Files.isRegularFile(idea.resolve("modules/toktrak.iml"));
     assert Files.isRegularFile(idea.resolve("modules/toktrak.tests.iml"));
     assert Files.isRegularFile(idea.resolve("modules/toktrak.build.iml"));
+    assert Files.isRegularFile(idea.resolve("modules/toktrak.perf.iml"));
+  }
+
+  private static void copyIdeGeneratedSources(Path root, Path target) throws IOException {
+    assert root != null;
+    assert target != null;
+    Path source = root.resolve("output/modules/target/generated-sources/annotations/toktrak");
+    requireDirectory(source);
+    deleteTree(target);
+    for (Path path : treePaths(source, TREE_ENTRIES_MAX)) {
+      Path relative = source.relativize(path);
+      Path destination = target.resolve(relative);
+      if (Files.isDirectory(path)) {
+        Files.createDirectories(destination);
+      } else if (Files.isRegularFile(path)) {
+        Files.createDirectories(destination.getParent());
+        Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING);
+      }
+    }
   }
 
   private static String intellijModules() {
     var modules = new StringBuilder();
-    for (String name : List.of("toktrak", "toktrak.tests", "toktrak.build")) {
+    for (String name : List.of("toktrak", "toktrak.tests", "toktrak.build", "toktrak.perf")) {
       modules
           .append("      <module fileurl=\"file://$PROJECT_DIR$/.idea/modules/")
           .append(xml(name))
@@ -1144,11 +1255,6 @@ public final class Build {
   }
 
   private static String intellijCompiler(Path root, List<Path> processorJars) {
-    var options = new StringBuilder();
-    for (String export : TEST_EXPORTS) {
-      if (!options.isEmpty()) options.append(' ');
-      options.append("--add-exports=").append(export);
-    }
     var processorPath = new StringBuilder();
     for (Path jar : processorJars) {
       processorPath
@@ -1162,6 +1268,10 @@ public final class Build {
             .normalize()
             .toString()
             .replace('\\', '/');
+    String javacOptions =
+        "-Ajstache.resourcesPath="
+            + templates
+            + " -Ajstache.incremental=true -Ajstache.claim_annotations=true";
     return """
     <?xml version="1.0" encoding="UTF-8"?>
     <project version="4">
@@ -1183,12 +1293,12 @@ public final class Build {
       </component>
       <component name="JavacSettings">
         <option name="ADDITIONAL_OPTIONS_OVERRIDE">
-          <module name="toktrak.tests" options="%s"/>
+          <module name="toktrak" options="%s"/>
         </option>
       </component>
     </project>
     """
-        .formatted(processorPath, xml(templates), xml(options.toString()));
+        .formatted(processorPath, xml(templates), xml(javacOptions));
   }
 
   private static String intellijModule(String name, String content, String dependencies) {
@@ -1199,8 +1309,8 @@ public final class Build {
     <?xml version="1.0" encoding="UTF-8"?>
     <module type="JAVA_MODULE" version="4">
       <component name="NewModuleRootManager" LANGUAGE_LEVEL="JDK_26" inherit-compiler-output="false">
-        <output url="file://$PROJECT_DIR$/output/ide/intellij/classes/%s"/>
-        <output-test url="file://$PROJECT_DIR$/output/ide/intellij/test-classes/%s"/>
+        <output url="file://$MODULE_DIR$/../../output/ide/intellij/classes/%s"/>
+        <output-test url="file://$MODULE_DIR$/../../output/ide/intellij/test-classes/%s"/>
         <exclude-output/>
     %s    <orderEntry type="inheritedJdk"/>
         <orderEntry type="sourceFolder" forTests="false"/>
@@ -1212,27 +1322,54 @@ public final class Build {
 
   private static String intellijAppContent() {
     return """
-        <content url="file://$PROJECT_DIR$/sources/toktrak">
-          <sourceFolder url="file://$PROJECT_DIR$/sources/toktrak" isTestSource="false"/>
-          <excludeFolder url="file://$PROJECT_DIR$/sources/toktrak/templates"/>
+        <content url="file://$MODULE_DIR$/../../sources/toktrak">
+          <sourceFolder url="file://$MODULE_DIR$/../../sources/toktrak" isTestSource="false"/>
+          <excludeFolder url="file://$MODULE_DIR$/../../sources/toktrak/templates"/>
+        </content>
+        <content url="file://$MODULE_DIR$/../../output/ide/intellij/generated/toktrak">
+          <sourceFolder url="file://$MODULE_DIR$/../../output/ide/intellij/generated/toktrak" isTestSource="false" generated="true"/>
+        </content>
+    """;
+  }
+
+  private static String intellijTestsContent() {
+    return """
+        <content url="file://$MODULE_DIR$/../../tests/toktrak.tests">
+          <sourceFolder url="file://$MODULE_DIR$/../../tests/toktrak.tests/toktrak" isTestSource="true" packagePrefix="toktrak"/>
+          <sourceFolder url="file://$MODULE_DIR$/../../tests/toktrak.tests/selfie" isTestSource="true" packagePrefix="selfie"/>
         </content>
     """;
   }
 
   private static String intellijContent(String path, boolean test, String packagePrefix) {
+    return intellijContent(path, test, packagePrefix, List.of());
+  }
+
+  private static String intellijContent(
+      String path, boolean test, String packagePrefix, List<String> excludedPaths) {
     assert path != null && !path.isBlank();
+    assert excludedPaths != null;
     String prefix = packagePrefix == null ? "" : " packagePrefix=\"" + xml(packagePrefix) + "\"";
-    return "    <content url=\"file://$PROJECT_DIR$/"
-        + xml(path)
-        + "\">\n"
-        + "      <sourceFolder url=\"file://$PROJECT_DIR$/"
-        + xml(path)
-        + "\" isTestSource=\""
-        + test
-        + "\""
-        + prefix
-        + "/>\n"
-        + "    </content>\n";
+    var content = new StringBuilder();
+    content
+        .append("    <content url=\"file://$MODULE_DIR$/../../")
+        .append(xml(path))
+        .append("\">\n")
+        .append("      <sourceFolder url=\"file://$MODULE_DIR$/../../")
+        .append(xml(path))
+        .append("\" isTestSource=\"")
+        .append(test)
+        .append("\"")
+        .append(prefix)
+        .append("/>\n");
+    for (String excluded : excludedPaths) {
+      content
+          .append("      <excludeFolder url=\"file://$MODULE_DIR$/../../")
+          .append(xml(excluded))
+          .append("\"/>\n");
+    }
+    content.append("    </content>\n");
+    return content.toString();
   }
 
   private static String intellijLibrary(Path root, List<Path> jars, boolean test) {
@@ -1247,7 +1384,7 @@ public final class Build {
       }
       String relative = root.relativize(normalized).toString().replace('\\', '/');
       roots
-          .append("          <root url=\"jar://$PROJECT_DIR$/")
+          .append("          <root url=\"jar://$MODULE_DIR$/../../")
           .append(xml(relative))
           .append("!/\"/>\n");
     }
@@ -1335,32 +1472,57 @@ public final class Build {
     entries.append(
         "  <classpathentry excluding=\"templates/**\" kind=\"src\" path=\"src\""
             + " output=\"bin/main\"/>\n");
+    entries.append(
+        """
+          <classpathentry kind="src" path="generated" output="bin/main">
+            <attributes>
+              <attribute name="module" value="true"/>
+              <attribute name="optional" value="true"/>
+            </attributes>
+          </classpathentry>
+        """);
     entries.append(eclipseJre(true));
     for (Path jar : jars) entries.append(eclipseLibrary(jar, true, false));
     return eclipseClasspath(entries);
   }
 
-  private static String eclipseTestClasspath(List<Path> mainJars, List<Path> testJars) {
+  private static String eclipseTestClasspath(
+      List<Path> mainJars, List<Path> testJars, List<Path> snapshotJars) {
     var entries = new StringBuilder();
-    entries.append(eclipseSource("test", "bin/test", null, true));
-    entries.append(eclipseJre(true));
+    entries.append(
+        eclipseEntry(
+            "  <classpathentry kind=\"src\" path=\"test\" output=\"bin/test\">\n",
+            true,
+            true,
+            null,
+            null));
+    entries.append(eclipseJre(true, "toktrak.tests=ALL-UNNAMED"));
     entries.append(
         eclipseEntry(
             "  <classpathentry combineaccessrules=\"false\" kind=\"src\" path=\"/toktrak\">\n",
             true,
             true,
-            String.join(":", TEST_EXPORTS)));
+            String.join(":", TEST_EXPORTS),
+            null));
     for (Path jar : mainJars) entries.append(eclipseLibrary(jar, true, true));
     for (Path jar : testJars) entries.append(eclipseLibrary(jar, true, true));
+    for (Path jar : snapshotJars) entries.append(eclipseLibrary(jar, false, true));
     return eclipseClasspath(entries);
   }
 
   private static String eclipseBuildClasspath(Path refasterJar) {
     var entries = new StringBuilder();
-    entries.append(eclipseSource("src", "bin/main", "tools/**", false));
-    entries.append(eclipseSource("test", "bin/test", "tools/**", true));
+    entries.append(eclipseSource("src", "bin/main", "tools/perf/**", "tools/**", false));
+    entries.append(eclipseSource("test", "bin/test", null, "tools/**", true));
     entries.append(eclipseJre(false));
     entries.append(eclipseLibrary(refasterJar, false, false));
+    return eclipseClasspath(entries);
+  }
+
+  private static String eclipsePerfClasspath() {
+    var entries = new StringBuilder();
+    entries.append(eclipseSource("src", "bin/main", null, null, false));
+    entries.append(eclipseJre(false));
     return eclipseClasspath(entries);
   }
 
@@ -1368,42 +1530,49 @@ public final class Build {
     assert entries != null;
     return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<classpath>\n"
         + entries
-        + "  <classpathentry kind=\"output\" path=\"bin\"/>\n</classpath>\n";
+        + "  <classpathentry kind=\"output\" path=\"bin/default\"/>\n</classpath>\n";
   }
 
-  private static String eclipseSource(String path, String output, String including, boolean test) {
+  private static String eclipseSource(
+      String path, String output, String excluding, String including, boolean test) {
     assert path != null && !path.isBlank();
     assert output != null && !output.isBlank();
+    String exclusion = excluding == null ? "" : " excluding=\"" + xml(excluding) + "\"";
     String inclusion = including == null ? "" : " including=\"" + xml(including) + "\"";
     String start =
         "  <classpathentry"
+            + exclusion
             + inclusion
             + " kind=\"src\" path=\""
             + xml(path)
             + "\" output=\""
             + xml(output)
             + "\">\n";
-    return eclipseEntry(start, false, test, null);
+    return eclipseEntry(start, false, test, null, null);
   }
 
   private static String eclipseJre(boolean module) {
+    return eclipseJre(module, null);
+  }
+
+  private static String eclipseJre(boolean module, String addReads) {
     String start =
         "  <classpathentry kind=\"con\" path=\"org.eclipse.jdt.launching.JRE_CONTAINER/"
             + "org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-26\">\n";
-    return eclipseEntry(start, module, false, null);
+    return eclipseEntry(start, module, false, null, addReads);
   }
 
   private static String eclipseLibrary(Path jar, boolean module, boolean test) {
     assert jar != null;
     String path = jar.toAbsolutePath().normalize().toString().replace('\\', '/');
     return eclipseEntry(
-        "  <classpathentry kind=\"lib\" path=\"" + xml(path) + "\">\n", module, test, null);
+        "  <classpathentry kind=\"lib\" path=\"" + xml(path) + "\">\n", module, test, null, null);
   }
 
   private static String eclipseEntry(
-      String start, boolean module, boolean test, String addExports) {
+      String start, boolean module, boolean test, String addExports, String addReads) {
     assert start != null && !start.isBlank();
-    if (!module && !test && addExports == null) {
+    if (!module && !test && addExports == null && addReads == null) {
       return start.stripTrailing().replace(">", "/>") + "\n";
     }
     var entry = new StringBuilder(start).append("    <attributes>\n");
@@ -1413,6 +1582,12 @@ public final class Build {
       entry
           .append("      <attribute name=\"add-exports\" value=\"")
           .append(xml(addExports))
+          .append("\"/>\n");
+    }
+    if (addReads != null) {
+      entry
+          .append("      <attribute name=\"add-reads\" value=\"")
+          .append(xml(addReads))
           .append("\"/>\n");
     }
     return entry.append("    </attributes>\n  </classpathentry>\n").toString();
@@ -1429,20 +1604,26 @@ public final class Build {
     writeIdeFile(
         owner,
         project.resolve(".settings/org.eclipse.core.resources.prefs"),
-        "eclipse.preferences.version=1\nencoding/<project>=UTF-8\n");
+        eclipseResourcesPrefs());
     writeIdeFile(
-        owner,
-        project.resolve(".settings/org.eclipse.jdt.core.prefs"),
-        """
-        eclipse.preferences.version=1
-        org.eclipse.jdt.core.compiler.codegen.targetPlatform=26
-        org.eclipse.jdt.core.compiler.compliance=26
-        org.eclipse.jdt.core.compiler.problem.enablePreviewFeatures=disabled
-        org.eclipse.jdt.core.compiler.problem.forbiddenReference=warning
-        org.eclipse.jdt.core.compiler.problem.reportPreviewFeatures=ignore
-        org.eclipse.jdt.core.compiler.release=disabled
-        org.eclipse.jdt.core.compiler.source=26
-        """);
+        owner, project.resolve(".settings/org.eclipse.jdt.core.prefs"), eclipseJdtCorePrefs());
+  }
+
+  private static String eclipseResourcesPrefs() {
+    return "eclipse.preferences.version=1\nencoding/<project>=UTF-8\n";
+  }
+
+  private static String eclipseJdtCorePrefs() {
+    return """
+    eclipse.preferences.version=1
+    org.eclipse.jdt.core.compiler.codegen.targetPlatform=26
+    org.eclipse.jdt.core.compiler.compliance=26
+    org.eclipse.jdt.core.compiler.problem.enablePreviewFeatures=disabled
+    org.eclipse.jdt.core.compiler.problem.forbiddenReference=warning
+    org.eclipse.jdt.core.compiler.problem.reportPreviewFeatures=ignore
+    org.eclipse.jdt.core.compiler.release=disabled
+    org.eclipse.jdt.core.compiler.source=26
+    """;
   }
 
   private static void writeIdeFile(Path owner, Path file, String content) throws IOException {
@@ -1729,9 +1910,10 @@ public final class Build {
     assert bytes != null;
     assert offset >= 0;
     assert signature != null && signature.length() == 4;
+    assert signature.chars().allMatch(character -> character <= 0x7F);
     if (offset + signature.length() > bytes.length) return false;
     for (int index = 0; index < signature.length(); index++) {
-      if (bytes[offset + index] != (byte) signature.charAt(index)) return false;
+      if (Byte.toUnsignedInt(bytes[offset + index]) != signature.charAt(index)) return false;
     }
     return true;
   }
@@ -2070,6 +2252,35 @@ public final class Build {
     validateRepositorySkills();
     runGolemDefinitionCheck();
     compile();
+    runPmd();
+  }
+
+  private static void runPmd() throws Exception {
+    ensurePmdDependencies();
+    Files.createDirectories(PMD_REPORT.getParent());
+    var arguments = new ArrayList<String>();
+    arguments.add("-ea");
+    arguments.add("-cp");
+    arguments.add(modulePath(List.of(PMD_DEPS)));
+    arguments.add("net.sourceforge.pmd.cli.PmdCli");
+    arguments.add("check");
+    arguments.add("--dir");
+    arguments.add(APP_SOURCES.toString());
+    arguments.add("--rulesets");
+    arguments.add(PMD_CONFIG.toString());
+    arguments.add("--format");
+    arguments.add("text");
+    arguments.add("--report-file");
+    arguments.add(PMD_REPORT.toString());
+    arguments.add("--relativize-paths-with");
+    arguments.add(ROOT.toString());
+    arguments.add("--use-version");
+    arguments.add("java-26");
+    arguments.add("--aux-classpath");
+    arguments.add(modulePath(List.of(MODULE_CLASSES, MAIN_DEPS)));
+    arguments.add("--no-cache");
+    arguments.add("--no-progress");
+    runArgFile(javaExecutable(), "run-pmd", arguments);
   }
 
   private static void runGolemDefinitionCheck() throws Exception {
@@ -3873,23 +4084,6 @@ public final class Build {
     return path.getFileName().toString().endsWith(".jar");
   }
 
-  private static void cleanGeneratedTree(Path path) throws IOException {
-    assert path != null;
-    deleteStaleStaging(path);
-    deleteStaleBackups(path);
-    deleteGeneratedTree(path);
-  }
-
-  private static void deleteStaleBackups(Path output) throws IOException {
-    Path normalized = output.toAbsolutePath().normalize();
-    Path parent = normalized.getParent();
-    if (!Files.isDirectory(parent)) return;
-    String prefix = "." + normalized.getFileName() + ".backup-";
-    for (Path path : directoryEntries(parent, TREE_ENTRIES_MAX)) {
-      if (path.getFileName().toString().startsWith(prefix)) deleteGeneratedTree(path);
-    }
-  }
-
   private static void deleteGeneratedTree(Path path) throws IOException {
     assert path != null;
     if (!Files.exists(path)) return;
@@ -3907,23 +4101,6 @@ public final class Build {
     var paths = new ArrayList<>(treePaths(path, TREE_ENTRIES_MAX));
     paths.sort(Comparator.reverseOrder());
     for (Path child : paths) Files.delete(child);
-  }
-
-  private static void cleanIntellijMetadata(Path idea) throws IOException {
-    assert idea != null;
-    Files.deleteIfExists(idea.resolve(ARTIFACT_MARKER));
-    for (String file : intellijFiles()) Files.deleteIfExists(idea.resolve(file));
-    deleteDirectoryIfEmpty(idea.resolve("modules"));
-    deleteDirectoryIfEmpty(idea);
-  }
-
-  private static void deleteDirectoryIfEmpty(Path directory) throws IOException {
-    assert directory != null;
-    if (!Files.isDirectory(directory)) return;
-    try (var entries = Files.newDirectoryStream(directory)) {
-      if (entries.iterator().hasNext()) return;
-    }
-    Files.delete(directory);
   }
 
   private static String runtimeName(String name) {
@@ -4551,7 +4728,7 @@ public final class Build {
     long readOperationsMax = Math.addExact(fileBytes, 1);
     try (var input = Files.newInputStream(path)) {
       while (fileBytesRead < fileBytes && readOperations < readOperationsMax) {
-        int requestedBytes = (int) Math.min(buffer.length, fileBytes - fileBytesRead);
+        int requestedBytes = Math.toIntExact(Math.min(buffer.length, fileBytes - fileBytesRead));
         int readBytes = input.read(buffer, 0, requestedBytes);
         readOperations = Math.addExact(readOperations, 1);
         if (readBytes <= 0) throw new IllegalStateException("file changed while hashing: " + path);
@@ -4954,7 +5131,7 @@ public final class Build {
     if (milliseconds < 1_000) return milliseconds + " ms";
     double seconds = nanoseconds / 1_000_000_000.0;
     if (seconds < 60) return String.format(Locale.ROOT, "%.2f s", seconds);
-    long minutes = (long) seconds / 60;
+    long minutes = nanoseconds / 60_000_000_000L;
     return String.format(Locale.ROOT, "%d min %.1f s", minutes, seconds - minutes * 60);
   }
 

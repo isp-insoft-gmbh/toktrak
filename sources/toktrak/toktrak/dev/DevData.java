@@ -44,7 +44,7 @@ public final class DevData {
       try (var input = Files.newInputStream(corpus);
           var output = Files.newOutputStream(temporary, StandardOpenOption.CREATE_NEW)) {
         while (copiedBytes < sourceBytes && readOperations < readOperationsMax) {
-          int requestedBytes = (int) Math.min(buffer.length, sourceBytes - copiedBytes);
+          int requestedBytes = Math.toIntExact(Math.min(buffer.length, sourceBytes - copiedBytes));
           int readBytes = input.read(buffer, 0, requestedBytes);
           readOperations = Math.addExact(readOperations, 1);
           if (readBytes <= 0) throw new IllegalStateException("dev corpus changed while copying");

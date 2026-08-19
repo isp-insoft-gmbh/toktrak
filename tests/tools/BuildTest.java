@@ -1,5 +1,6 @@
 package tools;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.ByteBuffer;
@@ -14,6 +15,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -77,6 +79,7 @@ public final class BuildTest {
     given_malformedArtifactMarkers_when_checkingInventory_then_rejectsMarker();
     given_artifactFailpoints_when_rebuilding_then_nextRunPublishesCompleteTree();
     given_generatedSymbolicLinks_when_checkingInventory_then_preservesInternalTargetsAndRejectsEscapes();
+    given_outputArtifacts_when_cleaning_then_deletesEverythingExceptHeldLock();
     given_runningBuildCommand_when_acquiringBuildLock_then_rejectsCommand();
     given_runningDevelopmentServer_when_requiringExclusiveBuild_then_rejectsCommand();
     given_validRuntimeAssets_when_buildingBundle_then_returnsCanonicalIndex();
@@ -124,7 +127,9 @@ public final class BuildTest {
     try {
       try (var channel = FileChannel.open(path, StandardOpenOption.WRITE)) {
         channel.position(512L * 1024 * 1024);
-        channel.write(ByteBuffer.wrap(new byte[] {0}));
+        if (channel.write(ByteBuffer.wrap(new byte[] {0})) != 1) {
+          throw new IOException("failed to write oversized-file fixture");
+        }
       }
       var digest = MessageDigest.getInstance("SHA-256");
       expectFailure(
@@ -207,7 +212,13 @@ public final class BuildTest {
     try {
       for (String directory :
           List.of(
-              "sources/toktrak", "tests/toktrak.tests", "tools/refaster", "tests/tools", "deps")) {
+              "sources/toktrak",
+              "tests/toktrak.tests",
+              "tools/refaster",
+              "tools/perf",
+              "tests/tools",
+              "deps",
+              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http")) {
         Files.createDirectories(root.resolve(directory));
       }
       for (String file :
@@ -215,10 +226,13 @@ public final class BuildTest {
               "sources/toktrak/module-info.java",
               "tests/toktrak.tests/module-info.java",
               "tools/Build.java",
+              "tools/perf/Perf.java",
               "tools/refaster/Rules.java",
               "tests/tools/BuildTest.java",
+              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http/CreatedTokenViewRenderer.java",
               "deps/main.jar",
               "deps/test.jar",
+              "deps/snapshot.jar",
               "deps/error_prone_refaster-2.50.0.jar")) {
         Files.createFile(root.resolve(file));
       }
@@ -228,10 +242,11 @@ public final class BuildTest {
           output,
           List.of(root.resolve("deps/main.jar")),
           List.of(root.resolve("deps/test.jar")),
+          List.of(root.resolve("deps/snapshot.jar")),
           root.resolve("deps/error_prone_refaster-2.50.0.jar"));
 
       var parser = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder();
-      for (String project : List.of("toktrak", "toktrak.tests", "toktrak.build")) {
+      for (String project : List.of("toktrak", "toktrak.tests", "toktrak.build", "toktrak.perf")) {
         Path directory = output.resolve(project);
         parser.parse(directory.resolve(".project").toFile());
         parser.parse(directory.resolve(".classpath").toFile());
@@ -249,18 +264,28 @@ public final class BuildTest {
               + Files.readString(output.resolve("toktrak.tests/.project"))
               + Files.readString(output.resolve("toktrak.tests/.classpath"))
               + Files.readString(output.resolve("toktrak.build/.project"))
-              + Files.readString(output.resolve("toktrak.build/.classpath"));
+              + Files.readString(output.resolve("toktrak.build/.classpath"))
+              + Files.readString(output.resolve("toktrak.perf/.project"))
+              + Files.readString(output.resolve("toktrak.perf/.classpath"));
       for (String expected :
           List.of(
               "<name>toktrak</name>",
               "<name>toktrak.tests</name>",
               "<name>toktrak.build</name>",
+              "<name>toktrak.perf</name>",
+              "generated",
+              "snapshot.jar",
+              "toktrak.tests=ALL-UNNAMED",
+              "name=\"add-reads\"",
               "name=\"module\" value=\"true\"",
               "name=\"test\" value=\"true\"",
               "name=\"add-exports\"",
               "JavaSE-26",
+              "kind=\"output\" path=\"bin/default\"",
               "src/tools",
               "test/tools",
+              "tools/perf",
+              "generated/toktrak",
               "error_prone_refaster-2.50.0.jar",
               "excluding=\"templates/**\"",
               "jstache.resourcesPath",
@@ -271,6 +296,10 @@ public final class BuildTest {
       }
       if (generated.contains("output/modules") || generated.contains("output/runtimes")) {
         throw new AssertionError("Eclipse metadata references authoritative output");
+      }
+      if (Files.readString(output.resolve("toktrak.tests/.classpath"))
+          .contains("excluding=\"module-info.java\"")) {
+        throw new AssertionError("Eclipse test project excludes its JPMS descriptor");
       }
     } finally {
       List<Path> paths = Build.treePathsForTest(root, 1_000);
@@ -287,7 +316,12 @@ public final class BuildTest {
     try {
       for (String directory :
           List.of(
-              "sources/toktrak", "tests/toktrak.tests", "tools/refaster", "tests/tools", "deps")) {
+              "sources/toktrak",
+              "tests/toktrak.tests",
+              "tools/refaster",
+              "tests/tools",
+              "deps",
+              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http")) {
         Files.createDirectories(root.resolve(directory));
       }
       for (String file :
@@ -297,10 +331,17 @@ public final class BuildTest {
               "tools/Build.java",
               "tools/refaster/Rules.java",
               "tests/tools/BuildTest.java",
+              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http/CreatedTokenViewRenderer.java",
               "deps/main.jar",
               "deps/test.jar",
+              "deps/snapshot.jar",
               "deps/error_prone_refaster-2.50.0.jar")) {
         Files.createFile(root.resolve(file));
+      }
+      try (var jar =
+          new java.util.jar.JarOutputStream(
+              Files.newOutputStream(root.resolve("deps/snapshot.jar")))) {
+        jar.flush();
       }
       Path idea = root.resolve(".idea");
       Files.createDirectories(idea);
@@ -311,6 +352,7 @@ public final class BuildTest {
           idea,
           List.of(root.resolve("deps/main.jar")),
           List.of(root.resolve("deps/test.jar")),
+          List.of(root.resolve("deps/snapshot.jar")),
           root.resolve("deps/error_prone_refaster-2.50.0.jar"));
 
       var parser = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder();
@@ -321,7 +363,8 @@ public final class BuildTest {
               "compiler.xml",
               "modules/toktrak.iml",
               "modules/toktrak.tests.iml",
-              "modules/toktrak.build.iml")) {
+              "modules/toktrak.build.iml",
+              "modules/toktrak.perf.iml")) {
         parser.parse(idea.resolve(file).toFile());
       }
       String generated =
@@ -330,28 +373,43 @@ public final class BuildTest {
               + Files.readString(idea.resolve("compiler.xml"))
               + Files.readString(idea.resolve("modules/toktrak.iml"))
               + Files.readString(idea.resolve("modules/toktrak.tests.iml"))
-              + Files.readString(idea.resolve("modules/toktrak.build.iml"));
+              + Files.readString(idea.resolve("modules/toktrak.build.iml"))
+              + Files.readString(idea.resolve("modules/toktrak.perf.iml"));
       for (String expected :
           List.of(
               "toktrak.iml",
               "toktrak.tests.iml",
               "toktrak.build.iml",
+              "toktrak.perf.iml",
               "languageLevel=\"JDK_26\"",
               "isTestSource=\"true\"",
               "packagePrefix=\"tools\"",
               "scope=\"TEST\"",
+              "snapshot.jar",
               "type=\"module-library\"",
               "module-name=\"toktrak\"",
               "ADDITIONAL_OPTIONS_OVERRIDE",
-              "--add-exports=toktrak/toktrak.dev=toktrak.tests",
+              "-Ajstache.resourcesPath=",
+              "packagePrefix=\"toktrak\"",
+              "packagePrefix=\"selfie\"",
+              "tests/toktrak.tests/toktrak",
+              "tests/toktrak.tests/selfie",
+              "output/ide/intellij/generated/toktrak",
+              "generated=\"true\"",
               "output/ide/intellij",
               "TokTrak JStachio",
               "jstache.resourcesPath",
               "io.jstach.apt.jar",
-              "excludeFolder url=\"file://$PROJECT_DIR$/sources/toktrak/templates\"")) {
+              "content url=\"file://$MODULE_DIR$/../../tools/perf\"",
+              "excludeFolder url=\"file://$MODULE_DIR$/../../sources/toktrak/templates\"",
+              "excludeFolder url=\"file://$MODULE_DIR$/../../tools/perf\"")) {
         if (!generated.contains(expected)) {
           throw new AssertionError("missing IntelliJ metadata: " + expected);
         }
+      }
+      if (generated.contains("file://$PROJECT_DIR$/sources")
+          || generated.contains("jar://$PROJECT_DIR$/output")) {
+        throw new AssertionError("IntelliJ module metadata uses unresolved project dir paths");
       }
       if (generated.contains("output/modules") || generated.contains("output/runtimes")) {
         throw new AssertionError("IntelliJ metadata references authoritative output");
@@ -675,7 +733,7 @@ public final class BuildTest {
         throw new AssertionError("unlisted artifact matched inventory");
       }
       Build.rebuildArtifactForTest(artifact, "expected", BuildTest::writeArtifact, null);
-      Files.write(artifact.resolve(".toktrak-artifact"), new byte[] {(byte) 0xC3});
+      Files.write(artifact.resolve(".toktrak-artifact"), HexFormat.of().parseHex("c3"));
       if (Build.artifactMatchesForTest(artifact, "expected")) {
         throw new AssertionError("malformed marker matched inventory");
       }
@@ -803,6 +861,24 @@ public final class BuildTest {
     Files.createSymbolicLink(logging.resolve("LICENSE"), Path.of("../java.base/LICENSE"));
   }
 
+  private static void given_outputArtifacts_when_cleaning_then_deletesEverythingExceptHeldLock()
+      throws Exception {
+    Path output = Files.createTempDirectory("toktrak-clean-");
+    Path lock = Files.writeString(output.resolve(".build.lock"), "");
+    Files.writeString(output.resolve("unknown.txt"), "disposable");
+    Files.createDirectories(output.resolve("unknown/nested"));
+    Files.writeString(output.resolve("unknown/nested/artifact.bin"), "disposable");
+    try {
+      Build.cleanOutputForTest(output, lock);
+      if (!Files.readString(lock).isEmpty()
+          || !Build.treePathsForTest(output, 10).equals(List.of(output, lock))) {
+        throw new AssertionError("clean did not preserve only its held lock");
+      }
+    } finally {
+      deleteTestTree(output);
+    }
+  }
+
   private static void given_runningBuildCommand_when_acquiringBuildLock_then_rejectsCommand()
       throws Exception {
     Path lockPath = Files.createTempFile("toktrak-build-lock-", ".lock");
@@ -811,7 +887,10 @@ public final class BuildTest {
         FileLock lock = Build.acquireBuildLockForTest(first)) {
       if (!lock.isValid()) throw new AssertionError("build lock is invalid");
       expectFailure(
-          () -> Build.acquireBuildLockForTest(second), "another TokTrak build command is running");
+          () ->
+              Build.acquireBuildLockForTest(
+                  second, "clean", lockPath.resolveSibling("missing-data")),
+          "cannot run clean while another TokTrak build command is running; wait for it to finish");
     } finally {
       Files.deleteIfExists(lockPath);
     }
@@ -828,6 +907,17 @@ public final class BuildTest {
               FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
           FileLock lock = channel.lock()) {
         if (!lock.isValid()) throw new AssertionError("development lock is invalid");
+        Path buildLockPath = directory.resolve("build.lock");
+        try (var first =
+                FileChannel.open(
+                    buildLockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+            var second = FileChannel.open(buildLockPath, StandardOpenOption.WRITE);
+            FileLock buildLock = Build.acquireBuildLockForTest(first)) {
+          if (!buildLock.isValid()) throw new AssertionError("build lock is invalid");
+          expectFailure(
+              () -> Build.acquireBuildLockForTest(second, "clean", directory),
+              "cannot run clean while mise run dev is running; stop it with Ctrl+C");
+        }
         for (String command :
             List.of(
                 "check",
@@ -899,7 +989,7 @@ public final class BuildTest {
       if (!indexText.startsWith("toktrak-assets-v1\n")
           || indexText.contains("\r")
           || index.length < 2
-          || index[0] == (byte) 0xEF
+          || Byte.toUnsignedInt(index[0]) == 0xEF
           || index[index.length - 1] != '\n'
           || index[index.length - 2] == '\n'
           || !indexText.substring("toktrak-assets-v1\n".length()).contains("\t")) {
@@ -950,7 +1040,7 @@ public final class BuildTest {
         "logo.png",
         new byte[] {0},
         "convert it to optimized WebP or AVIF, or use SVG for vector artwork");
-    assertRejectedAsset("main.css", new byte[] {(byte) 0xC3}, "save the asset as valid UTF-8");
+    assertRejectedAsset("main.css", HexFormat.of().parseHex("c3"), "save the asset as valid UTF-8");
     assertRejectedAsset(
         "logo.webp",
         "invalid".getBytes(StandardCharsets.UTF_8),
@@ -1170,7 +1260,9 @@ public final class BuildTest {
     try (var channel =
         FileChannel.open(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
       channel.position(bytes - 1);
-      channel.write(ByteBuffer.wrap(new byte[] {0}));
+      if (channel.write(ByteBuffer.wrap(new byte[] {0})) != 1) {
+        throw new IOException("failed to write sparse-file fixture");
+      }
     }
   }
 

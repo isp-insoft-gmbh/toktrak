@@ -1,0 +1,106 @@
+direction: down
+
+vars: {
+  d2-config: {
+    theme-id: 0
+    dark-theme-id: 200
+  }
+}
+
+title: |md
+  # Build and contributor workflow
+  `mise` is the human entrypoint.
+  `tools/Build.java` is the build authority.
+  There is no Maven, Gradle, npm install, bundler, or JavaScript build system.
+|
+title.shape: document
+title.style.stroke-width: 2
+
+entry: |md
+  ## Normal commands
+  ```sh
+  mise install
+  mise run check
+  mise run dev
+  mise run test [paths...]
+  mise run verify
+  ```
+|
+entry.shape: document
+
+pipeline: "Build.java pipeline" {
+  shape: package
+  style.stroke-width: 2
+
+  build_java: "tools/Build.java\nsource-file script, run with -ea" {
+    shape: hexagon
+    style.stroke-width: 2
+  }
+  deps: "vendored jresolve.jar + *-deps.txt\nresolve Maven deps into output/deps" {shape: stored_data}
+  compile: "javac @argfiles\nJPMS modules: toktrak, toktrak.tests" {shape: package}
+  jstachio: "JStachio APT\ngenerated renderers under output" {shape: queue}
+  assets: "asset validation\nSVG vectors, WebP/AVIF rasters" {shape: diamond}
+  runtime: "jlink prod runtime\nincludes jcmd, JFR, JMX tools" {shape: package}
+  image: "Containerfile + rootless Podman\nimmutable vN release tags" {shape: package}
+
+  build_java -> deps: "resolve"
+  deps -> compile: "module path"
+  compile -> jstachio: "templates + models"
+  build_java -> assets: "validate"
+  compile -> runtime: "link"
+  runtime -> image: "package"
+}
+
+quality: "Quality gates" {
+  shape: package
+  style.stroke-width: 2
+
+  fmt: "fmt\ndprint + google-java-format" {shape: document}
+  check: "check\ncompile, Error Prone, PMD" {shape: diamond}
+  test: "test\nJUnit + Selfie snapshots" {shape: hexagon}
+  pit: "PIT\nafter unit-test edits" {shape: hexagon}
+  coverage: "JaCoCo\ncoverage floors" {shape: hexagon}
+  ci: "ci\nRefaster rewrite, clean tree, verify" {shape: queue}
+
+  fmt -> check -> test
+  test -> pit
+  test -> coverage
+  ci -> check
+}
+
+repo: |md
+  ## Repository map
+  - `sources`: production Java, templates, runtime assets.
+  - `tests`: JUnit tests, snapshots, anonymized dev corpus.
+  - `tools`: Build.java, golems, perf, Refaster.
+  - `vendored`: pinned build bootstrap artifacts.
+  - `output`: disposable generated artifacts, never source.
+  - `.system`: mission, rules, specs, plans.
+|
+repo.shape: document
+
+dev: "Development mode" {
+  shape: package
+  style.stroke-width: 2
+
+  corpus: "tests/corpus/dev.jsonl\nanonymized seed data" {shape: stored_data}
+  auth: "TOKTRAK_DEV_AUTH=true\nlocal auth only" {shape: diamond}
+  watch: "mise watch\nrestart dev server" {shape: queue}
+
+  corpus -> watch: "seed"
+  auth -> watch: "dev auth"
+}
+
+golems: |md
+  ## Agentic maintenance
+  `.github/golems` defines bounded maintenance tasks for Pi, Claude Code, and Codex CLI.
+  Runs use dedicated `golem/<task-id>` branches and PRs, never direct `trunk` repair.
+|
+golems.shape: callout
+
+title -> entry: "start here"
+entry -> pipeline.build_java: "mise delegates"
+pipeline -> quality: "verified by"
+quality -> dev: "iterated with"
+dev -> repo: "uses"
+repo -> golems: "maintained by"

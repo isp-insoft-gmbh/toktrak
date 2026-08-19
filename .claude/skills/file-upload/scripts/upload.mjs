@@ -16,8 +16,9 @@ const fail = (message, status = 1) => {
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const hmac = (key, value) => createHmac("sha256", key).update(value).digest();
 const encodePathSegment = (value) =>
-  encodeURIComponent(value).replace(/[!'()*]/g, (character) =>
-    `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 
 export const createS3PutRequest = ({
@@ -40,19 +41,9 @@ export const createS3PutRequest = ({
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
   const date = amzDate.slice(0, 8);
   const canonicalUri = `/${[BUCKET, ...key.split("/")].map(encodePathSegment).join("/")}`;
-  const canonicalHeaders =
-    `host:${base.host}\n` +
-    `x-amz-content-sha256:${payloadHash}\n` +
-    `x-amz-date:${amzDate}\n`;
+  const canonicalHeaders = `host:${base.host}\n` + `x-amz-content-sha256:${payloadHash}\n` + `x-amz-date:${amzDate}\n`;
   const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
-  const canonicalRequest = [
-    "PUT",
-    canonicalUri,
-    "",
-    canonicalHeaders,
-    signedHeaders,
-    payloadHash,
-  ].join("\n");
+  const canonicalRequest = ["PUT", canonicalUri, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
   const scope = `${date}/auto/s3/aws4_request`;
   const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, sha256(canonicalRequest)].join("\n");
   const dateKey = hmac(`AWS4${secretAccessKey}`, date);
@@ -109,19 +100,14 @@ const contentTypes = {
 const main = async () => {
   const [input, retention = "1y", confirmation] = process.argv.slice(2);
   const retentions = new Set(["7d", "1y", "keep"]);
-  const invalidConfirmation =
-    confirmation && (retention !== "keep" || confirmation !== "--confirm-keep");
+  const invalidConfirmation = confirmation && (retention !== "keep" || confirmation !== "--confirm-keep");
   if (!input || !retentions.has(retention) || invalidConfirmation) {
     fail("Usage: upload.mjs <file> [7d|1y|keep] [--confirm-keep]", 2);
   }
   if (retention === "keep" && confirmation !== "--confirm-keep") {
     fail("Permanent retention requires user confirmation; then pass --confirm-keep", 2);
   }
-  const environmentNames = [
-    "GATEBRIDGE_R2_ACCESS_KEY_ID",
-    "GATEBRIDGE_R2_SECRET_ACCESS_KEY",
-    "GATEBRIDGE_R2_ENDPOINT",
-  ];
+  const environmentNames = ["GATEBRIDGE_R2_ACCESS_KEY_ID", "GATEBRIDGE_R2_SECRET_ACCESS_KEY", "GATEBRIDGE_R2_ENDPOINT"];
   for (const name of environmentNames) {
     if (!process.env[name]?.trim()) fail(`Missing ${name}. Set it before uploading.`);
   }
@@ -137,7 +123,9 @@ const main = async () => {
   if (stat.size > 315 * 1024 * 1024) fail("Uploads are limited to 315 MiB");
 
   const safeName =
-    basename(file).replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "artifact";
+    basename(file)
+      .replace(/[^A-Za-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "artifact";
   const stamp = new Date().toISOString().replace(/[-:.]/g, "");
   const key = `${retention}/${stamp}-${randomBytes(4).toString("hex")}-${safeName}`;
   const request = createS3PutRequest({
@@ -160,16 +148,11 @@ const main = async () => {
   });
   if (!response.ok) {
     const details = (await response.text()).slice(0, 4096).trim();
-    throw new Error(
-      `R2 upload failed: ${response.status} ${response.statusText}${details ? `: ${details}` : ""}`,
-    );
+    throw new Error(`R2 upload failed: ${response.status} ${response.statusText}${details ? `: ${details}` : ""}`);
   }
   console.log(`https://gatebridge.link/${key}`);
 };
 
-if (
-  process.argv[1]
-  && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))
-) {
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
   main().catch((error) => fail(error instanceof Error ? error.message : String(error)));
 }

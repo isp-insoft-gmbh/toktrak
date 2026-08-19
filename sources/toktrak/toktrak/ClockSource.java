@@ -3,6 +3,7 @@ package toktrak;
 import java.time.Instant;
 import java.util.Objects;
 
+@FunctionalInterface
 public interface ClockSource {
   Instant instant();
 

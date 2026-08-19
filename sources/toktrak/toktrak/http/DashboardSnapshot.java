@@ -10,8 +10,8 @@ record DashboardSnapshot(
     int activeUsers,
     String averageCost,
     String fx,
-    boolean degraded,
-    boolean partial,
+    DashboardHealth health,
+    ReportCompleteness reportCompleteness,
     List<DashboardUserRow> leaderboard,
     List<DashboardIngestionRow> ingestion,
     List<DashboardMetricRow> tokenTypes,
@@ -29,6 +29,8 @@ record DashboardSnapshot(
     Objects.requireNonNull(tokens, "tokens");
     Objects.requireNonNull(averageCost, "averageCost");
     Objects.requireNonNull(fx, "fx");
+    Objects.requireNonNull(health, "health");
+    Objects.requireNonNull(reportCompleteness, "reportCompleteness");
     leaderboard = List.copyOf(leaderboard);
     ingestion = List.copyOf(ingestion);
     tokenTypes = List.copyOf(tokenTypes);
@@ -40,6 +42,24 @@ record DashboardSnapshot(
     spikes = List.copyOf(spikes);
     sessions = List.copyOf(sessions);
     blocks = List.copyOf(blocks);
+  }
+
+  boolean degraded() {
+    return health == DashboardHealth.DEGRADED;
+  }
+
+  boolean partial() {
+    return reportCompleteness == ReportCompleteness.PARTIAL;
+  }
+
+  enum DashboardHealth {
+    HEALTHY,
+    DEGRADED
+  }
+
+  enum ReportCompleteness {
+    COMPLETE,
+    PARTIAL
   }
 
   record DashboardMetricRow(String label, String value, String detail, String bar) {}

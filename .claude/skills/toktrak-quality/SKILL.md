@@ -1,10 +1,25 @@
 ---
 name: toktrak-quality
-description: "Use when adding or updating TokTrak Java tests, Selfie snapshots, JaCoCo coverage, PIT mutation tests, or their CI reports."
+description: "Use when adding or updating TokTrak Java tests, Selfie snapshots, JaCoCo coverage, PIT mutation tests, static-analysis triage, or their CI reports."
 ---
 
 # TokTrak quality
 
+- For static-analysis findings, triage before editing: write explicit
+  fix/wontfix decisions; treat defer as fix; never sweep style noise into
+  production churn.
+- Prefer `javac -Xlint:all -Werror` plus Error Prone, then a tiny curated PMD
+  ruleset. Do not add Qodana/IntelliJ, SpotBugs, Semgrep, NullAway, or Checker
+  Framework without explicit approval.
+- Fix-category smells: dataflow bugs, ignored validation results, unbounded
+  waits, lossy numeric casts, manual close/finally, exception type/cause loss,
+  control-flow nulls, ambiguous booleans in public/domain APIs, exposed object
+  monitors, allocation bounds, access narrowing after caller/reflection checks,
+  filesystem separators, protocol newline constants, and overflow-sensitive
+  implicit conversions.
+- Wontfix baseline: no nullability annotations, no standalone metric refactors,
+  no final/local/import/Javadoc/string/style churn, no utility-class enum churn,
+  no abstraction solely to reduce parameter count, and keep assertion usage.
 - Prefer precise assertions for invariants; use Selfie for stable, reviewable
   structured output such as HTML, JSON, and protocols.
 - A mismatch proves only that output changed. Map its exact diff to the code
