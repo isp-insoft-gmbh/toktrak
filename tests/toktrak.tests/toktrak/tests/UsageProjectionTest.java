@@ -141,35 +141,28 @@ final class UsageProjectionTest {
   }
 
   @Test
-  void given_twoOwners_when_listingRowsAndIngestion_then_sortsByOwnerBeforeRowKeys() {
-    var alpha = new UserKey("https://issuer.example", "alpha");
-    var beta = new UserKey("https://issuer.example", "beta");
+  void given_multipleOwners_when_listingRowsAndIngestion_then_sortsByOwnerBeforeRowKeys() {
+    List<UserKey> users =
+        java.util.stream.IntStream.range(0, 12)
+            .mapToObj(index -> new UserKey("https://issuer.example", "user-%02d".formatted(index)))
+            .toList();
     var projection = Projection.empty();
-    authenticate(projection, alpha);
-    authenticate(projection, beta);
-    projection.apply(
-        usageEvent(
-            beta,
-            AT,
-            upload(
-                AT,
-                success("daily", List.of(daily("2026-07-01", 1, "beta-early"))),
-                failed(),
-                failed())));
-    projection.apply(
-        usageEvent(
-            alpha,
-            AT.plusSeconds(1),
-            upload(
-                AT,
-                success("daily", List.of(daily("2026-07-31", 2, "alpha-late"))),
-                failed(),
-                failed())));
+    for (int index = 0; index < users.size(); index++) {
+      UserKey user = users.get(index);
+      authenticate(projection, user);
+      projection.apply(
+          usageEvent(
+              user,
+              AT.plusSeconds(index),
+              upload(
+                  AT,
+                  success("daily", List.of(daily("2026-07-01", 1, "row"))),
+                  failed(),
+                  failed())));
+    }
 
-    assertEquals(
-        List.of(alpha, beta), projection.usageRows(Report.DAILY).stream().map(Row::owner).toList());
-    assertEquals(
-        List.of(alpha, beta), projection.ingestion().stream().map(Ingestion::owner).toList());
+    assertEquals(users, projection.usageRows(Report.DAILY).stream().map(Row::owner).toList());
+    assertEquals(users, projection.ingestion().stream().map(Ingestion::owner).toList());
   }
 
   @Test
