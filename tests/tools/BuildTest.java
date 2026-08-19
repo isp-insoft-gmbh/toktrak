@@ -59,6 +59,7 @@ public final class BuildTest {
     }
     if (args.length != 0) throw new IllegalArgumentException("unexpected arguments");
     requireTestNames(BuildTest.class.getDeclaredMethods());
+    given_repositoryAttributes_when_readingTextPolicy_then_forcesLfAndPinsCorpusBytes();
     given_oversizedFile_when_hashing_then_rejectsInput();
     given_oversizedTree_when_listingPaths_then_rejectsInput();
     given_invalidArguments_when_writingArgumentFile_then_rejectsInput();
@@ -119,6 +120,16 @@ public final class BuildTest {
         || validTestName("given_ExistingWorld_when_behaviorRuns_then_stateChanges")
         || validTestName("given_existing_world_when_behaviorRuns_then_stateChanges")) {
       throw new AssertionError("test name convention mismatch");
+    }
+  }
+
+  private static void
+      given_repositoryAttributes_when_readingTextPolicy_then_forcesLfAndPinsCorpusBytes()
+          throws Exception {
+    List<String> attributes = Files.readAllLines(Path.of(".gitattributes"), StandardCharsets.UTF_8);
+    if (!attributes.contains("* text=auto eol=lf")
+        || !attributes.contains("tests/corpus/*.jsonl -text")) {
+      throw new AssertionError("repository line-ending policy is incomplete");
     }
   }
 
