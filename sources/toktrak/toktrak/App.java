@@ -38,6 +38,13 @@ public final class App implements AutoCloseable {
   private static final int HTTP_BACKLOG = 128;
   private static final int HTTP_WORKER_COUNT = 64;
   private static final int HTTP_QUEUE_CAPACITY = 256;
+  private static final int HTTP_IDLE_CONNECTIONS_MAX = 64;
+  private static final int HTTP_CONNECTIONS_MAX =
+      HTTP_WORKER_COUNT + HTTP_QUEUE_CAPACITY + HTTP_IDLE_CONNECTIONS_MAX;
+  private static final int HTTP_REQUEST_HEADERS_MAX = 64;
+  private static final int HTTP_REQUEST_HEADER_BYTES_MAX = 32 * 1024;
+  private static final int HTTP_REQUEST_SECONDS_MAX = 30;
+  private static final int HTTP_RESPONSE_SECONDS_MAX = 60;
   private static final byte[] DEVELOPMENT_SESSION_SECRET =
       "toktrak-development-cookie-signing".getBytes(StandardCharsets.UTF_8);
   private HttpServer server;
@@ -67,6 +74,7 @@ public final class App implements AutoCloseable {
   public static App start(String[] args, Map<String, String> environment) {
     Objects.requireNonNull(args, "args");
     Objects.requireNonNull(environment, "environment");
+    configureHttpServer();
     configureLogging();
     Config config = Config.from(args, environment);
     Assets assets = Assets.load();
@@ -88,7 +96,8 @@ public final class App implements AutoCloseable {
     projection = Projection.empty();
     eventLog.replay(projection::apply);
     HealthState health = new HealthState();
-    writer = Writer.start(eventLog, projection, health, config.clock(), config.failWrites());
+    if (config.failWrites()) health.degrade("writes_failed");
+    writer = Writer.start(eventLog, projection, health, config.clock());
     executor =
         new ThreadPoolExecutor(
             HTTP_WORKER_COUNT,
@@ -109,7 +118,6 @@ public final class App implements AutoCloseable {
     server.setExecutor(Runnable::run);
     server.start();
     if (!config.devAuth()) fxService = FxService.start(writer);
-    if (config.failWrites()) health.degrade("writes_failed");
     port = server.getAddress().getPort();
     if (port < 0 || port > 65_535)
       throw new IllegalStateException("HTTP server returned invalid port");
@@ -161,6 +169,22 @@ public final class App implements AutoCloseable {
     console.setFormatter(new JsonLogFormatter());
     root.addHandler(console);
     root.setLevel(quiet ? Level.OFF : Level.INFO);
+  }
+
+  private static void configureHttpServer() {
+    // HttpServer reads these process properties once when its implementation initializes.
+    setHttpServerProperty("jdk.httpserver.maxConnections", HTTP_CONNECTIONS_MAX);
+    setHttpServerProperty("sun.net.httpserver.maxIdleConnections", HTTP_IDLE_CONNECTIONS_MAX);
+    setHttpServerProperty("sun.net.httpserver.maxReqHeaders", HTTP_REQUEST_HEADERS_MAX);
+    setHttpServerProperty("sun.net.httpserver.maxReqHeaderSize", HTTP_REQUEST_HEADER_BYTES_MAX);
+    setHttpServerProperty("sun.net.httpserver.maxReqTime", HTTP_REQUEST_SECONDS_MAX);
+    setHttpServerProperty("sun.net.httpserver.maxRspTime", HTTP_RESPONSE_SECONDS_MAX);
+  }
+
+  private static void setHttpServerProperty(String name, int value) {
+    assert name != null && !name.isBlank();
+    assert value > 0;
+    System.setProperty(name, Integer.toString(value));
   }
 
   public int port() {
