@@ -9,6 +9,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 
@@ -20,10 +21,14 @@ import java.util.Locale;
 public final class Perf {
   private static final Path ROOT = Path.of("").toAbsolutePath().normalize();
   private static final Path OUTPUT = ROOT.resolve("output/perf");
+  private static final Path MAIN_DEPS = ROOT.resolve("output/deps/main");
+  private static final Path MODULE_CLASSES = ROOT.resolve("output/modules/target/classes");
   private static final Path JMH_DEPS = ROOT.resolve("output/perf-deps/jmh");
+  private static final Path PERF_CLASSES = ROOT.resolve("output/perf-classes");
+  private static final Path PERF_DEPENDENCIES = ROOT.resolve("sources/perf-deps.txt");
+  private static final String RESULT_FILE_ARGUMENT = "{result-file}";
   private static final DateTimeFormatter RUN_DIRECTORY_FORMAT =
       DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'", Locale.ROOT).withZone(ZoneOffset.UTC);
-  private static final List<Benchmark> BENCHMARKS = List.of();
 
   private Perf() {}
 
@@ -37,7 +42,7 @@ public final class Perf {
       System.out.println(jmhClasspath());
       return;
     }
-    List<Benchmark> selected = selectBenchmarks(List.of(args));
+    List<Benchmark> selected = selectBenchmarks(benchmarks(), List.of(args));
     Path runDirectory = OUTPUT.resolve(RUN_DIRECTORY_FORMAT.format(Instant.now()));
     Files.createDirectories(runDirectory);
     Host host = host();
@@ -67,13 +72,39 @@ public final class Perf {
     System.out.println("       java -ea tools/perf/Perf.java --jmh-classpath");
   }
 
-  private static List<Benchmark> selectBenchmarks(List<String> requested) {
+  private static List<Benchmark> benchmarks() throws IOException {
+    return List.of(
+        new Benchmark(
+            "corpus-replay",
+            "Rebuild the in-memory projection from the development event corpus",
+            List.of(
+                javaExecutable(),
+                "-ea",
+                "--module-path",
+                applicationModulePath(),
+                "--add-modules",
+                "toktrak",
+                "--class-path",
+                benchmarkClasspath(),
+                "org.openjdk.jmh.Main",
+                "^toktrak\\.perf\\.CorpusReplayBenchmark\\.replay$",
+                "-foe",
+                "true",
+                "-rf",
+                "json",
+                "-rff",
+                RESULT_FILE_ARGUMENT)));
+  }
+
+  private static List<Benchmark> selectBenchmarks(
+      List<Benchmark> benchmarks, List<String> requested) {
+    assert benchmarks != null;
     assert requested != null;
-    if (requested.isEmpty()) return BENCHMARKS;
+    if (requested.isEmpty()) return benchmarks;
     var selected = new ArrayList<Benchmark>();
-    for (String id : requested) {
+    for (String id : new LinkedHashSet<>(requested)) {
       selected.add(
-          BENCHMARKS.stream()
+          benchmarks.stream()
               .filter(benchmark -> benchmark.id().equals(id))
               .findFirst()
               .orElseThrow(() -> new IllegalArgumentException("unknown benchmark: " + id)));
@@ -88,8 +119,9 @@ public final class Perf {
     Path benchmarkDirectory = runDirectory.resolve(benchmark.id());
     Files.createDirectories(benchmarkDirectory);
     long started = System.nanoTime();
+    List<String> command = benchmark.command(benchmarkDirectory);
     Process process =
-        new ProcessBuilder(benchmark.command())
+        new ProcessBuilder(command)
             .directory(ROOT.toFile())
             .redirectOutput(benchmarkDirectory.resolve("stdout.txt").toFile())
             .redirectError(benchmarkDirectory.resolve("stderr.txt").toFile())
@@ -98,7 +130,7 @@ public final class Perf {
     long elapsedNanos = System.nanoTime() - started;
     Files.writeString(
         benchmarkDirectory.resolve("benchmark.json"),
-        benchmark.json(exitCode, elapsedNanos),
+        benchmark.json(command, exitCode, elapsedNanos),
         StandardCharsets.UTF_8);
     return new Result(benchmark, exitCode, elapsedNanos);
   }
@@ -116,6 +148,7 @@ public final class Perf {
         System.getProperty("java.vendor"),
         commandVersion("node", "--version"),
         commandVersion("hyperfine", "--version"),
+        jmhVersion(),
         commandVersion("git", "rev-parse", "HEAD"));
   }
 
@@ -136,18 +169,63 @@ public final class Perf {
     }
   }
 
+  private static String applicationModulePath() throws IOException {
+    return MODULE_CLASSES + File.pathSeparator + jarClasspath(MAIN_DEPS, "application");
+  }
+
+  private static String benchmarkClasspath() throws IOException {
+    return PERF_CLASSES + File.pathSeparator + jmhClasspath();
+  }
+
   private static String jmhClasspath() throws IOException {
-    List<Path> jars;
-    try (var stream = Files.walk(JMH_DEPS)) {
-      jars =
-          stream.filter(path -> path.getFileName().toString().endsWith(".jar")).sorted().toList();
+    return jarClasspath(JMH_DEPS, "JMH");
+  }
+
+  private static String jarClasspath(Path directory, String description) throws IOException {
+    assert directory != null;
+    assert description != null && !description.isBlank();
+    var jars = new ArrayList<Path>();
+    int entries = 0;
+    try (var stream = Files.newDirectoryStream(directory)) {
+      for (Path path : stream) {
+        entries = Math.addExact(entries, 1);
+        if (entries > 256) {
+          throw new IllegalStateException(
+              "resolved " + description + " classpath directory is too large");
+        }
+        if (path.getFileName().toString().endsWith(".jar")) jars.add(path);
+      }
     }
-    if (jars.isEmpty()) throw new IllegalStateException("resolved JMH classpath is empty");
-    if (jars.size() > 256) throw new IllegalStateException("resolved JMH classpath is too large");
+    if (jars.isEmpty()) {
+      throw new IllegalStateException("resolved " + description + " classpath is empty");
+    }
+    jars.sort(Comparator.naturalOrder());
     return jars.stream()
         .map(Path::toString)
         .reduce((left, right) -> left + File.pathSeparator + right)
         .orElseThrow();
+  }
+
+  private static String javaExecutable() {
+    String name =
+        System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("windows")
+            ? "java.exe"
+            : "java";
+    return Path.of(System.getProperty("java.home"), "bin", name).toString();
+  }
+
+  private static String jmhVersion() {
+    String prefix = "pkg:maven/org.openjdk.jmh/jmh-core@";
+    try {
+      if (Files.size(PERF_DEPENDENCIES) > 64 * 1024) return "unavailable";
+      return Files.readAllLines(PERF_DEPENDENCIES, StandardCharsets.UTF_8).stream()
+          .filter(line -> line.startsWith(prefix))
+          .map(line -> line.substring(prefix.length()))
+          .findFirst()
+          .orElse("unavailable");
+    } catch (IOException exception) {
+      return "unavailable";
+    }
   }
 
   private static String commandVersion(String... command) {
@@ -237,16 +315,26 @@ public final class Perf {
     return escaped.append('"').toString();
   }
 
-  record Benchmark(String id, String purpose, List<String> command) {
+  record Benchmark(String id, String purpose, List<String> commandTemplate) {
     Benchmark {
       if (!id.matches("[a-z0-9][a-z0-9-]{0,62}"))
         throw new IllegalArgumentException("invalid benchmark id: " + id);
-      command = List.copyOf(command);
+      commandTemplate = List.copyOf(commandTemplate);
       if (purpose.isBlank()) throw new IllegalArgumentException("empty benchmark purpose: " + id);
-      if (command.isEmpty()) throw new IllegalArgumentException("empty benchmark command: " + id);
+      if (commandTemplate.isEmpty())
+        throw new IllegalArgumentException("empty benchmark command: " + id);
     }
 
-    String json(int exitCode, long elapsedNanos) {
+    List<String> command(Path benchmarkDirectory) {
+      assert benchmarkDirectory != null;
+      String resultFile = benchmarkDirectory.resolve("result.json").toString();
+      return commandTemplate.stream()
+          .map(argument -> argument.equals(RESULT_FILE_ARGUMENT) ? resultFile : argument)
+          .toList();
+    }
+
+    String json(List<String> command, int exitCode, long elapsedNanos) {
+      assert command != null;
       return """
       {
         "id": %s,
@@ -282,6 +370,7 @@ public final class Perf {
       String javaVendor,
       String nodeVersion,
       String hyperfineVersion,
+      String jmhVersion,
       String gitSha) {
     String hostKey() {
       return String.join(
@@ -303,6 +392,7 @@ public final class Perf {
         "javaVendor": %s,
         "nodeVersion": %s,
         "hyperfineVersion": %s,
+        "jmhVersion": %s,
         "gitSha": %s,
         "jvmName": %s
       }
@@ -320,6 +410,7 @@ public final class Perf {
               Perf.json(javaVendor),
               Perf.json(nodeVersion),
               Perf.json(hyperfineVersion),
+              Perf.json(jmhVersion),
               Perf.json(gitSha),
               Perf.json(ManagementFactory.getRuntimeMXBean().getVmName()));
     }

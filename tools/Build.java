@@ -87,6 +87,7 @@ public final class Build {
   private static final Path COVERAGE = OUTPUT.resolve("coverage");
   private static final Path PERF_DEPS = OUTPUT.resolve("perf-deps");
   private static final Path PERF_JMH_DEPS = PERF_DEPS.resolve("jmh");
+  private static final Path PERF_CLASSES = OUTPUT.resolve("perf-classes");
   private static final Path MUTATIONS = OUTPUT.resolve("mutations");
   private static final Path PIT_HISTORY = OUTPUT.resolve("pit.history");
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
@@ -109,6 +110,8 @@ public final class Build {
   private static final Path REFASTER_RULE = REFASTER_COMPILER.resolve("toktrak.refaster");
   private static final Path REFASTER_SOURCE = ROOT.resolve("tools/refaster/Rules.java");
   private static final Path PERF_TOOL = ROOT.resolve("tools/perf/Perf.java");
+  private static final Path PERF_CORPUS_REPLAY_BENCHMARK =
+      ROOT.resolve("tools/perf/CorpusReplayBenchmark.java");
   private static final Path APP_SOURCES = ROOT.resolve("sources/toktrak");
   private static final Path ASSET_SOURCES = APP_SOURCES.resolve("assets");
   private static final Path TEMPLATE_SOURCES = APP_SOURCES.resolve("templates");
@@ -474,7 +477,11 @@ public final class Build {
 
   private static void perfCommand(List<String> arguments) throws Exception {
     assert arguments != null;
-    if (!arguments.equals(List.of("--help"))) ensurePerfDependencies();
+    if (!arguments.equals(List.of("--help"))) {
+      ensurePerfDependencies();
+      compile();
+      compilePerformanceBenchmarks();
+    }
     var command = new ArrayList<String>();
     command.add("-ea");
     command.add(PERF_TOOL.toString());
@@ -484,6 +491,48 @@ public final class Build {
 
   private static void ensurePerfDependencies() throws Exception {
     ensureDependency("sources/perf-deps.txt", PERF_JMH_DEPS, "resolve-perf-jmh-dependencies", true);
+  }
+
+  private static void compilePerformanceBenchmarks() throws Exception {
+    String jmhClasspath = modulePath(List.of(PERF_JMH_DEPS));
+    var arguments = new ArrayList<String>();
+    arguments.add("-Xlint:all");
+    arguments.add("-Werror");
+    arguments.add("-g");
+    arguments.add("--module-path");
+    arguments.add(modulePath(List.of(MAIN_DEPS, MODULE_CLASSES)));
+    arguments.add("--add-modules");
+    arguments.add("toktrak");
+    arguments.add("--class-path");
+    arguments.add(jmhClasspath);
+    arguments.add("--processor-path");
+    arguments.add(jmhClasspath);
+    arguments.add("-d");
+    arguments.add(PERF_CLASSES.toString());
+    arguments.add(PERF_CORPUS_REPLAY_BENCHMARK.toString());
+    Path argFile = writeArgFile("compile-performance-benchmarks", arguments);
+    String fingerprint =
+        compilationFingerprint(
+            "performance-benchmarks",
+            List.of(PERF_CORPUS_REPLAY_BENCHMARK, APP_SOURCES),
+            List.of(MAIN_DEPS, PERF_JMH_DEPS),
+            arguments);
+    long started = System.nanoTime();
+    if (artifactMatches(PERF_CLASSES, fingerprint)) {
+      printCached(javacExecutable(), argFile, started);
+      return;
+    }
+    rebuildArtifact(
+        PERF_CLASSES,
+        fingerprint,
+        staging -> {
+          runJavacArgFile(
+              writeArgFile(
+                  "compile-performance-benchmarks",
+                  remapArguments(arguments, PERF_CLASSES, staging)));
+          requireFile(staging.resolve("META-INF/BenchmarkList"));
+          requireFile(staging.resolve("toktrak/perf/CorpusReplayBenchmark.class"));
+        });
   }
 
   private static void ensureDependency(
