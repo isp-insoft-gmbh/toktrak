@@ -50,11 +50,7 @@ final class FxServiceTest {
     try (var log = EventLog.open(directory.resolve("events.ndjson"));
         var writer =
             Writer.start(
-                log,
-                projection,
-                health,
-                ClockSource.fixed(Instant.parse("2026-07-15T00:00:00Z")),
-                false);
+                log, projection, health, ClockSource.fixed(Instant.parse("2026-07-15T00:00:00Z")));
         var service = FxService.start(writer, client, Duration.ZERO, Duration.ofMillis(100))) {
       assertNotNull(service);
       assertDoesNotThrow(
