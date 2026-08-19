@@ -85,6 +85,33 @@ final class HttpServerTest {
     }
   }
 
+  @Test
+  void given_appStart_when_configuringHttpServer_then_setsSupportedAdmissionProperties() {
+    Map<String, String> expected =
+        Map.of(
+            "jdk.httpserver.maxConnections", "384",
+            "sun.net.httpserver.maxIdleConnections", "64",
+            "sun.net.httpserver.maxReqHeaders", "64",
+            "sun.net.httpserver.maxReqHeaderSize", "32768",
+            "sun.net.httpserver.maxReqTime", "30",
+            "sun.net.httpserver.maxRspTime", "60");
+    var previous = new java.util.HashMap<String, String>();
+    for (String name : expected.keySet()) {
+      previous.put(name, System.getProperty(name));
+      System.clearProperty(name);
+    }
+    try (var _ = App.start(new String[] {}, devEnvironment())) {
+      for (var entry : expected.entrySet()) {
+        assertEquals(entry.getValue(), System.getProperty(entry.getKey()));
+      }
+    } finally {
+      for (var entry : previous.entrySet()) {
+        if (entry.getValue() == null) System.clearProperty(entry.getKey());
+        else System.setProperty(entry.getKey(), entry.getValue());
+      }
+    }
+  }
+
   @Tag("network")
   @Test
   void given_oversizedRequestHeader_when_reachingHttpServer_then_rejectsBeforeApplicationRouting()
