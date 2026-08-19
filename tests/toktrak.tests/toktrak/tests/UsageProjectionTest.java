@@ -12,6 +12,9 @@ import org.junit.jupiter.api.Test;
 import toktrak.projection.Projection;
 import toktrak.projection.Projection.UserKey;
 import toktrak.store.EventEnvelope;
+import toktrak.usage.UsageProjection.Ingestion;
+import toktrak.usage.UsageProjection.Row;
+import toktrak.usage.UsageProjection.Summary;
 import toktrak.usage.UsageUpload;
 import toktrak.usage.UsageUpload.Report;
 
@@ -138,17 +141,64 @@ final class UsageProjectionTest {
   }
 
   @Test
-  void given_invalidDailyMetrics_when_parsing_then_rejectsRow() {
-    var invalid = new java.util.HashMap<>(daily("2026-07-10", 1, "invalid"));
-    invalid.remove("totalCost");
-    Map<String, Object> value =
-        upload(
-            AT,
-            success("daily", List.of(invalid)),
-            success("session", List.of()),
-            success("blocks", List.of()));
+  void given_multipleOwners_when_listingRowsAndIngestion_then_sortsByOwnerBeforeRowKeys() {
+    List<UserKey> users =
+        java.util.stream.IntStream.range(0, 12)
+            .mapToObj(index -> new UserKey("https://issuer.example", "user-%02d".formatted(index)))
+            .toList();
+    var projection = Projection.empty();
+    for (int index = 0; index < users.size(); index++) {
+      UserKey user = users.get(index);
+      authenticate(projection, user);
+      projection.apply(
+          usageEvent(
+              user,
+              AT.plusSeconds(index),
+              upload(
+                  AT,
+                  success("daily", List.of(daily("2026-07-01", 1, "row"))),
+                  failed(),
+                  failed())));
+    }
 
-    assertThrows(IllegalArgumentException.class, () -> UsageUpload.parse(value, AT));
+    assertEquals(users, projection.usageRows(Report.DAILY).stream().map(Row::owner).toList());
+    assertEquals(users, projection.ingestion().stream().map(Ingestion::owner).toList());
+  }
+
+  @Test
+  void given_invalidSummaryValues_when_constructing_then_rejectsThem() {
+    assertDoesNotThrow(() -> new Summary(BigDecimal.ZERO, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+    assertThrows(NullPointerException.class, () -> new Summary(null, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Summary(new BigDecimal("-0.01"), 0, 0, 0, 0, 0, 0, 0, 0, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Summary(BigDecimal.ZERO, -1, 0, 0, 0, 0, 0, 0, 0, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Summary(BigDecimal.ZERO, 0, -1, 0, 0, 0, 0, 0, 0, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Summary(BigDecimal.ZERO, 0, 0, -1, 0, 0, 0, 0, 0, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Summary(BigDecimal.ZERO, 0, 0, 0, -1, 0, 0, 0, 0, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Summary(BigDecimal.ZERO, 0, 0, 0, 0, -1, 0, 0, 0, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Summary(BigDecimal.ZERO, 0, 0, 0, 0, 0, -1, 0, 0, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Summary(BigDecimal.ZERO, 0, 0, 0, 0, 0, 0, -1, 0, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Summary(BigDecimal.ZERO, 0, 0, 0, 0, 0, 0, 0, -1, 0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Summary(BigDecimal.ZERO, 0, 0, 0, 0, 0, 0, 0, 0, -1));
   }
 
   @Test
@@ -224,26 +274,34 @@ final class UsageProjectionTest {
 
   private static Projection projectionWithUser() {
     var projection = Projection.empty();
+    authenticate(projection, USER);
+    return projection;
+  }
+
+  private static void authenticate(Projection projection, UserKey user) {
     projection.apply(
         EventEnvelope.create(
             IDENTITY_USER_AUTHENTICATED,
             AT.minusSeconds(10),
-            USER.subject(),
+            user.subject(),
             Map.of(
-                "issuer", USER.issuer(),
-                "subject", USER.subject(),
+                "issuer", user.issuer(),
+                "subject", user.subject(),
                 "email", "user@example.com",
                 "displayName", "Example User",
                 "color", "#a8dadc")));
-    return projection;
   }
 
   private static EventEnvelope usageEvent(Instant at, Map<String, Object> upload) {
+    return usageEvent(USER, at, upload);
+  }
+
+  private static EventEnvelope usageEvent(UserKey user, Instant at, Map<String, Object> upload) {
     return EventEnvelope.create(
         USAGE_UPLOADED,
         at,
-        USER.subject(),
-        Map.of("issuer", USER.issuer(), "subject", USER.subject(), "upload", upload));
+        user.subject(),
+        Map.of("issuer", user.issuer(), "subject", user.subject(), "upload", upload));
   }
 
   private static Map<String, Object> upload(
