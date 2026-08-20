@@ -75,13 +75,10 @@ layout, generated-code boundaries, and verification commands.
 1. Install Node.js.
 2. Sign in at <https://toktrak.isp-insoft.de>.
 3. Create a tracker token.
-4. Download and run the generated installer for your OS. <
+4. Download `toktrak.mjs` and run it with Node from the download location.
 
-> For Windows Developers: Enable Dev Mode on your machine
-> `System -> Erweitert -> Entwicklermodus` or
-> `System -> Advanced -> Developer Mode`
-
-The installer contains the one-time token. Do not share it. If it is lost,
+The installer creates a user-scoped daily scheduler without administrator or
+root access. It contains the one-time token; do not share it. If it is lost,
 revoke it and create another.
 
 ## Maintain with golems
