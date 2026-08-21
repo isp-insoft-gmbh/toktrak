@@ -1,7 +1,6 @@
 package toktrak.fx;
 
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Executors;
@@ -38,8 +37,7 @@ public final class FxService implements AutoCloseable {
   }
 
   public static FxService start(Writer writer) {
-    var http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-    return new FxService(writer, new FxClient(http, ENDPOINT), INITIAL_DELAY, INTERVAL);
+    return new FxService(writer, new FxClient(ENDPOINT), INITIAL_DELAY, INTERVAL);
   }
 
   public static FxService start(

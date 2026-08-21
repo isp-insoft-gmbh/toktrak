@@ -33,6 +33,13 @@ final class FxServiceTest {
     server.createContext(
         "/latest",
         exchange -> {
+          exchange.getResponseHeaders().set("Location", "/v1/latest");
+          exchange.sendResponseHeaders(301, -1);
+          exchange.close();
+        });
+    server.createContext(
+        "/v1/latest",
+        exchange -> {
           byte[] body =
               (fail.get() ? "unavailable" : "{\"date\":\"2026-07-14\",\"rates\":{\"EUR\":0.92}}")
                   .getBytes(StandardCharsets.UTF_8);
