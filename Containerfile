@@ -1,4 +1,4 @@
-FROM docker.io/library/eclipse-temurin@sha256:6a0a8c4a2bc692c1b101f7f509e2aade12b05aec1cfd31f8c9370f2addfd2f71 AS build
+FROM docker.io/library/eclipse-temurin@sha256:315442887af5b49a8bd081df3353c947eab53877fb9599e6de99d8418f55bde4 AS build
 WORKDIR /src
 COPY sources sources
 COPY tests tests
