@@ -35,6 +35,7 @@ public final class OidcClient {
   private static final int PROVIDER_BODY_BYTES_MAX = 1024 * 1024;
   private static final int QUERY_CHARACTERS_MAX = 8 * 1024;
   private static final int FIELD_CHARACTERS_MAX = 8 * 1024;
+  private static final String DISCOVERY_SUFFIX = "/.well-known/openid-configuration";
 
   private final URI discoveryUri;
   private final String clientId;
@@ -186,12 +187,29 @@ public final class OidcClient {
 
   private Metadata metadata() {
     Map<?, ?> data = object(Json.read(get(discoveryUri), Map.class));
-    String issuer = requiredString(data.get("issuer"));
+    String issuer = requireDiscoveredIssuer(data.get("issuer"));
     URI authorizationEndpoint =
         requireEndpoint(uri(data, "authorization_endpoint"), "authorization endpoint");
     URI tokenEndpoint = requireEndpoint(uri(data, "token_endpoint"), "token endpoint");
     URI jwksUri = requireEndpoint(uri(data, "jwks_uri"), "JWKS endpoint");
     return new Metadata(issuer, authorizationEndpoint, tokenEndpoint, jwksUri);
+  }
+
+  private String requireDiscoveredIssuer(Object value) {
+    try {
+      String issuer = requiredString(value);
+      URI issuerUri = requireEndpoint(URI.create(issuer), "issuer");
+      if (issuerUri.getUserInfo() != null || issuerUri.getRawQuery() != null) {
+        throw new IllegalArgumentException("issuer is invalid");
+      }
+      String prefix = issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
+      if (!discoveryUri.toString().equals(prefix + DISCOVERY_SUFFIX)) {
+        throw new IllegalArgumentException("issuer does not match discovery URL");
+      }
+      return issuer;
+    } catch (IllegalArgumentException exception) {
+      throw new IllegalStateException("OIDC discovery is invalid", exception);
+    }
   }
 
   private String get(URI uri) {
