@@ -43,6 +43,7 @@ const UPDATE_BYTES_MAX = 512 * 1_024;
 const SETTINGS_BYTES_MAX = 256 * 1_024;
 const CONFIG_CHARACTERS_MAX = 8 * 1_024;
 const LOG_CHARACTERS_MAX = 1_000;
+const TASK_START_BOUNDARY = "2020-01-01T09:00:00";
 const CURRENT_SCRIPT = fileURLToPath(import.meta.url);
 const PLATFORM_NAME = process.platform === "win32" ? "Windows" : process.platform === "darwin" ? "macOS" : "Linux";
 const exec = promisify(execFile);
@@ -118,25 +119,37 @@ export function macPlist(nodePath, scriptPath, piSessions) {
 `;
 }
 
-export function windowsTaskArgs(nodePath, scriptPath, piSessions) {
+export function windowsTaskXml(nodePath, scriptPath, piSessions) {
   if (/["\r\n]/.test(nodePath) || /["\r\n]/.test(scriptPath) || (piSessions && /["\r\n]/.test(piSessions))) {
     throw new Error("scheduler path is invalid");
   }
   const fallback = piSessions ? ` --pi-path "${piSessions}"` : "";
-  return [
-    "/Create",
-    "/SC",
-    "DAILY",
-    "/TN",
-    "TokTrak",
-    "/TR",
-    `"${nodePath}" "${scriptPath}" daily --scheduled${fallback}`,
-    "/ST",
-    "09:00",
-    "/RL",
-    "LIMITED",
-    "/F",
-  ];
+  return `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>TokTrak usage uploader</Description></RegistrationInfo>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>${TASK_START_BOUNDARY}</StartBoundary>
+      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>
+  </Principals>
+  <Settings>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT2H</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>${xml(nodePath)}</Command>
+      <Arguments>${xml(`"${scriptPath}" daily --scheduled${fallback}`)}</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+`;
 }
 
 async function atomicWrite(destination, bytes) {
@@ -172,7 +185,14 @@ async function nativeCommand(command, args, tolerateFailure = false) {
 async function installScheduler(scriptPath, piSessions) {
   if (process.platform === "win32") {
     log("info", "creating user scheduled task TokTrak");
-    await nativeCommand("schtasks.exe", windowsTaskArgs(process.execPath, scriptPath, piSessions));
+    const definition = path.join(path.dirname(scriptPath), "task.xml");
+    const document = windowsTaskXml(process.execPath, scriptPath, piSessions);
+    await atomicWrite(definition, Buffer.from(`\ufeff${document}`, "utf16le"));
+    try {
+      await nativeCommand("schtasks.exe", ["/Create", "/TN", "TokTrak", "/XML", definition, "/F"]);
+    } finally {
+      await rm(definition, { force: true });
+    }
     return;
   }
   if (process.platform === "darwin") {

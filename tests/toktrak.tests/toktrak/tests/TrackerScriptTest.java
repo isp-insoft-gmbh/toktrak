@@ -255,7 +255,7 @@ final class TrackerScriptTest {
         "const m=await"
             + " import(process.argv[1]);console.log(JSON.stringify({linux:m.linuxUnits('/node"
             + " path','/script path','/pi sessions'),mac:m.macPlist('/node path','/script"
-            + " path','/pi sessions'),win:m.windowsTaskArgs('C:\\\\Node\\\\n"
+            + " path','/pi sessions'),win:m.windowsTaskXml('C:\\\\Node\\\\n"
             + "ode.exe','C:\\\\User\\\\toktrak.mjs','C:\\\\Pi Sessions')}));";
 
     Process process =
@@ -271,8 +271,11 @@ final class TrackerScriptTest {
     assertTrue(output.contains("RandomizedDelaySec=30m"), output);
     assertTrue(output.contains("de.isp-insoft.toktrak"), output);
     assertTrue(output.contains("LaunchAgents") || output.contains("StartCalendarInterval"), output);
-    assertTrue(output.contains("/RL"), output);
-    assertTrue(output.contains("LIMITED"), output);
+    assertTrue(output.contains("<RunLevel>LeastPrivilege</RunLevel>"), output);
+    assertTrue(output.contains("<StartWhenAvailable>true</StartWhenAvailable>"), output);
+    assertTrue(
+        output.contains("<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"), output);
+    assertTrue(output.contains("<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"), output);
     assertTrue(output.contains("--scheduled"), output);
     assertTrue(output.contains("--pi-path"), output);
     assertTrue(output.contains("pi sessions") || output.contains("Pi Sessions"), output);
