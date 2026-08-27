@@ -1,5 +1,5 @@
 [tools]
-dprint = "0.56.0"
+dprint = "0.56.1"
 google-java-format = "1.36.1"
 hyperfine = "1.20.0"
 java = "temurin-26.0.2+10"
