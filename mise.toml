@@ -1,4 +1,4 @@
-min_version = "2026.8.8"
+min_version = "2026.8.14"
 
 [tools]
 dprint = "0.56.1"
