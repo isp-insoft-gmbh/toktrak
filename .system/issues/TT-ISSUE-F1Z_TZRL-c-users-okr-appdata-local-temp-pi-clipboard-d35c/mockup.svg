@@ -23,7 +23,7 @@
   <rect x="88" y="455" width="255" height="56" fill="#0b0909"/>
   <text x="215.5" y="490" fill="#ffffff" font-family="Consolas, monospace" font-size="16" font-weight="700" text-anchor="middle">Download toktrak.mjs</text>
 
-  <rect x="88" y="521" width="555" height="46" fill="#ffd78f"/>
+  <rect x="88" y="521" width="610" height="46" fill="#ffd78f"/>
   <rect x="88" y="521" width="5" height="46" fill="#0b0909"/>
   <text x="107" y="550" fill="#0b0909" font-family="Consolas, monospace" font-size="16"><tspan font-weight="700">Secret storage:</tspan><tspan> This personalized installer contains your token.</tspan></text>
 
