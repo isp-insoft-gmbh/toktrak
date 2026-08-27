@@ -4228,9 +4228,53 @@ public final class Build {
       throws Exception {
     ToolResult result = runToolAllowFailure(executable, name, arguments, directory, timeout);
     if (result.exitCode() != 0) {
-      throw new IllegalStateException(name + " failed with exit code " + result.exitCode());
+      String output = diagnosticOutput(result.output(), arguments);
+      throw new IllegalStateException(
+          name
+              + " failed with exit code "
+              + result.exitCode()
+              + (output.isEmpty() ? "" : ":\n" + output));
     }
     return result;
+  }
+
+  private static String diagnosticOutput(String output, List<String> arguments) {
+    assert output != null;
+    assert arguments != null;
+    var secrets =
+        new TreeSet<String>(
+            Comparator.comparingInt(String::length)
+                .reversed()
+                .thenComparing(Comparator.naturalOrder()));
+    for (int index = 0; index < arguments.size(); index++) {
+      String argument = arguments.get(index);
+      if (!isSensitiveName(argument)) continue;
+      secrets.add(argument);
+      if (argument.startsWith("-") && index + 1 < arguments.size()) {
+        String value = arguments.get(index + 1);
+        if (!value.isEmpty()) secrets.add(value);
+      }
+    }
+    System.getenv().entrySet().stream()
+        .filter(entry -> isSensitiveName(entry.getKey()))
+        .map(Map.Entry::getValue)
+        .filter(value -> !value.isEmpty())
+        .forEach(secrets::add);
+    String redacted = output;
+    for (String secret : secrets) redacted = redacted.replace(secret, "<redacted>");
+    return redacted.strip();
+  }
+
+  private static boolean isSensitiveName(String value) {
+    assert value != null;
+    String upper = value.toUpperCase(Locale.ROOT);
+    return upper.contains("AUTH")
+        || upper.contains("CREDENTIAL")
+        || upper.contains("KEY")
+        || upper.contains("PASSWORD")
+        || upper.contains("PEPPER")
+        || upper.contains("SECRET")
+        || upper.contains("TOKEN");
   }
 
   private static ToolResult runToolAllowFailure(

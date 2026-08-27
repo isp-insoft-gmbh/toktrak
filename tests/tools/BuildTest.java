@@ -1481,6 +1481,9 @@ public final class BuildTest {
         if (exception.getMessage().contains("super-secret")) {
           throw new AssertionError("tool failure disclosed secret", exception);
         }
+        if (!exception.getMessage().contains("controlled failure")) {
+          throw new AssertionError("tool failure discarded diagnostics", exception);
+        }
       }
     } finally {
       deleteTestTree(directory);
