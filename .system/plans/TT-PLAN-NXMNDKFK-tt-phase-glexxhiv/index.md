@@ -3,8 +3,7 @@ id: TT-PLAN-NXMNDKFK
 type: plan
 title: Implement identity and tracker tokens
 spec: TT-SPEC-IXJLYK_K
-phase: TT-PHASE-GLEXXHIV
-status: done
+status: approved
 ---
 
 1. Extend `Config` and `App` with bounded production OIDC, company-domain,

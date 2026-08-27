@@ -3,7 +3,7 @@ id: TT-PLAN-O4MCTI2H
 type: plan
 title: Generate JDT LS project metadata
 spec: TT-SPEC-Y_XMD0D1
-status: done
+status: approved
 ---
 
 1. Test deterministic Eclipse project/classpath/preferences for production,

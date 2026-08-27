@@ -4,7 +4,6 @@ type: issue
 title: Missing navigation between pages
 specs:
   - TT-SPEC-IXJLYK_K
-status: done
 ---
 
 ## Symptom

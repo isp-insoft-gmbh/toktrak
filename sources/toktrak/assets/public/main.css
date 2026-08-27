@@ -738,8 +738,22 @@ button.button-danger {
   white-space: nowrap;
 }
 
-.token-copy + p {
-  margin-top: 1rem;
+.secret-note {
+  width: fit-content;
+  max-width: 100%;
+  border-left: 5px solid var(--line);
+  padding: 0.5rem 0.75rem;
+  background: var(--warning-surface);
+  color: var(--warning-text);
+}
+
+.token-warning {
+  margin: 0.5rem 0 0;
+  font-weight: 900;
+}
+
+.installer-secret {
+  margin: 0.5rem 0 1rem;
 }
 
 .scope-page:not(.tracker-page) > section {

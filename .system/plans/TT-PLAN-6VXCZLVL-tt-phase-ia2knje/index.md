@@ -3,8 +3,7 @@ id: TT-PLAN-6VXCZLVL
 type: plan
 title: Implement production packaging and release
 spec: TT-SPEC-IXJLYK_K
-phase: TT-PHASE-IA2KNJE_
-status: done
+status: approved
 ---
 
 1. Make `Config` and `App` bind production HTTP to the container interface while

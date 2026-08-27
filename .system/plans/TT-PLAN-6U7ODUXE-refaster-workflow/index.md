@@ -3,7 +3,7 @@ id: TT-PLAN-6U7ODUXE
 type: plan
 title: Implement Refaster workflow
 spec: TT-SPEC-YM0D8_5O
-status: done
+status: approved
 ---
 
 1. Test dependency resolution, rule compilation/cache behavior, source

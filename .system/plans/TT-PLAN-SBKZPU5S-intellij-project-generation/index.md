@@ -3,7 +3,7 @@ id: TT-PLAN-SBKZPU5S
 type: plan
 title: Generate IntelliJ project metadata
 spec: TT-SPEC-Y_XMD0D1
-status: done
+status: approved
 ---
 
 1. Add build-tool tests for exact modules, source/test roots, dependencies,

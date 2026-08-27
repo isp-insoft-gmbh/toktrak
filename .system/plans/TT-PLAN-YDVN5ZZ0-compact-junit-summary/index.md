@@ -3,7 +3,7 @@ id: TT-PLAN-YDVN5ZZ0
 type: plan
 title: Implement compact JUnit summary
 spec: TT-SPEC-9MK_BUIM
-status: done
+status: approved
 ---
 
 1. Add exact-format tests for zero and nonzero skipped/aborted/failed counts.

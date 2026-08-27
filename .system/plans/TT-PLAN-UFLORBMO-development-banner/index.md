@@ -3,7 +3,7 @@ id: TT-PLAN-UFLORBMO
 type: plan
 title: Style development environment banner
 spec: TT-SPEC-6DUKQAU7
-status: done
+status: approved
 ---
 
 1. Prove the inline style is rejected by the strict stylesheet contract.
