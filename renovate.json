@@ -4,6 +4,14 @@
   "customManagers": [
     {
       "customType": "regex",
+      "managerFilePatterns": ["/^mise\\.toml$/"],
+      "matchStrings": ["min_version\\s*=\\s*\"(?<currentValue>\\d{4}\\.\\d+\\.\\d+)\""],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "jdx/mise",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
       "managerFilePatterns": ["/^sources\\/[^/]+-deps\\.txt$/"],
       "matchStrings": ["pkg:maven/(?<groupId>[^/\\s]+)/(?<artifactId>[^@\\s]+)@(?<currentValue>[^?\\s]+)"],
       "datasourceTemplate": "maven",
