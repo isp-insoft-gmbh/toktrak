@@ -147,15 +147,43 @@ Create the AES-256 cache key once:
 node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64"))' | gh secret set GOLEM_AUTH_CACHE_KEY
 ```
 
-Pi and Codex use separate encrypted rotating caches. To seed either from a
-trusted authenticated machine, store the current auth file, dispatch reseeding,
-confirm success, then delete the bootstrap secret:
+Pi and Codex use separate encrypted rotating caches.
+
+Pi must be seeded from a dedicated one-use profile. OpenAI refresh tokens are
+single-use, so copying the normal Pi auth file creates two competing instances.
+Whichever instance refreshes first invalidates the other copy.
+
+Create an empty profile and authenticate its OpenAI Codex provider:
+
+```nushell
+let profile = "/path/to/empty/golem-pi-profile"
+mkdir $profile
+with-env { PI_CODING_AGENT_DIR: $profile } { cd $profile; pi }
+```
+
+Inside Pi, run `/login`, choose OpenAI Codex, then run `/quit`. Seed the
+workflow from that profile:
+
+```nushell
+open --raw ($profile | path join auth.json)
+| encode base64
+| gh secret set GOLEM_PI_AUTH_SEED
+
+gh workflow run golem.yml --ref trunk -f operation=reseed-pi -f task=bugs
+```
+
+After the reseed workflow succeeds, delete the bootstrap secret and dedicated
+profile. Never launch Pi with that profile again:
+
+```nushell
+gh secret delete GOLEM_PI_AUTH_SEED
+rm --recursive $profile
+```
+
+Seed Codex from a trusted authenticated machine, confirm success, then delete
+the bootstrap secret:
 
 ```sh
-node -e 'process.stdout.write(require("node:fs").readFileSync(require("node:path").join(require("node:os").homedir(), ".pi/agent/auth.json")).toString("base64"))' | gh secret set GOLEM_PI_AUTH_SEED
-gh workflow run golem.yml --ref trunk -f operation=reseed-pi -f task=bugs
-gh secret delete GOLEM_PI_AUTH_SEED
-
 node -e 'process.stdout.write(require("node:fs").readFileSync(require("node:path").join(require("node:os").homedir(), ".codex/auth.json")).toString("base64"))' | gh secret set GOLEM_CODEX_AUTH_SEED
 gh workflow run golem.yml --ref trunk -f operation=reseed-codex -f task=bugs
 gh secret delete GOLEM_CODEX_AUTH_SEED
