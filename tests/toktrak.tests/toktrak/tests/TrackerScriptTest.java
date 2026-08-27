@@ -256,7 +256,7 @@ final class TrackerScriptTest {
             + " import(process.argv[1]);console.log(JSON.stringify({linux:m.linuxUnits('/node"
             + " path','/script path','/pi sessions'),mac:m.macPlist('/node path','/script"
             + " path','/pi sessions'),win:m.windowsTaskXml('C:\\\\Node\\\\n"
-            + "ode.exe','C:\\\\User\\\\toktrak.mjs','C:\\\\Pi Sessions')}));";
+            + "ode.exe','C:\\\\User\\\\toktrak.mjs','C:\\\\Pi & Sessions')}));";
 
     Process process =
         new ProcessBuilder(
@@ -276,9 +276,11 @@ final class TrackerScriptTest {
     assertTrue(
         output.contains("<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"), output);
     assertTrue(output.contains("<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"), output);
+    assertTrue(output.contains("<ExecutionTimeLimit>PT2H</ExecutionTimeLimit>"), output);
+    assertTrue(output.contains("<StartBoundary>2020-01-01T09:00:00</StartBoundary>"), output);
     assertTrue(output.contains("--scheduled"), output);
     assertTrue(output.contains("--pi-path"), output);
-    assertTrue(output.contains("pi sessions") || output.contains("Pi Sessions"), output);
+    assertTrue(output.contains("Pi &amp; Sessions"), output);
   }
 
   private ProcessResult runTracker(

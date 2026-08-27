@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -43,7 +43,10 @@ const UPDATE_BYTES_MAX = 512 * 1_024;
 const SETTINGS_BYTES_MAX = 256 * 1_024;
 const CONFIG_CHARACTERS_MAX = 8 * 1_024;
 const LOG_CHARACTERS_MAX = 1_000;
+const WINDOWS_SCHEDULER_REVISION_BYTES_MAX = 32;
 const TASK_START_BOUNDARY = "2020-01-01T09:00:00";
+const WINDOWS_SCHEDULER_REVISION = "1";
+const WINDOWS_TASK_NAME = "TokTrak";
 const CURRENT_SCRIPT = fileURLToPath(import.meta.url);
 const PLATFORM_NAME = process.platform === "win32" ? "Windows" : process.platform === "darwin" ? "macOS" : "Linux";
 const exec = promisify(execFile);
@@ -152,6 +155,14 @@ export function windowsTaskXml(nodePath, scriptPath, piSessions) {
 `;
 }
 
+export function windowsTaskDefinition(nodePath, scriptPath, piSessions) {
+  return Buffer.from(`\ufeff${windowsTaskXml(nodePath, scriptPath, piSessions)}`, "utf16le");
+}
+
+function windowsSchedulerRevisionPath(scriptPath) {
+  return path.join(path.dirname(scriptPath), "windows-scheduler-revision");
+}
+
 async function atomicWrite(destination, bytes) {
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
   const temporary = `${destination}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
@@ -182,17 +193,30 @@ async function nativeCommand(command, args, tolerateFailure = false) {
   }
 }
 
+export async function createWindowsTask(taskName, nodePath, scriptPath, piSessions) {
+  if (typeof taskName !== "string" || !taskName || taskName.length > 256 || /[\u0000\r\n]/.test(taskName)) {
+    throw new Error("scheduler task name is invalid");
+  }
+  const definition = path.join(tmpdir(), `toktrak-task.${process.pid}.${randomBytes(6).toString("hex")}.xml`);
+  let handle;
+  try {
+    handle = await open(definition, "wx", 0o600);
+    await handle.writeFile(windowsTaskDefinition(nodePath, scriptPath, piSessions));
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await nativeCommand("schtasks.exe", ["/Create", "/TN", taskName, "/XML", definition, "/F"]);
+  } finally {
+    if (handle) await handle.close();
+    await rm(definition, { force: true });
+  }
+}
+
 async function installScheduler(scriptPath, piSessions) {
   if (process.platform === "win32") {
-    log("info", "creating user scheduled task TokTrak");
-    const definition = path.join(path.dirname(scriptPath), "task.xml");
-    const document = windowsTaskXml(process.execPath, scriptPath, piSessions);
-    await atomicWrite(definition, Buffer.from(`\ufeff${document}`, "utf16le"));
-    try {
-      await nativeCommand("schtasks.exe", ["/Create", "/TN", "TokTrak", "/XML", definition, "/F"]);
-    } finally {
-      await rm(definition, { force: true });
-    }
+    log("info", `creating user scheduled task ${WINDOWS_TASK_NAME}`);
+    await createWindowsTask(WINDOWS_TASK_NAME, process.execPath, scriptPath, piSessions);
+    await atomicWrite(windowsSchedulerRevisionPath(scriptPath), Buffer.from(WINDOWS_SCHEDULER_REVISION));
     return;
   }
   if (process.platform === "darwin") {
@@ -213,10 +237,32 @@ async function installScheduler(scriptPath, piSessions) {
   await nativeCommand("systemctl", ["--user", "enable", "--now", "toktrak.timer"]);
 }
 
-async function uninstallScheduler() {
+async function migrateWindowsScheduler(scriptPath, piSessions) {
+  if (process.platform !== "win32") return;
+  try {
+    if (path.resolve(scriptPath) !== path.resolve(installationPath())) return;
+    let revision;
+    try {
+      revision = await readBounded(windowsSchedulerRevisionPath(scriptPath), WINDOWS_SCHEDULER_REVISION_BYTES_MAX);
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        log("warning", "Windows scheduler revision is unreadable; repairing it");
+      }
+    }
+    if (revision?.toString("utf8") === WINDOWS_SCHEDULER_REVISION) return;
+    log("info", "updating Windows scheduler definition");
+    await installScheduler(scriptPath, piSessions);
+    log("info", "Windows scheduler definition updated");
+  } catch (error) {
+    log("warning", `Windows scheduler update failed: ${error?.message || "unknown error"}`);
+  }
+}
+
+async function uninstallScheduler(scriptPath) {
   if (process.platform === "win32") {
-    log("info", "removing user scheduled task TokTrak");
-    await nativeCommand("schtasks.exe", ["/Delete", "/TN", "TokTrak", "/F"], true);
+    log("info", `removing user scheduled task ${WINDOWS_TASK_NAME}`);
+    await nativeCommand("schtasks.exe", ["/Delete", "/TN", WINDOWS_TASK_NAME, "/F"], true);
+    await rm(windowsSchedulerRevisionPath(scriptPath), { force: true });
     return;
   }
   if (process.platform === "darwin") {
@@ -584,7 +630,7 @@ async function install() {
 
 async function uninstall() {
   const target = installationPath();
-  await uninstallScheduler();
+  await uninstallScheduler(target);
   log("info", `removing installed tracker at ${target}`);
   await rm(target, { force: true });
   try {
@@ -615,6 +661,7 @@ async function main() {
       break;
     case "daily":
       if (scheduled) {
+        await migrateWindowsScheduler(CURRENT_SCRIPT, fallback);
         const jitterMillis = randomInt(JITTER_MILLIS_MAX + 1);
         log("info", `scheduled run waiting ${Math.ceil(jitterMillis / 1_000)} seconds`);
         await delay(jitterMillis);
