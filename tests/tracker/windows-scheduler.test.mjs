@@ -17,7 +17,7 @@ async function renderedTracker(directory) {
   const source = template
     .replace("__TOKTRAK_BASE_URL__", JSON.stringify("https://toktrak.invalid"))
     .replace("__TOKTRAK_TOKEN__", JSON.stringify(TOKEN));
-  assert.doesNotMatch(source, /__TOKTRAK_(?:BASE_URL|TOKEN)__/);
+  assert.doesNotMatch(source, /__TOKTRAK_(?:BASE_URL|TOKEN)__/u);
   const tracker = path.join(directory, "tracker-under-test.mjs");
   await writeFile(tracker, source);
   return { module: await import(`${pathToFileURL(tracker)}?test=${randomUUID()}`), tracker };
@@ -58,8 +58,12 @@ async function taskSettings(taskName) {
 async function waitFor(predicate, message) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
+    // oxlint-disable-next-line no-await-in-loop -- Each poll observes state after the prior delay.
     if (await predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // oxlint-disable-next-line no-await-in-loop -- Serial delay bounds the polling rate.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
   }
   assert.fail(message);
 }
@@ -90,16 +94,16 @@ test("given_schedulerInputs_when_renderingWindowsDefinition_then_emitsBoundedNat
   assert.ok(definition.length < 64 * 1_024);
   assert.deepEqual([...definition.subarray(0, 2)], [0xff, 0xfe]);
   assert.equal(definition.subarray(2).toString("utf16le"), document);
-  assert.match(document, /<StartBoundary>2020-01-01T09:00:00<\/StartBoundary>/);
-  assert.match(document, /<StartWhenAvailable>true<\/StartWhenAvailable>/);
-  assert.match(document, /<DisallowStartIfOnBatteries>false<\/DisallowStartIfOnBatteries>/);
-  assert.match(document, /<StopIfGoingOnBatteries>false<\/StopIfGoingOnBatteries>/);
-  assert.match(document, /<ExecutionTimeLimit>PT2H<\/ExecutionTimeLimit>/);
-  assert.match(document, /C:\\Node &amp; Runtime\\node.exe/);
-  assert.match(document, /C:\\Üser &amp; Co\\toktrak.mjs/);
-  assert.match(document, /C:\\Pi &amp; Sessions/);
-  assert.throws(() => tracker.windowsTaskXml('C:\\bad"path', scriptPath), /scheduler path is invalid/);
-  await assert.rejects(tracker.createWindowsTask("", nodePath, scriptPath), /scheduler task name is invalid/);
+  assert.match(document, /<StartBoundary>2020-01-01T09:00:00<\/StartBoundary>/u);
+  assert.match(document, /<StartWhenAvailable>true<\/StartWhenAvailable>/u);
+  assert.match(document, /<DisallowStartIfOnBatteries>false<\/DisallowStartIfOnBatteries>/u);
+  assert.match(document, /<StopIfGoingOnBatteries>false<\/StopIfGoingOnBatteries>/u);
+  assert.match(document, /<ExecutionTimeLimit>PT2H<\/ExecutionTimeLimit>/u);
+  assert.match(document, /C:\\Node &amp; Runtime\\node.exe/u);
+  assert.match(document, /C:\\Üser &amp; Co\\toktrak.mjs/u);
+  assert.match(document, /C:\\Pi &amp; Sessions/u);
+  assert.throws(() => tracker.windowsTaskXml('C:\\bad"path', scriptPath), /scheduler path is invalid/u);
+  await assert.rejects(tracker.createWindowsTask("", nodePath, scriptPath), /scheduler task name is invalid/u);
 });
 
 test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreservesFiles", {
@@ -157,7 +161,9 @@ test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreser
     StartBoundary: "2020-01-01T09:00:00",
     State: "Ready",
   });
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  await new Promise((resolve) => {
+    setTimeout(resolve, 1_000);
+  });
   assert.deepEqual(await lines(runLog), []);
 
   await command("schtasks.exe", ["/Run", "/TN", taskName]);

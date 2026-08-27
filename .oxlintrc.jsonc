@@ -1,0 +1,30 @@
+{
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "env": {
+    "node": true
+  },
+  "globals": {
+    "__TOKTRAK_BASE_URL__": "readonly",
+    "__TOKTRAK_TOKEN__": "readonly"
+  },
+  "rules": {
+    // Explicit control-character ranges enforce external-input boundaries.
+    "eslint/no-control-regex": "off",
+    "eslint/no-promise-executor-return": "error",
+    "eslint/no-undef": "error",
+    "eslint/require-unicode-regexp": "error",
+    "unicorn/explicit-length-check": "error",
+    // These arrays are newly created locally; copying them again is wasteful.
+    "unicorn/no-array-reverse": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/prefer-string-replace-all": "error"
+  },
+  "options": {
+    "maxWarnings": 0,
+    "reportUnusedDisableDirectives": "error"
+  }
+}

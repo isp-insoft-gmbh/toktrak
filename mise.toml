@@ -6,6 +6,7 @@ google-java-format = "1.36.1"
 hyperfine = "1.20.0"
 java = "temurin-26.0.2+10"
 node = "26.8.1"
+oxlint = "1.80.0"
 markdownlint-cli2 = "0.23.2"
 watchexec = "2.7.0"
 
@@ -22,9 +23,13 @@ run = ["dprint fmt", "java -ea tools/Build.java fmt"]
 hide = true
 run = ["dprint check", "markdownlint-cli2"]
 
+[tasks.tracker-lint]
+description = "Lint the tracker and tracker tests"
+run = "oxlint sources/toktrak/assets/private/tracker.mjs tests/tracker"
+
 [tasks.check]
-description = "Check Markdown, formatting, and compile/lint all Java modules"
-depends = ["markdown-check"]
+description = "Check Markdown, tracker JavaScript, and compile/lint all Java modules"
+depends = ["markdown-check", "tracker-lint"]
 run = "java -ea tools/Build.java check"
 
 [tasks.watch-check]
@@ -82,13 +87,13 @@ raw_args = true
 run = "java -ea tools/Build.java ide"
 
 [tasks.verify]
-description = "Check Markdown, compile/lint Java, and run the full test suite"
-depends = ["markdown-check"]
+description = "Check Markdown and code, then run the full test suite"
+depends = ["markdown-check", "tracker-lint"]
 run = "java -ea tools/Build.java verify"
 
 [tasks.ci]
-description = "Check Markdown, apply Refaster, require a clean tree, and verify"
-depends = ["markdown-check"]
+description = "Check Markdown and tracker JavaScript, apply Refaster, require a clean tree, and verify"
+depends = ["markdown-check", "tracker-lint"]
 run = "java -ea tools/Build.java ci"
 
 [tasks.dev]

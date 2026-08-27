@@ -54,13 +54,13 @@ const exec = promisify(execFile);
 function log(level, message) {
   const clean = String(message)
     .replaceAll(TOKEN, "[redacted]")
-    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replaceAll(/[\u0000-\u001f\u007f]/gu, " ")
     .slice(0, LOG_CHARACTERS_MAX);
   console.error(`[toktrak] ${level}: ${clean}`);
 }
 
 function requiredPath(value, name) {
-  if (!value || value.length > 4_096 || /[\u0000\r\n]/.test(value)) {
+  if (!value || value.length > 4_096 || /[\u0000\r\n]/u.test(value)) {
     throw new Error(`${name} is unavailable`);
   }
   return value;
@@ -82,7 +82,7 @@ function configHome() {
 }
 
 function quoted(value) {
-  if (/[\u0000\r\n]/.test(value)) throw new Error("scheduler path is invalid");
+  if (/[\u0000\r\n]/u.test(value)) throw new Error("scheduler path is invalid");
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
@@ -95,8 +95,8 @@ function xml(value) {
     .replaceAll("'", "&apos;");
 }
 
-export function linuxUnits(nodePath, scriptPath, piSessions) {
-  const fallback = piSessions ? ` --pi-path ${quoted(piSessions)}` : "";
+export function linuxUnits(nodePath, scriptPath, piSessionsPath) {
+  const fallback = piSessionsPath ? ` --pi-path ${quoted(piSessionsPath)}` : "";
   const command = `${quoted(nodePath)} ${quoted(scriptPath)} daily --scheduled${fallback}`;
   return {
     service: `[Unit]\nDescription=TokTrak usage uploader\n\n[Service]\nType=oneshot\nExecStart=${command}\n`,
@@ -105,8 +105,8 @@ export function linuxUnits(nodePath, scriptPath, piSessions) {
   };
 }
 
-export function macPlist(nodePath, scriptPath, piSessions) {
-  const fallback = piSessions ? `<string>--pi-path</string><string>${xml(piSessions)}</string>` : "";
+export function macPlist(nodePath, scriptPath, piSessionsPath) {
+  const fallback = piSessionsPath ? `<string>--pi-path</string><string>${xml(piSessionsPath)}</string>` : "";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -122,11 +122,11 @@ export function macPlist(nodePath, scriptPath, piSessions) {
 `;
 }
 
-export function windowsTaskXml(nodePath, scriptPath, piSessions) {
-  if (/["\r\n]/.test(nodePath) || /["\r\n]/.test(scriptPath) || (piSessions && /["\r\n]/.test(piSessions))) {
+export function windowsTaskXml(nodePath, scriptPath, piSessionsPath) {
+  if (/["\r\n]/u.test(nodePath) || /["\r\n]/u.test(scriptPath) || (piSessionsPath && /["\r\n]/u.test(piSessionsPath))) {
     throw new Error("scheduler path is invalid");
   }
-  const fallback = piSessions ? ` --pi-path "${piSessions}"` : "";
+  const fallback = piSessionsPath ? ` --pi-path "${piSessionsPath}"` : "";
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>TokTrak usage uploader</Description></RegistrationInfo>
@@ -155,8 +155,8 @@ export function windowsTaskXml(nodePath, scriptPath, piSessions) {
 `;
 }
 
-export function windowsTaskDefinition(nodePath, scriptPath, piSessions) {
-  return Buffer.from(`\ufeff${windowsTaskXml(nodePath, scriptPath, piSessions)}`, "utf16le");
+export function windowsTaskDefinition(nodePath, scriptPath, piSessionsPath) {
+  return Buffer.from(`\ufeff${windowsTaskXml(nodePath, scriptPath, piSessionsPath)}`, "utf16le");
 }
 
 function windowsSchedulerRevisionPath(scriptPath) {
@@ -193,15 +193,15 @@ async function nativeCommand(command, args, tolerateFailure = false) {
   }
 }
 
-export async function createWindowsTask(taskName, nodePath, scriptPath, piSessions) {
-  if (typeof taskName !== "string" || !taskName || taskName.length > 256 || /[\u0000\r\n]/.test(taskName)) {
+export async function createWindowsTask(taskName, nodePath, scriptPath, piSessionsPath) {
+  if (typeof taskName !== "string" || !taskName || taskName.length > 256 || /[\u0000\r\n]/u.test(taskName)) {
     throw new Error("scheduler task name is invalid");
   }
   const definition = path.join(tmpdir(), `toktrak-task.${process.pid}.${randomBytes(6).toString("hex")}.xml`);
   let handle;
   try {
     handle = await open(definition, "wx", 0o600);
-    await handle.writeFile(windowsTaskDefinition(nodePath, scriptPath, piSessions));
+    await handle.writeFile(windowsTaskDefinition(nodePath, scriptPath, piSessionsPath));
     await handle.sync();
     await handle.close();
     handle = undefined;
@@ -212,17 +212,17 @@ export async function createWindowsTask(taskName, nodePath, scriptPath, piSessio
   }
 }
 
-async function installScheduler(scriptPath, piSessions) {
+async function installScheduler(scriptPath, piSessionsPath) {
   if (process.platform === "win32") {
     log("info", `creating user scheduled task ${WINDOWS_TASK_NAME}`);
-    await createWindowsTask(WINDOWS_TASK_NAME, process.execPath, scriptPath, piSessions);
+    await createWindowsTask(WINDOWS_TASK_NAME, process.execPath, scriptPath, piSessionsPath);
     await atomicWrite(windowsSchedulerRevisionPath(scriptPath), Buffer.from(WINDOWS_SCHEDULER_REVISION));
     return;
   }
   if (process.platform === "darwin") {
     const plistPath = path.join(homedir(), "Library", "LaunchAgents", "de.isp-insoft.toktrak.plist");
     log("info", `creating user LaunchAgent at ${plistPath}`);
-    await atomicWrite(plistPath, Buffer.from(macPlist(process.execPath, scriptPath, piSessions)));
+    await atomicWrite(plistPath, Buffer.from(macPlist(process.execPath, scriptPath, piSessionsPath)));
     const domain = `gui/${process.getuid()}`;
     await nativeCommand("launchctl", ["bootout", domain, plistPath], true);
     await nativeCommand("launchctl", ["bootstrap", domain, plistPath]);
@@ -230,14 +230,14 @@ async function installScheduler(scriptPath, piSessions) {
   }
   const unitDirectory = path.join(configHome(), "systemd", "user");
   log("info", `creating systemd user timer in ${unitDirectory}`);
-  const units = linuxUnits(process.execPath, scriptPath, piSessions);
+  const units = linuxUnits(process.execPath, scriptPath, piSessionsPath);
   await atomicWrite(path.join(unitDirectory, "toktrak.service"), Buffer.from(units.service));
   await atomicWrite(path.join(unitDirectory, "toktrak.timer"), Buffer.from(units.timer));
   await nativeCommand("systemctl", ["--user", "daemon-reload"]);
   await nativeCommand("systemctl", ["--user", "enable", "--now", "toktrak.timer"]);
 }
 
-async function migrateWindowsScheduler(scriptPath, piSessions) {
+async function migrateWindowsScheduler(scriptPath, piSessionsPath) {
   if (process.platform !== "win32") return;
   try {
     if (path.resolve(scriptPath) !== path.resolve(installationPath())) return;
@@ -251,7 +251,7 @@ async function migrateWindowsScheduler(scriptPath, piSessions) {
     }
     if (revision?.toString("utf8") === WINDOWS_SCHEDULER_REVISION) return;
     log("info", "updating Windows scheduler definition");
-    await installScheduler(scriptPath, piSessions);
+    await installScheduler(scriptPath, piSessionsPath);
     log("info", "Windows scheduler definition updated");
   } catch (error) {
     log("warning", `Windows scheduler update failed: ${error?.message || "unknown error"}`);
@@ -286,6 +286,7 @@ async function readBounded(file, bytesMax) {
     const buffer = Buffer.alloc(bytesMax + 1);
     let length = 0;
     for (let reads = 0; reads <= bytesMax && length < buffer.length; reads++) {
+      // oxlint-disable-next-line no-await-in-loop -- Shared file position requires ordered reads.
       const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null);
       if (bytesRead === 0) return buffer.subarray(0, length);
       length += bytesRead;
@@ -298,7 +299,7 @@ async function readBounded(file, bytesMax) {
 }
 
 function configValue(value, name) {
-  if (typeof value !== "string" || !value || value.length > CONFIG_CHARACTERS_MAX || /[\u0000\r\n]/.test(value)) {
+  if (typeof value !== "string" || !value || value.length > CONFIG_CHARACTERS_MAX || /[\u0000\r\n]/u.test(value)) {
     throw new Error(`${name} is invalid`);
   }
   return value;
@@ -392,7 +393,7 @@ async function executeCcusage(commandArguments, full, environment, byAgent = fal
   };
   let stdout;
   if (process.platform === "win32") {
-    if (args.some((argument) => !/^[A-Za-z0-9@._+:/-]+$/.test(argument))) {
+    if (args.some((argument) => !/^[A-Za-z0-9@._+:/-]+$/u.test(argument))) {
       throw new Error("ccusage argument is invalid");
     }
     ({ stdout } = await exec(
@@ -449,7 +450,7 @@ function enrichSessionRows(sessionJson, sourceReports) {
     if (row.metadata?.projectPath) continue;
     const sourceRow = sourceRows.get(`${row.agent}\n${row.period}`);
     const projectPath = sourceRow && sourceProjectPath(sourceRow);
-    if (projectPath) row.metadata = { ...(row.metadata ?? {}), projectPath };
+    if (projectPath) row.metadata = { ...row.metadata, projectPath };
   }
 }
 
@@ -461,6 +462,7 @@ async function collectSourceReports(reports, full, environment) {
       const rowsName = report === "session" ? "sessions" : "daily";
       try {
         log("info", `reading ${source} ${report} detail with ccusage@${CCUSAGE_VERSION}`);
+        // oxlint-disable-next-line no-await-in-loop -- Serial execution bounds external processes.
         const json = await executeCcusage([source, report], full, environment);
         if (!json || !Array.isArray(json[rowsName])) {
           throw new Error(`${source} ${report} JSON is invalid`);
@@ -487,6 +489,7 @@ async function collectReports(full, fallback) {
   for (const report of REPORTS) {
     try {
       log("info", `reading ${report} usage with ccusage@${CCUSAGE_VERSION}`);
+      // oxlint-disable-next-line no-await-in-loop -- Serial execution avoids npm cache contention.
       const json = await ccusage(report, full, environment);
       reports[report] = { ok: true, json };
       log("info", `${report} usage ready (${json[report].length} rows)`);
@@ -531,7 +534,7 @@ function uploadBody(payload) {
   let body = JSON.stringify(payload);
   const sourceReports = payload.reports.sourceReports;
   const sources = sourceReports ? Object.keys(sourceReports).reverse() : [];
-  while (Buffer.byteLength(body) > UPLOAD_BYTES_MAX && sources.length) {
+  while (Buffer.byteLength(body) > UPLOAD_BYTES_MAX && sources.length > 0) {
     const source = sources.shift();
     delete sourceReports[source];
     log("warning", `omitting ${source} source report to fit upload limit`);
@@ -549,6 +552,7 @@ async function upload(payload) {
   let lastError;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
+      // oxlint-disable-next-line no-await-in-loop -- Retry attempts must never overlap.
       const { response } = await fetchBounded(
         `${BASE_URL}/api/usage`,
         {
@@ -580,7 +584,7 @@ async function update(target) {
   if (!response.ok) throw new Error(`update returned HTTP ${response.status}`);
   const expected = response.headers.get("x-toktrak-sha256");
   const actual = createHash("sha256").update(body).digest("hex");
-  if (!expected || !/^[0-9a-f]{64}$/.test(expected) || expected !== actual) {
+  if (!expected || !/^[0-9a-f]{64}$/u.test(expected) || expected !== actual) {
     throw new Error("update SHA-256 is invalid");
   }
   const current = createHash("sha256")
