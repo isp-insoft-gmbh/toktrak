@@ -25,7 +25,7 @@ final class FxServiceTest {
   @TempDir Path directory;
 
   @Test
-  void given_successThenFxFailure_when_refreshing_then_persistsAndRetainsLastGoodRate()
+  void given_redirectThenSuccessThenFxFailure_when_refreshing_then_persistsAndRetainsLastGoodRate()
       throws Exception {
     var fail = new AtomicBoolean();
     HttpServer server =
