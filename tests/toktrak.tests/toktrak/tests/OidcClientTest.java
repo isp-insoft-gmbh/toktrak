@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import toktrak.ClockSource;
@@ -287,6 +288,70 @@ final class OidcClientTest {
           () -> client.complete(callback, "code=valid&state=wrong", authorization.transaction()));
     } finally {
       provider.stop(0);
+    }
+  }
+
+  @Test
+  void given_mismatchedOidcIssuer_when_completingLogin_then_rejectsBeforeTokenExchange()
+      throws Exception {
+    var tokenRequests = new AtomicInteger();
+    var metadataIssuer = new AtomicReference<String>();
+    HttpServer discovery =
+        HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 16);
+    HttpServer claimedIssuer =
+        HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 16);
+    String discoveryOrigin = "http://127.0.0.1:" + discovery.getAddress().getPort();
+    String claimedOrigin = "http://127.0.0.1:" + claimedIssuer.getAddress().getPort();
+    metadataIssuer.set(discoveryOrigin + "/");
+    discovery.createContext(
+        "/.well-known/openid-configuration",
+        exchange -> {
+          String issuer = metadataIssuer.get();
+          String endpointOrigin =
+              issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
+          json(
+              exchange,
+              Json.write(
+                  Map.of(
+                      "issuer", issuer,
+                      "authorization_endpoint", endpointOrigin + "/authorize",
+                      "token_endpoint", endpointOrigin + "/token",
+                      "jwks_uri", endpointOrigin + "/jwks")));
+        });
+    claimedIssuer.createContext(
+        "/token",
+        exchange -> {
+          tokenRequests.incrementAndGet();
+          json(exchange, "{}");
+        });
+    discovery.start();
+    claimedIssuer.start();
+    try {
+      var client =
+          new OidcClient(
+              URI.create(discoveryOrigin + "/.well-known/openid-configuration"),
+              "client",
+              "secret",
+              "example.com",
+              ClockSource.fixed(NOW));
+      URI callback = URI.create("http://127.0.0.1/callback");
+      OidcClient.Authorization authorization = client.begin(callback);
+      metadataIssuer.set(claimedOrigin);
+
+      var failure =
+          assertThrows(
+              IllegalStateException.class,
+              () ->
+                  client.complete(
+                      callback,
+                      "code=valid&state=" + authorization.transaction().state(),
+                      authorization.transaction()));
+
+      assertEquals("OIDC discovery is invalid", failure.getMessage());
+      assertEquals(0, tokenRequests.get());
+    } finally {
+      discovery.stop(0);
+      claimedIssuer.stop(0);
     }
   }
 
