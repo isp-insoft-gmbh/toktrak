@@ -1,0 +1,38 @@
+name: Windows tracker integration
+
+on:
+  push:
+    branches: [trunk]
+    paths:
+      - sources/toktrak/assets/private/tracker.mjs
+      - tests/tracker/**
+      - mise.toml
+      - .github/workflows/tracker-windows.yml
+  pull_request:
+    branches: [trunk]
+    paths:
+      - sources/toktrak/assets/private/tracker.mjs
+      - tests/tracker/**
+      - mise.toml
+      - .github/workflows/tracker-windows.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tracker-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tracker:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          version: 2026.8.14
+          install_args: node
+          cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
+      - run: mise run tracker-test

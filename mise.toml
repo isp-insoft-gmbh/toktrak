@@ -48,6 +48,10 @@ description = "Run tests, optionally limited to test files or directories"
 raw_args = true
 run = "java -ea tools/Build.java test"
 
+[tasks.tracker-test]
+description = "Run tracker unit and native scheduler integration tests"
+run = 'node --test "tests/tracker/**/*.test.mjs"'
+
 [tasks.watch-test]
 description = "Rerun the full cached test suite when Java inputs change"
 run = "mise watch --restart --watch sources --watch tests --watch tools --watch vendored --watch mise.toml -- test"
