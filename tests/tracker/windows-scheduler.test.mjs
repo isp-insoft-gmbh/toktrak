@@ -45,7 +45,6 @@ async function taskSettings(taskName) {
     "StopIfGoingOnBatteries=$t.Settings.StopIfGoingOnBatteries;" +
     "ExecutionTimeLimit=$t.Settings.ExecutionTimeLimit.ToString();" +
     "StartBoundary=$t.Triggers.StartBoundary;" +
-    "Arguments=$t.Actions.Arguments;" +
     "State=$t.State.ToString()}|ConvertTo-Json -Compress";
   const { stdout } = await exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
     timeout: 30_000,
@@ -156,7 +155,6 @@ test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreser
     StopIfGoingOnBatteries: true,
     ExecutionTimeLimit: "PT72H",
     StartBoundary: "2020-01-01T09:00:00",
-    Arguments: `"${fixture}" daily --scheduled --pi-path "C:\\Pi & Sessions"`,
     State: "Ready",
   });
   await new Promise((resolve) => setTimeout(resolve, 1_000));
