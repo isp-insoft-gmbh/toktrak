@@ -106,6 +106,32 @@ test("given_schedulerInputs_when_renderingWindowsDefinition_then_emitsBoundedNat
   await assert.rejects(tracker.createWindowsTask("", nodePath, scriptPath), /scheduler task name is invalid/u);
 });
 
+test("given_schedulerInputs_when_renderingPortableDefinitions_then_quotesAndEscapesPaths", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "toktrak-scheduler-test-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const { module: tracker } = await renderedTracker(directory);
+
+  const linux = tracker.linuxUnits("/opt/Node & Runtime/node", '/home/O"Connor/toktrak.mjs', "/home/pi sessions");
+  assert.equal(
+    linux.service,
+    `[Unit]\nDescription=TokTrak usage uploader\n\n[Service]\nType=oneshot\nExecStart="/opt/Node & Runtime/node" "/home/O\\"Connor/toktrak.mjs" daily --scheduled --pi-path "/home/pi sessions"\n`,
+  );
+  assert.equal(
+    linux.timer,
+    "[Unit]\nDescription=Upload TokTrak usage daily\n\n[Timer]\nOnCalendar=daily\nRandomizedDelaySec=30m\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
+  );
+  assert.throws(() => tracker.linuxUnits("/node\0path", "/tracker"), /scheduler path is invalid/u);
+
+  const mac = tracker.macPlist(
+    "/Applications/Node & <Runtime>/node",
+    `/Users/O'Connor/"tracker".mjs`,
+    "/Users/Pi & Sessions",
+  );
+  assert.match(mac, /<string>\/Applications\/Node &amp; &lt;Runtime&gt;\/node<\/string>/u);
+  assert.match(mac, /<string>\/Users\/O&apos;Connor\/&quot;tracker&quot;\.mjs<\/string>/u);
+  assert.match(mac, /<string>--pi-path<\/string><string>\/Users\/Pi &amp; Sessions<\/string>/u);
+});
+
 test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreservesFiles", {
   skip: process.platform !== "win32",
   timeout: 45_000,
