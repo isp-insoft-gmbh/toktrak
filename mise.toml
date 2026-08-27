@@ -3,7 +3,7 @@ dprint = "0.56.0"
 google-java-format = "1.36.1"
 hyperfine = "1.20.0"
 java = "temurin-26.0.2+10"
-node = "26.7.0"
+node = "26.8.1"
 markdownlint-cli2 = "0.23.2"
 watchexec = "2.5.1"
 
