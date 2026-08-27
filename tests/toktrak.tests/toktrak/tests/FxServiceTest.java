@@ -25,13 +25,20 @@ final class FxServiceTest {
   @TempDir Path directory;
 
   @Test
-  void given_successThenFxFailure_when_refreshing_then_persistsAndRetainsLastGoodRate()
+  void given_redirectThenSuccessThenFxFailure_when_refreshing_then_persistsAndRetainsLastGoodRate()
       throws Exception {
     var fail = new AtomicBoolean();
     HttpServer server =
         HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 8);
     server.createContext(
         "/latest",
+        exchange -> {
+          exchange.getResponseHeaders().set("Location", "/v1/latest");
+          exchange.sendResponseHeaders(301, -1);
+          exchange.close();
+        });
+    server.createContext(
+        "/v1/latest",
         exchange -> {
           byte[] body =
               (fail.get() ? "unavailable" : "{\"date\":\"2026-07-14\",\"rates\":{\"EUR\":0.92}}")

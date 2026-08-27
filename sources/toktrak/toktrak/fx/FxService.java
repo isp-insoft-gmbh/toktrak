@@ -1,7 +1,6 @@
 package toktrak.fx;
 
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Executors;
@@ -15,7 +14,7 @@ import toktrak.store.Writer;
 public final class FxService implements AutoCloseable {
   private static final Logger LOG = Logger.getLogger(FxService.class.getName());
   private static final URI ENDPOINT =
-      URI.create("https://api.frankfurter.app/latest?from=USD&to=EUR");
+      URI.create("https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR");
   private static final Duration INITIAL_DELAY = Duration.ofMinutes(1);
   private static final Duration INTERVAL = Duration.ofHours(24);
   private final ScheduledExecutorService executor;
@@ -38,8 +37,7 @@ public final class FxService implements AutoCloseable {
   }
 
   public static FxService start(Writer writer) {
-    var http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-    return new FxService(writer, new FxClient(http, ENDPOINT), INITIAL_DELAY, INTERVAL);
+    return new FxService(writer, new FxClient(ENDPOINT), INITIAL_DELAY, INTERVAL);
   }
 
   public static FxService start(

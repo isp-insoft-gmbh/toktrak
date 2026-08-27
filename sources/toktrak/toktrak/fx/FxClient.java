@@ -22,13 +22,11 @@ public final class FxClient {
   private final URI uri;
 
   public FxClient(URI uri) {
-    this(
-        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build(),
-        Objects.requireNonNull(uri, "uri"));
-  }
-
-  FxClient(HttpClient client, URI uri) {
-    this.client = Objects.requireNonNull(client, "client");
+    this.client =
+        HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
     this.uri = Objects.requireNonNull(uri, "uri");
   }
 
