@@ -102,6 +102,8 @@ public final class BuildTest {
     given_dirtyOrDivergedTree_when_checkingRelease_then_rejectsPreflight();
     given_changelogSections_when_checkingRelease_then_requiresExactNonemptySection();
     given_podmanImageIds_when_canonicalizing_then_acceptsOnlySha256();
+    given_containerBuilderImages_when_validatingJavaFeature_then_requiresDigestPinnedParity();
+    given_linkedJavaProperties_when_requiringParity_then_ignoresOnlyVendorMetadata();
     given_imageRepositoryConfig_when_validating_then_acceptsCanonicalRepositories();
     given_productionRuntime_when_selectingRoots_then_includesManagementAndDiagnostics();
     given_controlledGitAndPodman_when_runningReleaseMutations_then_preservesOrderAndRedactsFailure();
@@ -254,7 +256,8 @@ public final class BuildTest {
           List.of(root.resolve("deps/main.jar")),
           List.of(root.resolve("deps/test.jar")),
           List.of(root.resolve("deps/snapshot.jar")),
-          root.resolve("deps/error_prone_refaster-2.50.0.jar"));
+          root.resolve("deps/error_prone_refaster-2.50.0.jar"),
+          27);
 
       var parser = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder();
       for (String project : List.of("toktrak", "toktrak.tests", "toktrak.build", "toktrak.perf")) {
@@ -291,7 +294,7 @@ public final class BuildTest {
               "name=\"module\" value=\"true\"",
               "name=\"test\" value=\"true\"",
               "name=\"add-exports\"",
-              "JavaSE-26",
+              "JavaSE-27",
               "kind=\"output\" path=\"bin/default\"",
               "src/tools",
               "test/tools",
@@ -364,7 +367,8 @@ public final class BuildTest {
           List.of(root.resolve("deps/main.jar")),
           List.of(root.resolve("deps/test.jar")),
           List.of(root.resolve("deps/snapshot.jar")),
-          root.resolve("deps/error_prone_refaster-2.50.0.jar"));
+          root.resolve("deps/error_prone_refaster-2.50.0.jar"),
+          27);
 
       var parser = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder();
       for (String file :
@@ -392,7 +396,9 @@ public final class BuildTest {
               "toktrak.tests.iml",
               "toktrak.build.iml",
               "toktrak.perf.iml",
-              "languageLevel=\"JDK_26\"",
+              "languageLevel=\"JDK_27\"",
+              "project-jdk-name=\"27\"",
+              "target=\"27\"",
               "isTestSource=\"true\"",
               "packagePrefix=\"tools\"",
               "scope=\"TEST\"",
@@ -1432,6 +1438,51 @@ public final class BuildTest {
     expectFailure(
         () -> Build.canonicalImageIdForTest("sha512:" + digest),
         "Podman returned invalid image ID");
+  }
+
+  private static void
+      given_containerBuilderImages_when_validatingJavaFeature_then_requiresDigestPinnedParity()
+          throws Exception {
+    String digest = "a".repeat(64);
+    Build.requireContainerJavaFeatureForTest(
+        "FROM registry.example/acme/jdk:26-jdk@sha256:" + digest + " AS build\n", 26);
+    Build.requireContainerJavaFeatureForTest(
+        Files.readString(Path.of("Containerfile")), Runtime.version().feature());
+    expectFailure(
+        () ->
+            Build.requireContainerJavaFeatureForTest(
+                "FROM registry.example/acme/jdk:27-jdk@sha256:" + digest + " AS build\n", 26),
+        "builder uses Java 27 but the build uses Java 26");
+    expectFailure(
+        () ->
+            Build.requireContainerJavaFeatureForTest(
+                "FROM registry.example/acme/jdk:26-jdk AS build\n", 26),
+        "feature-tagged, digest-pinned JDK image");
+  }
+
+  private static void
+      given_linkedJavaProperties_when_requiringParity_then_ignoresOnlyVendorMetadata() {
+    Runtime.Version expected = Runtime.Version.parse("26.0.2+10");
+    Build.requireJavaRuntimeParityForTest(
+        expected, "Property settings:\n    java.runtime.version = 26.0.2+10-LTS\n");
+    for (String version : List.of("27.0.2+10", "26.0.3+10", "26.0.2+11", "26.0.2-ea+10")) {
+      expectFailure(
+          () ->
+              Build.requireJavaRuntimeParityForTest(
+                  expected, "    java.runtime.version = " + version + "\n"),
+          "differs from build Java runtime");
+    }
+    expectFailure(
+        () -> Build.requireJavaRuntimeParityForTest(expected, "java.vendor = Eclipse Adoptium\n"),
+        "runtime version is missing");
+    expectFailure(
+        () ->
+            Build.requireJavaRuntimeParityForTest(
+                expected, "java.runtime.version = 26.0.2+10\njava.runtime.version = 26.0.2+10\n"),
+        "runtime version is duplicated");
+    expectFailure(
+        () -> Build.requireJavaRuntimeParityForTest(expected, "java.runtime.version = invalid\n"),
+        "runtime version is invalid");
   }
 
   private static void

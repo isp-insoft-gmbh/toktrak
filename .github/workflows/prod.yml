@@ -11,6 +11,14 @@ on:
       - sources/**
       - tools/**
       - vendored/**
+  pull_request:
+    branches: [trunk]
+    paths:
+      - .containerignore
+      - .github/workflows/prod.yml
+      - Containerfile
+      - mise.toml
+      - tools/**
   workflow_dispatch:
 
 permissions:

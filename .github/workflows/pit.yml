@@ -25,13 +25,13 @@ jobs:
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: output/pit.history
-          key: pit-history-v1-${{ runner.os }}-java26-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: pit-history-v1-${{ runner.os }}-java26-
+          key: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml') }}-
       - run: mise run pit --history
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: output/pit.history
-          key: pit-history-v1-${{ runner.os }}-java26-${{ github.run_id }}-${{ github.run_attempt }}
+          key: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
       - if: always()
         run: |
           {

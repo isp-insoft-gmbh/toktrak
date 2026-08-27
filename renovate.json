@@ -1,6 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "matchDatasources": ["docker", "java-version"],
+      "matchPackageNames": ["java", "/(^|\\/)eclipse-temurin$/"],
+      "groupName": "Java toolchain",
+      "groupSlug": "java-toolchain"
+    }
+  ],
   "customManagers": [
     {
       "customType": "regex",
