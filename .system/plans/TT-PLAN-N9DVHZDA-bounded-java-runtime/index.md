@@ -3,7 +3,7 @@ id: TT-PLAN-N9DVHZDA
 type: plan
 title: Implement bounded Java runtime and build
 spec: TT-SPEC-VIFHAULH
-status: done
+status: approved
 ---
 
 Implemented in three independently verified batches.

@@ -3,7 +3,7 @@ id: TT-PLAN-KDGP7NFZ
 type: plan
 title: Implement runtime assets
 spec: TT-SPEC-ZWZWS6FD
-status: done
+status: approved
 ---
 
 1. Test and implement sorted source discovery, path/size/format/SVG validation,

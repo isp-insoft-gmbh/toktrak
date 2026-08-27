@@ -4,7 +4,6 @@ type: issue
 title: Protect golem secrets with a GitHub Environment
 specs:
   - TT-SPEC-TGXDSNMR
-status: open
 ---
 
 ## Symptom

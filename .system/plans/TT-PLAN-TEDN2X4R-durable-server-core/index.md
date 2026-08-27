@@ -3,8 +3,7 @@ id: TT-PLAN-TEDN2X4R
 type: plan
 title: Implement durable server core
 spec: TT-SPEC-IXJLYK_K
-phase: TT-PHASE-ISPBZAQB
-status: done
+status: approved
 ---
 
 1. Establish Java/JPMS dependency resolution, compilation, tests, and linked

@@ -3,7 +3,7 @@ id: TT-PLAN-QVM2I2EI
 type: plan
 title: Forward PIT options safely
 spec: TT-SPEC-IMJTN1JO
-status: done
+status: approved
 ---
 
 1. Test raw forwarding, mandatory source separator, reserved options, injection,

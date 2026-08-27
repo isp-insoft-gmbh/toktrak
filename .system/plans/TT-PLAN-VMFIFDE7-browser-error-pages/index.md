@@ -3,7 +3,7 @@ id: TT-PLAN-VMFIFDE7
 type: plan
 title: Implement browser error pages
 spec: TT-SPEC-VO3HZX3S
-status: done
+status: approved
 ---
 
 1. Add renderer tests for bounded fields/documents, escaping, production/debug

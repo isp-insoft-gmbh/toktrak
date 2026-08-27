@@ -4,7 +4,6 @@ type: issue
 title: Clarify one-time token handling
 specs:
   - TT-SPEC-IXJLYK_K
-status: done
 ---
 
 ## Symptom

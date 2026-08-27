@@ -4,7 +4,6 @@ type: issue
 title: Make generated build artifacts transactional
 specs:
   - TT-SPEC-IXJLYK_K
-status: done
 ---
 
 ## Symptom

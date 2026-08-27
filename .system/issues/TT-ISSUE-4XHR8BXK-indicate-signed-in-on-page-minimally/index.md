@@ -3,7 +3,6 @@ id: TT-ISSUE-4XHR8BXK
 type: issue
 title: Indicate signed-in state on home page
 specs: []
-status: done
 ---
 
 ## Symptom

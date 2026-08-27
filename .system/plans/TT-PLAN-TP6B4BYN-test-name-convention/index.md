@@ -3,7 +3,7 @@ id: TT-PLAN-TP6B4BYN
 type: plan
 title: Enforce test names
 spec: TT-SPEC-MZHI0SAP
-status: done
+status: approved
 ---
 
 1. Record why Refaster cannot safely rename method symbols and call sites.

@@ -3,8 +3,7 @@ id: TT-PLAN-3Q6A7MPP
 type: plan
 title: Implement JStachio templating, critique revision
 spec: TT-SPEC-GUMOSCIP
-phase: TT-PHASE-H0TZ1VHT
-status: done
+status: approved
 ---
 
 This plan supersedes `TT-PLAN-AJUX9158` after its blocking critique.

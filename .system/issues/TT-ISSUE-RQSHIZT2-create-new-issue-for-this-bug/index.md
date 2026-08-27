@@ -4,7 +4,6 @@ type: issue
 title: Dashboard live updates blocked by CSP
 specs:
   - TT-SPEC-IXJLYK_K
-status: done
 ---
 
 ## Symptom

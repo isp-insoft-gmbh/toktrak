@@ -3,7 +3,7 @@ id: TT-PLAN-ZDETCCDD
 type: plan
 title: Implement PIT mutation testing
 spec: TT-SPEC-IMJTN1JO
-status: done
+status: approved
 ---
 
 1. Test source-to-class selection, dependency integrity, fixed arguments,

@@ -4,7 +4,6 @@ type: issue
 title: Format templates and share the base layout
 specs:
   - TT-SPEC-GUMOSCIP
-status: done
 ---
 
 ## Symptoms
