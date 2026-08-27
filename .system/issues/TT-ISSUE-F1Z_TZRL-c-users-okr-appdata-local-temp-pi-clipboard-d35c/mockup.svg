@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="800" viewBox="0 0 1100 800" role="img" aria-labelledby="title description">
+  <title id="title">Accepted tracker token warning placement</title>
+  <desc id="description">A one-time display warning appears directly below the token. A secret storage note appears directly below the installer download.</desc>
+  <rect width="1100" height="800" fill="#f1f0ff"/>
+
+  <g fill="#0b0909">
+    <text x="70" y="105" font-family="Impact, Arial Black, sans-serif" font-size="92" font-weight="900" letter-spacing="-3">TRACKER TOKEN</text>
+    <text x="70" y="190" font-family="Impact, Arial Black, sans-serif" font-size="92" font-weight="900" letter-spacing="-3">CREATED</text>
+  </g>
+
+  <rect x="70" y="225" width="755" height="58" fill="#ffffff" stroke="#0b0909" stroke-width="3"/>
+  <text x="88" y="261" fill="#0b0909" font-family="Consolas, monospace" font-size="16">tt_•••••••••••••••••••••••••••••••••••••••</text>
+  <rect x="825" y="225" width="205" height="58" fill="#0b0909" stroke="#0b0909" stroke-width="3"/>
+  <text x="927.5" y="260" fill="#ffffff" font-family="Consolas, monospace" font-size="16" font-weight="700" text-anchor="middle">Copy token</text>
+
+  <rect x="70" y="293" width="555" height="46" fill="#ffd78f"/>
+  <rect x="70" y="293" width="5" height="46" fill="#0b0909"/>
+  <text x="89" y="322" fill="#0b0909" font-family="Consolas, monospace" font-size="16" font-weight="700">⚠ Copy it now. This token will never be shown again.</text>
+
+  <rect x="70" y="375" width="960" height="340" fill="#ffffff" stroke="#0b0909" stroke-width="3"/>
+  <text x="88" y="425" fill="#0b0909" font-family="Consolas, monospace" font-size="30" font-weight="700">3. INSTALL TRACKER</text>
+
+  <rect x="88" y="455" width="255" height="56" fill="#0b0909"/>
+  <text x="215.5" y="490" fill="#ffffff" font-family="Consolas, monospace" font-size="16" font-weight="700" text-anchor="middle">Download toktrak.mjs</text>
+
+  <rect x="88" y="521" width="555" height="46" fill="#ffd78f"/>
+  <rect x="88" y="521" width="5" height="46" fill="#0b0909"/>
+  <text x="107" y="550" fill="#0b0909" font-family="Consolas, monospace" font-size="16"><tspan font-weight="700">Secret storage:</tspan><tspan> This personalized installer contains your token.</tspan></text>
+
+  <rect x="88" y="592" width="5" height="64" fill="#0b0909"/>
+  <text x="107" y="615" fill="#0b0909" font-family="Consolas, monospace" font-size="15" font-weight="700">WINDOWS</text>
+  <text x="107" y="645" fill="#0b0909" font-family="Consolas, monospace" font-size="16">node .\toktrak.mjs</text>
+
+  <text x="88" y="687" fill="#0b0909" font-family="Consolas, monospace" font-size="15">The installer creates one daily user job and uploads existing usage.</text>
+  <text x="88" y="708" fill="#0b0909" font-family="Consolas, monospace" font-size="15">It never needs administrator or root access.</text>
+</svg>

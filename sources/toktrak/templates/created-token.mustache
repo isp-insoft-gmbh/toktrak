@@ -2,18 +2,16 @@
 {{$content}}
   <div class="scope-page tracker-page">
     <h1>Tracker token created</h1>
-    <div class="warning" role="alert">
-      <strong>Secret:</strong>
-      <span>Download the installer now. It contains your token and this page cannot be reopened.</span>
-    </div>
     <div class="token-copy">
       <pre id="tracker-token" class="token-secret">{{plaintext}}</pre>
       <button type="button" data-copy-token aria-controls="tracker-token">Copy token</button>
     </div>
+    <p class="secret-note token-warning" role="alert">Copy it now. This token will never be shown again.</p>
     <section class="tracker-panel" aria-labelledby="download-heading">
       <h2 id="download-heading">3. Install tracker</h2>
       <textarea id="tracker-script" hidden>{{script}}</textarea>
       <button type="button" data-download-tracker data-sha256="{{scriptSha256}}" aria-controls="tracker-script">Download toktrak.mjs</button>
+      <p class="secret-note installer-secret"><strong>Secret storage:</strong> This personalized installer contains your token.</p>
       <p data-platform-status>After downloading, run the command for your platform:</p>
       <div class="platform-instructions" data-platform="win32">
         <h3>Windows</h3>
