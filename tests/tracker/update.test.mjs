@@ -66,7 +66,13 @@ test("given_trackerUpdateResponses_when_runningFullUpload_then_replacesOnlyVerif
   let updateHash;
   let usageRequests = 0;
   let updateRequests = 0;
+  let redirectedRequests = 0;
+  let redirectLocation;
   let serverFailure;
+  const redirected = createServer((_, response) => {
+    redirectedRequests++;
+    response.end("unexpected redirect");
+  });
   const server = createServer(async (request, response) => {
     try {
       let requestBytes = 0;
@@ -82,6 +88,11 @@ test("given_trackerUpdateResponses_when_runningFullUpload_then_replacesOnlyVerif
       }
       assert.equal(request.url, "/api/tracker");
       updateRequests++;
+      if (redirectLocation) {
+        response.writeHead(307, { Location: redirectLocation });
+        response.end();
+        return;
+      }
       response.setHeader("X-TokTrak-SHA256", updateHash);
       response.end(updateBody);
     } catch (error) {
@@ -90,22 +101,34 @@ test("given_trackerUpdateResponses_when_runningFullUpload_then_replacesOnlyVerif
       response.end("test server failed");
     }
   });
-  await new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
-  });
+  await Promise.all(
+    [server, redirected].map(
+      (current) =>
+        new Promise((resolve) => {
+          current.listen(0, "127.0.0.1", resolve);
+        }),
+    ),
+  );
   context.after(async () => {
-    await new Promise((resolve, reject) => {
-      server.close((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
+    await Promise.all(
+      [server, redirected].map(
+        (current) =>
+          new Promise((resolve, reject) => {
+            current.close((error) => {
+              if (error) reject(error);
+              else resolve();
+            });
+          }),
+      ),
+    );
     await rm(directory, { recursive: true, force: true });
   });
 
   const template = await readFile(TRACKER_SOURCE, "utf8");
   const address = server.address();
+  const redirectedAddress = redirected.address();
   assert(address && typeof address === "object");
+  assert(redirectedAddress && typeof redirectedAddress === "object");
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const original = renderTracker(template, baseUrl);
   const replacement = Buffer.concat([original, Buffer.from("\n// verified replacement\n")]);
@@ -134,7 +157,13 @@ test("given_trackerUpdateResponses_when_runningFullUpload_then_replacesOnlyVerif
   assert.match(output, /self-update failed: response is too large/u);
   assert.deepEqual(await readFile(target), original);
 
-  assert.equal(usageRequests, 4);
-  assert.equal(updateRequests, 4);
+  redirectLocation = `http://127.0.0.1:${redirectedAddress.port}/replacement`;
+  output = await runTracker(target, commandDirectory, piDirectory);
+  assert.match(output, /self-update failed/u);
+  assert.deepEqual(await readFile(target), original);
+
+  assert.equal(usageRequests, 5);
+  assert.equal(updateRequests, 5);
+  assert.equal(redirectedRequests, 0);
   assert.equal(serverFailure, undefined);
 });

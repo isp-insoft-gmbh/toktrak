@@ -54,6 +54,7 @@ public final class App implements AutoCloseable {
   private Writer writer;
   private Projection projection;
   private FxService fxService;
+  private boolean serverStarted;
   private int port;
   private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -117,6 +118,7 @@ public final class App implements AutoCloseable {
         new Router(health, config.devAuth(), executor, assets, auth, usage, projection, baseUri));
     server.setExecutor(Runnable::run);
     server.start();
+    serverStarted = true;
     if (!config.devAuth()) fxService = FxService.start(writer);
     port = server.getAddress().getPort();
     if (port < 0 || port > 65_535)
@@ -212,7 +214,7 @@ public final class App implements AutoCloseable {
   public void close() {
     if (!closed.compareAndSet(false, true)) return;
     try {
-      if (server != null) server.stop(5);
+      if (server != null) server.stop(serverStarted ? 5 : 0);
     } finally {
       closeExecutorAndStorage();
     }

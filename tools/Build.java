@@ -186,6 +186,7 @@ public final class Build {
   private static final Duration UNIT_TEST_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration PROCESS_KILL_TIMEOUT = Duration.ofSeconds(5);
   private static final int PIT_THREADS = 4;
+  private static final int PIT_MUTATION_UNIT_SIZE = 50;
   private static final int PIT_TIMEOUT_MILLIS = 10_000;
   private static final long COVERAGE_INSTRUCTION_PERCENT_MIN = 80;
   private static final long COVERAGE_BRANCH_PERCENT_MIN = 65;
@@ -238,6 +239,7 @@ public final class Build {
           "--outputFormats",
           "--timestampedReports",
           "--threads",
+          "--mutationUnitSize",
           "--timeoutConst",
           "--jvmArgs",
           "--failWhenNoMutations",
@@ -817,6 +819,8 @@ public final class Build {
                 "false",
                 "--threads",
                 Integer.toString(PIT_THREADS),
+                "--mutationUnitSize",
+                Integer.toString(PIT_MUTATION_UNIT_SIZE),
                 "--timeoutConst",
                 Integer.toString(PIT_TIMEOUT_MILLIS),
                 "--jvmArgs",

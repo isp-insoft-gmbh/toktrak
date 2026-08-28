@@ -183,12 +183,59 @@ final class AssetsTest {
   }
 
   @Test
-  void given_invalidIndexEncodingAndSize_when_loadingAssets_then_rejectsIndex() {
+  void given_exactAssetBounds_when_loadingAssets_then_acceptsLimitsAndRejectsExcess()
+      throws Exception {
+    assertEquals(
+        0,
+        Assets.loadForTest("toktrak-assets-v1\n".getBytes(StandardCharsets.UTF_8), Map.of())
+            .publicCount());
+
+    byte[] empty = new byte[0];
+    var countIndex = new StringBuilder("toktrak-assets-v1\n");
+    var countResources = new LinkedHashMap<String, byte[]>();
+    for (int asset = 0; asset < 64; asset++) {
+      String name = "asset-%02d.css".formatted(asset);
+      countIndex.append(record("public", name, CSS_MEDIA_TYPE, empty));
+      countResources.put("assets/public/" + name, empty);
+    }
+    assertEquals(
+        64,
+        Assets.loadForTest(countIndex.toString().getBytes(StandardCharsets.UTF_8), countResources)
+            .publicCount());
+
+    byte[] maximumAsset = new byte[4 * 1024 * 1024];
+    var totalIndex = new StringBuilder("toktrak-assets-v1\n");
+    var totalResources = new LinkedHashMap<String, byte[]>();
+    for (String name : List.of("a.css", "b.css", "c.css", "d.css")) {
+      totalIndex.append(record("public", name, CSS_MEDIA_TYPE, maximumAsset));
+      totalResources.put("assets/public/" + name, maximumAsset);
+    }
+    assertEquals(
+        4,
+        Assets.loadForTest(totalIndex.toString().getBytes(StandardCharsets.UTF_8), totalResources)
+            .publicCount());
+
+    String prefix = "toktrak-assets-v1\npublic\t";
+    String suffix = "\t0\t" + CSS_MEDIA_TYPE + "\t" + sha256(empty) + "\n";
+    String exactPath = "a".repeat(64 * 1024 - prefix.length() - suffix.length() - 4) + ".css";
+    byte[] exactIndex = (prefix + exactPath + suffix).getBytes(StandardCharsets.UTF_8);
+    assertEquals(64 * 1024, exactIndex.length);
+    assertEquals(
+        1,
+        Assets.loadForTest(exactIndex, Map.of("assets/public/" + exactPath, empty)).publicCount());
+
+    assertThrows(
+        IllegalStateException.class, () -> Assets.loadForTest(new byte[64 * 1024 + 1], Map.of()));
+    assertCorrupt("\ufeff", Map.of(), "runtime asset index must not contain a BOM");
+    assertCorrupt(
+        "\rtoktrak-assets-v1\n", Map.of(), "runtime asset index must use LF line endings");
+  }
+
+  @Test
+  void given_invalidIndexEncoding_when_loadingAssets_then_rejectsIndex() {
     assertThrows(
         IllegalStateException.class,
         () -> Assets.loadForTest(HexFormat.of().parseHex("c3"), Map.of()));
-    assertThrows(
-        IllegalStateException.class, () -> Assets.loadForTest(new byte[1024 * 1024 + 1], Map.of()));
   }
 
   @Test
@@ -252,18 +299,22 @@ final class AssetsTest {
 
   private static byte[] index(String scope, String path, String mediaType, byte[] bytes)
       throws Exception {
-    return ("toktrak-assets-v1\n"
-            + scope
-            + "\t"
-            + path
-            + "\t"
-            + bytes.length
-            + "\t"
-            + mediaType
-            + "\t"
-            + sha256(bytes)
-            + "\n")
+    return ("toktrak-assets-v1\n" + record(scope, path, mediaType, bytes))
         .getBytes(StandardCharsets.UTF_8);
+  }
+
+  private static String record(String scope, String path, String mediaType, byte[] bytes)
+      throws Exception {
+    return scope
+        + "\t"
+        + path
+        + "\t"
+        + bytes.length
+        + "\t"
+        + mediaType
+        + "\t"
+        + sha256(bytes)
+        + "\n";
   }
 
   private static void assertCorrupt(

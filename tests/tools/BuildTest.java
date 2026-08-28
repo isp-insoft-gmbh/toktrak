@@ -550,6 +550,9 @@ public final class BuildTest {
         () -> Build.pitSelectionForTest(List.of("--targetClasses=other.*")),
         "Build owns PIT option: --targetClasses");
     expectFailure(
+        () -> Build.pitSelectionForTest(List.of("--mutationUnitSize=25")),
+        "Build owns PIT option: --mutationUnitSize");
+    expectFailure(
         () -> Build.pitSelectionForTest(List.of("--dryRun", "true", "--dryRun=false")),
         "duplicate --dryRun");
     expectFailure(
@@ -588,6 +591,8 @@ public final class BuildTest {
             "toktrak.tests.SnapshotTest",
             "--threads",
             "4",
+            "--mutationUnitSize",
+            "50",
             "--timeoutConst",
             "10000",
             "-ea,-Djunit.jupiter.execution.timeout.default=5s,-Djunit.platform.execution.listeners.deactivate=com.diffplug.selfie.*",
