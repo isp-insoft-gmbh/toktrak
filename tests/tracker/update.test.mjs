@@ -37,6 +37,9 @@ async function writeFakeNpx(commandDirectory) {
 }
 
 async function runTracker(tracker, commandDirectory, piDirectory) {
+  const bootstrap = path.join(commandDirectory, "runtime-bootstrap.mjs");
+  const scheduledNode = path.join(commandDirectory, path.basename(process.execPath));
+  await writeFile(bootstrap, `process.execPath = ${JSON.stringify(scheduledNode)};\n`);
   const environment = {
     ...process.env,
     PATH: `${commandDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
@@ -44,7 +47,7 @@ async function runTracker(tracker, commandDirectory, piDirectory) {
   };
   delete environment.PI_AGENT_DIR;
   delete environment.PI_CODING_AGENT_SESSION_DIR;
-  const { stderr } = await exec(process.execPath, [tracker, "full"], {
+  const { stderr } = await exec(process.execPath, ["--import", bootstrap, tracker, "full"], {
     env: environment,
     timeout: 30_000,
     maxBuffer: 64 * 1_024,
