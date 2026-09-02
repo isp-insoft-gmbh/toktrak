@@ -364,6 +364,10 @@ async function piSessions(fallback) {
 
 async function ccusageEnvironment(fallback) {
   const environment = { ...process.env, LOG_LEVEL: "0", NO_COLOR: "1" };
+  // Native schedulers retain the absolute Node command but often omit its directory from PATH.
+  const pathName = Object.keys(environment).find((name) => name.toUpperCase() === "PATH") ?? "PATH";
+  const inheritedPath = environment[pathName];
+  environment[pathName] = path.dirname(process.execPath) + (inheritedPath ? path.delimiter + inheritedPath : "");
   const sessions = await piSessions(fallback);
   if (sessions) {
     environment.PI_AGENT_DIR = sessions.value;

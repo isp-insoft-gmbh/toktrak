@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
@@ -59,6 +60,9 @@ async function writeFakeNpx(commandDirectory) {
 }
 
 async function runTracker(tracker, commandDirectory, commandLog, piLog, piAgent, partial, mode, sessionDirectory) {
+  const bootstrap = path.join(commandDirectory, "runtime-bootstrap.mjs");
+  const scheduledNode = path.join(commandDirectory, path.basename(process.execPath));
+  await writeFile(bootstrap, `process.execPath = ${JSON.stringify(scheduledNode)};\n`);
   const environment = {
     ...process.env,
     PATH: `${commandDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
@@ -70,12 +74,16 @@ async function runTracker(tracker, commandDirectory, commandLog, piLog, piAgent,
   delete environment.PI_AGENT_DIR;
   if (sessionDirectory === undefined) delete environment.PI_CODING_AGENT_SESSION_DIR;
   else environment.PI_CODING_AGENT_SESSION_DIR = sessionDirectory;
-  const { stdout, stderr } = await exec(process.execPath, [tracker, mode], {
-    env: environment,
-    timeout: 30_000,
-    maxBuffer: 64 * 1_024,
-    windowsHide: true,
-  });
+  const { stdout, stderr } = await exec(
+    process.execPath,
+    ["--import", pathToFileURL(bootstrap).href, await realpath(tracker), mode],
+    {
+      env: environment,
+      timeout: 30_000,
+      maxBuffer: 64 * 1_024,
+      windowsHide: true,
+    },
+  );
   return stdout + stderr;
 }
 
