@@ -2307,7 +2307,12 @@ public final class Build {
     arguments.add("--use-version");
     arguments.add("java-26");
     arguments.add("--aux-classpath");
-    arguments.add(modulePath(List.of(MODULE_CLASSES, MAIN_DEPS)));
+    arguments.add(
+        modulePath(
+            List.of(
+                Path.of(System.getProperty("java.home"), "lib", "jrt-fs.jar"),
+                MODULE_CLASSES,
+                MAIN_DEPS)));
     arguments.add("--no-cache");
     arguments.add("--no-progress");
     runArgFile(javaExecutable(), "run-pmd", arguments);
