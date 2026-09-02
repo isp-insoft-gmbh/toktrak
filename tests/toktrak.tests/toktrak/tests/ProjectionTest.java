@@ -81,6 +81,7 @@ final class ProjectionTest {
     var at = Instant.parse("2026-07-10T00:00:00Z");
     var transition = projection.prepare(EventEnvelope.create("first", at, "system", Map.of()));
     projection.apply(EventEnvelope.create("second", at, "system", Map.of()));
+    assertEquals(1, projection.revision());
 
     var exception = assertThrows(IllegalStateException.class, () -> projection.commit(transition));
     assertEquals("projection changed before prepared transition commit", exception.getMessage());
@@ -153,6 +154,36 @@ final class ProjectionTest {
     assertThrows(
         IllegalArgumentException.class,
         () -> new Projection.UserKey("https://issuer.example", " "));
+  }
+
+  @Test
+  void given_userKeysAtDocumentedLimits_when_constructing_then_acceptsEveryExactLimit() {
+    assertDoesNotThrow(() -> new Projection.UserKey("i".repeat(2_048), "subject-1"));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Projection.UserKey("i".repeat(2_049), "subject-1"));
+    assertDoesNotThrow(() -> new Projection.UserKey("https://issuer.example", "s".repeat(256)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Projection.UserKey("https://issuer.example", "s".repeat(257)));
+    assertDoesNotThrow(() -> new Projection.UserKey("https://issuer.example", "é".repeat(128)));
+  }
+
+  @Test
+  void given_tokenPageAtPageSizeMaximum_when_constructing_then_acceptsFullPage() {
+    var owner = new Projection.UserKey("https://issuer.example", "subject-1");
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    String digest = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[32]);
+    var tokens = new java.util.ArrayList<Projection.TrackerToken>();
+    for (int index = 0; index <= 100; index++) {
+      tokens.add(
+          new Projection.TrackerToken(
+              new java.util.UUID(0, index), owner, "Token " + index, digest, at, null, null));
+    }
+    var full = tokens.subList(0, 100);
+    var page = new Projection.TokenPage(full, 250, 2, 3);
+    assertEquals(100, page.tokens().size());
+    assertThrows(IllegalArgumentException.class, () -> new Projection.TokenPage(tokens, 250, 2, 3));
   }
 
   @Test
