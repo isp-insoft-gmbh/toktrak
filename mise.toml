@@ -1,7 +1,7 @@
 min_version = "2026.9.0"
 
 [tools]
-dprint = "0.56.1"
+dprint = "0.57.0"
 google-java-format = "1.36.1"
 hyperfine = "1.20.0"
 java = "temurin-26.0.2+10"

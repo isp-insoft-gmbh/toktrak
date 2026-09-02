@@ -2,8 +2,8 @@
 
 ## v1
 
-- Bind OIDC discovery metadata to the configured issuer before trusting advertised
-endpoints.
+- Bind OIDC discovery metadata to the configured issuer before trusting
+  advertised endpoints.
 - Restore production EUR exchange-rate refresh.
 - Make Windows trackers catch up after sleep and continue on battery power.
 
