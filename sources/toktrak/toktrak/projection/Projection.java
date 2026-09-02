@@ -536,8 +536,8 @@ public final class Projection {
     data.put("label", token.label);
     data.put("digest", token.digest);
     data.put("createdAt", token.createdAt.toString());
-    data.put("lastUsedAt", token.lastUsedAt == null ? null : token.lastUsedAt.toString());
-    data.put("revokedAt", token.revokedAt == null ? null : token.revokedAt.toString());
+    data.put("lastUsedAt", Objects.toString(token.lastUsedAt, null));
+    data.put("revokedAt", Objects.toString(token.revokedAt, null));
     return data;
   }
 
