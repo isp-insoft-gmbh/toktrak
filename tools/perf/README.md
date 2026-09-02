@@ -17,9 +17,9 @@ Use the simplest tool per workload:
 - Node helpers for tracker `.mjs` workloads
 
 The observational `corpus-replay` JMH benchmark rebuilds the production
-projection from `tests/corpus/dev.jsonl`. It records average replay time in
-`corpus-replay/result.json` and fails if the fixture's identity or canonical
-totals change unexpectedly.
+projection from `tests/corpus/dev.jsonl`. It measures across two fresh JVM
+forks, records average replay time in `corpus-replay/result.json`, and fails if
+the fixture's identity or canonical totals change unexpectedly.
 
 Compare performance only for the same `hostKey`. Use recorded environment fields
 as caveats, not automatic history invalidators. New benchmarks do not apply

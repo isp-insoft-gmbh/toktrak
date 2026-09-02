@@ -701,6 +701,27 @@ public final class Router implements HttpHandler {
     assert path.equals("/") || path.equals("/visualizations") || path.equals("/scope");
     DashboardCurrency alternative =
         currency == DashboardCurrency.USD ? DashboardCurrency.EUR : DashboardCurrency.USD;
+    return base(
+        title,
+        currentPage,
+        CurrencySwitch.enabled(
+            Currency.from(currency),
+            path + "?currency=" + alternative,
+            Currency.from(alternative)));
+  }
+
+  private BaseView trackerBase(String title) {
+    return base(title, CurrentPage.TRACKER, CurrencySwitch.disabled());
+  }
+
+  private BaseView base(String title) {
+    return base(title, CurrentPage.NONE, CurrencySwitch.disabled());
+  }
+
+  private BaseView base(String title, CurrentPage currentPage, CurrencySwitch currencyControl) {
+    assert title != null;
+    assert currentPage != null;
+    assert currencyControl != null;
     return new BaseView(
         title,
         assets.publicUrl("main.css"),
@@ -712,40 +733,7 @@ public final class Router implements HttpHandler {
         assets.publicUrl("logo-lockup-dark.svg"),
         devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
         currentPage,
-        CurrencySwitch.enabled(
-            Currency.from(currency),
-            path + "?currency=" + alternative,
-            Currency.from(alternative)));
-  }
-
-  private BaseView trackerBase(String title) {
-    return new BaseView(
-        title,
-        assets.publicUrl("main.css"),
-        assets.publicUrl("datastar.js"),
-        assets.publicUrl("favicon.svg"),
-        assets.publicUrl("logo-wordmark.svg"),
-        assets.publicUrl("logo-wordmark-dark.svg"),
-        assets.publicUrl("logo-lockup.svg"),
-        assets.publicUrl("logo-lockup-dark.svg"),
-        devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
-        CurrentPage.TRACKER,
-        CurrencySwitch.disabled());
-  }
-
-  private BaseView base(String title) {
-    return new BaseView(
-        title,
-        assets.publicUrl("main.css"),
-        assets.publicUrl("datastar.js"),
-        assets.publicUrl("favicon.svg"),
-        assets.publicUrl("logo-wordmark.svg"),
-        assets.publicUrl("logo-wordmark-dark.svg"),
-        assets.publicUrl("logo-lockup.svg"),
-        assets.publicUrl("logo-lockup-dark.svg"),
-        devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
-        CurrentPage.NONE,
-        CurrencySwitch.disabled());
+        currencyControl);
   }
 
   private Session browserSession(HttpExchange exchange) throws IOException {
