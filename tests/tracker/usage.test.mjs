@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
@@ -73,7 +74,7 @@ async function runTracker(tracker, commandDirectory, commandLog, piLog, piAgent,
   delete environment.PI_AGENT_DIR;
   if (sessionDirectory === undefined) delete environment.PI_CODING_AGENT_SESSION_DIR;
   else environment.PI_CODING_AGENT_SESSION_DIR = sessionDirectory;
-  const { stdout, stderr } = await exec(process.execPath, ["--import", bootstrap, tracker, mode], {
+  const { stdout, stderr } = await exec(process.execPath, ["--import", pathToFileURL(bootstrap).href, tracker, mode], {
     env: environment,
     timeout: 30_000,
     maxBuffer: 64 * 1_024,
