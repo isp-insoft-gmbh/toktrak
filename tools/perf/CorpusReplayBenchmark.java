@@ -27,7 +27,7 @@ import toktrak.store.EventLog;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Warmup(iterations = 5, time = 1)
 @Measurement(iterations = 5, time = 1)
-@Fork(value = 1, jvmArgsAppend = "-ea")
+@Fork(value = 2, jvmArgsAppend = "-ea")
 @Threads(1)
 @Timeout(time = 10)
 @State(Scope.Benchmark)
