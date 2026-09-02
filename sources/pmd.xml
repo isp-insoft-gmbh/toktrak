@@ -17,12 +17,11 @@
   <rule ref="category/java/errorprone.xml/AssignmentInOperand" />
   <rule ref="category/java/errorprone.xml/AvoidCatchingGenericException" />
   <rule ref="category/java/errorprone.xml/AvoidInstanceofChecksInCatchClause" />
-  <rule ref="category/java/errorprone.xml/CheckSkipResult" />
   <rule ref="category/java/errorprone.xml/CloseResource" />
   <rule ref="category/java/errorprone.xml/DoNotThrowExceptionInFinally" />
   <rule ref="category/java/errorprone.xml/NullAssignment" />
   <rule ref="category/java/errorprone.xml/ReturnFromFinallyBlock" />
   <rule ref="category/java/errorprone.xml/UnusedNullCheckInEquals" />
-  <rule ref="category/java/errorprone.xml/UselessPureMethodCall" />
+  <rule ref="category/java/errorprone.xml/UnusedReturnValue" />
   <rule ref="category/java/multithreading.xml/AvoidSynchronizedAtMethodLevel" />
 </ruleset>
