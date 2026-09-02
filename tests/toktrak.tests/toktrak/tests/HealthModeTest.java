@@ -166,7 +166,9 @@ final class HealthModeTest {
           "GET "
               + target
               + " HTTP/1.1\r\n"
-              + "Host: 127.0.0.1\r\n"
+              + "Host: 127.0.0.1:"
+              + app.port()
+              + "\r\n"
               + "Connection: close\r\n"
               + "\r\n";
       socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));

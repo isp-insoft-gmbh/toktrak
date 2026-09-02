@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,32 @@ final class HttpServerTest {
   void given_developmentApp_when_startingServer_then_bindsLoopback() {
     try (var app = App.start(new String[] {}, devEnvironment())) {
       assertTrue(app.bindAddress().isLoopbackAddress());
+    }
+  }
+
+  @Tag("network")
+  @Test
+  void
+      given_nonLoopbackAuthority_when_requestingDevelopmentLogin_then_rejectsBeforeAutomaticAuthentication()
+          throws Exception {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
+      String response;
+      try (var socket = new Socket(app.bindAddress(), app.port())) {
+        socket.setSoTimeout(2_000);
+        String request =
+            "GET /login HTTP/1.1\r\n"
+                + "Host: rebinding.invalid:"
+                + app.port()
+                + "\r\nConnection: close\r\n\r\n";
+        socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
+        socket.shutdownOutput();
+        response = new String(socket.getInputStream().readAllBytes(), StandardCharsets.US_ASCII);
+      }
+
+      assertTrue(response.startsWith("HTTP/1.1 421 "), response);
+      assertFalse(response.toLowerCase(Locale.ROOT).contains("\r\nset-cookie:"), response);
+      assertTrue(app.projection().users().isEmpty());
+      assertEquals(200, get(app, "/health").statusCode());
     }
   }
 

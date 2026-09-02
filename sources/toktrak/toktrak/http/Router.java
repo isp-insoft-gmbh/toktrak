@@ -39,6 +39,7 @@ public final class Router implements HttpHandler {
   private static final int PATH_BYTES_MAX = 2 * 1024;
   private static final int QUERY_BYTES_MAX = 8 * 1024;
   private static final int METHOD_CHARACTERS_MAX = 32;
+  private static final int HOST_CHARACTERS_MAX = 512;
   private static final int FORM_BYTES_MAX = 16 * 1024;
   private static final int TOKEN_PAGE_SIZE = 100;
   private static final int USAGE_PAGE_SIZE_DEFAULT = 100;
@@ -57,6 +58,7 @@ public final class Router implements HttpHandler {
   private final UsageService usage;
   private final Projection projection;
   private final TrackerScript trackerScript;
+  private final int developmentPort;
 
   public Router(
       HealthState health,
@@ -76,6 +78,7 @@ public final class Router implements HttpHandler {
     this.auth = Objects.requireNonNull(auth, "auth");
     this.usage = Objects.requireNonNull(usage, "usage");
     this.projection = Objects.requireNonNull(projection, "projection");
+    this.developmentPort = devAuth ? developmentPort(baseUri) : -1;
     this.trackerScript =
         new TrackerScript(assets.privateBytes("tracker.mjs"), Objects.requireNonNull(baseUri));
   }
@@ -112,6 +115,20 @@ public final class Router implements HttpHandler {
             "invalid_method",
             "request method is invalid",
             "Request method is invalid.",
+            requestId,
+            null);
+      }
+      return;
+    }
+    if (!acceptsDevelopmentAuthority(exchange)) {
+      String requestId = UUID.randomUUID().toString();
+      try (exchange) {
+        respondError(
+            exchange,
+            421,
+            "misdirected_request",
+            "request authority is not accepted",
+            "Request authority is not accepted.",
             requestId,
             null);
       }
@@ -959,5 +976,39 @@ public final class Router implements HttpHandler {
     if (value == null) return false;
     if (value.length() > bytesMax) return true;
     return value.getBytes(StandardCharsets.UTF_8).length > bytesMax;
+  }
+
+  private boolean acceptsDevelopmentAuthority(HttpExchange exchange) {
+    assert exchange != null;
+    if (!devAuth) return true;
+    List<String> values = exchange.getRequestHeaders().get("Host");
+    if (values == null || values.size() != 1) return false;
+    String value = values.getFirst();
+    if (value == null || value.isBlank() || value.length() > HOST_CHARACTERS_MAX) return false;
+    try {
+      URI uri = URI.create("http://" + value);
+      String host = uri.getHost();
+      int port = uri.getPort() < 0 ? 80 : uri.getPort();
+      return uri.getUserInfo() == null
+          && uri.getRawPath().isEmpty()
+          && uri.getRawQuery() == null
+          && uri.getRawFragment() == null
+          && ("127.0.0.1".equals(host) || "localhost".equalsIgnoreCase(host))
+          && port == developmentPort;
+    } catch (IllegalArgumentException exception) {
+      return false;
+    }
+  }
+
+  private static int developmentPort(URI baseUri) {
+    Objects.requireNonNull(baseUri, "baseUri");
+    int port = baseUri.getPort();
+    if (!"http".equalsIgnoreCase(baseUri.getScheme())
+        || !"127.0.0.1".equals(baseUri.getHost())
+        || port < 1
+        || port > 65_535) {
+      throw new IllegalArgumentException("development base URI is invalid");
+    }
+    return port;
   }
 }
