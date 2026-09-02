@@ -1,2 +1,2 @@
-pkg:maven/net.sourceforge.pmd/pmd-cli@7.26.0
+pkg:maven/net.sourceforge.pmd/pmd-cli@7.27.0
 pkg:maven/net.sourceforge.pmd/pmd-java@7.27.0
