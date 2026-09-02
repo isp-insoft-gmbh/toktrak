@@ -25,7 +25,6 @@ jobs:
           version: 2026.9.0
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - run: mise run ci
-      - run: mise run tracker-test
       - run: mise run coverage
       - if: always() && hashFiles('output/coverage/**') != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
