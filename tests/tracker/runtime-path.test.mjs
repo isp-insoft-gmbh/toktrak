@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -113,12 +113,16 @@ test("given_nodeRuntimeOutsideSchedulerPath_when_collectingUsage_then_usesAdjace
   delete environment.PI_AGENT_DIR;
   delete environment.PI_CODING_AGENT_SESSION_DIR;
 
-  const { stderr } = await exec(process.execPath, ["--import", pathToFileURL(bootstrap).href, tracker, "full"], {
-    env: environment,
-    timeout: 30_000,
-    maxBuffer: 64 * 1_024,
-    windowsHide: true,
-  });
+  const { stderr } = await exec(
+    process.execPath,
+    ["--import", pathToFileURL(bootstrap).href, await realpath(tracker), "full"],
+    {
+      env: environment,
+      timeout: 30_000,
+      maxBuffer: 64 * 1_024,
+      windowsHide: true,
+    },
+  );
 
   assert.match(stderr, /3\/3 usage reports ready/u);
   assert.equal(uploads.length, 1);
