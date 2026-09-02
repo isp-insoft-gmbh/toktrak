@@ -7,6 +7,22 @@
       "matchPackageNames": ["java", "/(^|\\/)eclipse-temurin$/"],
       "groupName": "Java toolchain",
       "groupSlug": "java-toolchain"
+    },
+    {
+      "matchPackageNames": ["net.sourceforge.pmd:pmd-cli", "net.sourceforge.pmd:pmd-java"],
+      "groupName": "PMD"
+    },
+    {
+      "matchPackageNames": ["io.jstach:jstachio", "io.jstach:jstachio-annotation", "io.jstach:jstachio-apt"],
+      "groupName": "JStachio"
+    },
+    {
+      "matchPackageNames": ["org.jacoco:org.jacoco.agent", "org.jacoco:org.jacoco.cli"],
+      "groupName": "JaCoCo"
+    },
+    {
+      "matchPackageNames": ["org.openjdk.jmh:jmh-core", "org.openjdk.jmh:jmh-generator-annprocess"],
+      "groupName": "JMH"
     }
   ],
   "customManagers": [
