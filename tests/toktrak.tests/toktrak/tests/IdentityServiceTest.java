@@ -100,6 +100,70 @@ final class IdentityServiceTest {
   }
 
   @Test
+  void given_identityInputsAtDocumentedLimits_when_persisting_then_acceptsEveryExactLimit() {
+    var projection = Projection.empty();
+    try (var log = EventLog.open(directory.resolve("events.ndjson"));
+        var writer = writer(log, projection)) {
+      var identities = new IdentityService(writer, projection, new byte[32]);
+      String email = "e".repeat(320);
+      String displayName = "n".repeat(256);
+      var user = identities.authenticateUser(USER, email, displayName, null);
+      assertEquals(email, user.email());
+      assertEquals(displayName, user.displayName());
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> identities.authenticateUser(USER, "e".repeat(321), "Example User", null));
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> identities.authenticateUser(USER, "user@example.com", "n".repeat(257), null));
+      String label = "l".repeat(128);
+      assertEquals(label, create(identities, label).token().label());
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> identities.prepareTrackerToken(USER, "l".repeat(129)));
+    }
+  }
+
+  @Test
+  void given_twoUsersWithTokens_when_listingAndPagingTokens_then_scopesTokensToTheirOwner() {
+    var projection = Projection.empty();
+    try (var log = EventLog.open(directory.resolve("events.ndjson"));
+        var writer = writer(log, projection)) {
+      var identities = new IdentityService(writer, projection, new byte[32]);
+      identities.authenticateUser(USER, "user@example.com", "Example User", null);
+      UserKey other = new UserKey("https://issuer.example", "subject-2");
+      identities.authenticateUser(other, "other@example.com", "Other User", null);
+      var first = create(identities, "First");
+      var second = create(identities, "Second");
+      var foreign = identities.commitTrackerToken(identities.prepareTrackerToken(other, "Foreign"));
+
+      var ownIds = java.util.Set.of(first.token().id(), second.token().id());
+      assertEquals(
+          ownIds,
+          identities.trackerTokens(USER).stream()
+              .map(Projection.TrackerToken::id)
+              .collect(java.util.stream.Collectors.toSet()));
+      assertEquals(
+          java.util.List.of(foreign.token().id()),
+          identities.trackerTokens(other).stream().map(Projection.TrackerToken::id).toList());
+
+      var pageOne = identities.trackerTokenPage(USER, 1, 1);
+      var pageTwo = identities.trackerTokenPage(USER, 2, 1);
+      assertEquals(2, pageOne.total());
+      assertEquals(2, pageOne.pageCount());
+      assertEquals(1, pageOne.tokens().size());
+      assertEquals(1, pageTwo.tokens().size());
+      assertEquals(
+          ownIds, java.util.Set.of(pageOne.tokens().get(0).id(), pageTwo.tokens().get(0).id()));
+      var foreignPage = identities.trackerTokenPage(other, 1, 1);
+      assertEquals(1, foreignPage.total());
+      assertEquals(
+          java.util.List.of(foreign.token().id()),
+          foreignPage.tokens().stream().map(Projection.TrackerToken::id).toList());
+    }
+  }
+
+  @Test
   void given_persistedIdentityEvents_when_replaying_then_restoresUsersAndTokens() {
     var projection = Projection.empty();
     java.util.UUID tokenId;
