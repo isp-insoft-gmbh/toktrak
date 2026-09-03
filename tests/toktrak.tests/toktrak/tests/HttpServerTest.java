@@ -61,6 +61,22 @@ final class HttpServerTest {
   }
 
   @Test
+  void given_developmentApp_when_requestingChanges_then_rendersBundledReleaseHistory()
+      throws Exception {
+    try (var app = App.start(new String[] {}, devEnvironment())) {
+      var response = get(app, "/changes");
+
+      assertEquals(200, response.statusCode());
+      assertTrue(response.body().contains("<strong>TokTrak dev</strong>"), response.body());
+      assertTrue(response.body().contains("<span>Unreleased</span>"), response.body());
+      assertTrue(response.body().contains("<h2>TokTrak v2</h2>"), response.body());
+      assertTrue(response.body().contains("<code>PATH</code>"), response.body());
+      assertTrue(response.body().contains("<details>"), response.body());
+      assertFalse(response.body().contains("class=\"site-header\""), response.body());
+    }
+  }
+
+  @Test
   void given_healthyApp_when_requestingHealth_then_returnsJsonAndSecurityHeaders()
       throws Exception {
     try (var app = App.start(new String[] {}, devEnvironment())) {

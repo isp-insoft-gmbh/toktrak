@@ -8,6 +8,7 @@
   scheduler state.
 - Restrict automatic development login to loopback authorities.
 - Document Node.js 22 as the minimum tracker runtime.
+- Show the running release and its change history in the UI.
 
 ## v1
 

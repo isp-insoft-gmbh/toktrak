@@ -15,6 +15,9 @@ import toktrak.http.BaseView.Currency;
 import toktrak.http.BaseView.CurrencySwitch;
 import toktrak.http.BaseView.CurrentPage;
 import toktrak.http.BaseView.RuntimeMode;
+import toktrak.http.Changelog;
+import toktrak.http.ChangesView;
+import toktrak.http.ChangesViewRenderer;
 import toktrak.http.CreatedTokenView;
 import toktrak.http.HomeView;
 import toktrak.http.HomeView.SessionState;
@@ -55,7 +58,8 @@ final class RenderingTest {
           LOGO_LOCKUP_DARK,
           RuntimeMode.PRODUCTION,
           CurrentPage.TRACKER,
-          CurrencySwitch.disabled());
+          CurrencySwitch.disabled(),
+          "v2");
 
   @Test
   void given_encodedOutputBoundary_when_rendering_then_acceptsLimitAndRejectsOverflow()
@@ -102,6 +106,43 @@ final class RenderingTest {
   }
 
   @Test
+  void given_structuredChangelogSegments_when_renderingChanges_then_emitsSafeInlineMarkup()
+      throws Exception {
+    var release =
+        new Changelog.Release(
+            "v2",
+            List.of(
+                new Changelog.Note(
+                    List.of(
+                        Changelog.Segment.text("Read "),
+                        Changelog.Segment.link("<notes>", "https://example.com/notes?x=1&y=2"),
+                        Changelog.Segment.text(" with "),
+                        Changelog.Segment.code("node"),
+                        Changelog.Segment.text(".")))));
+    var changelog = new Changelog("Current release", release, List.of());
+    var view =
+        new ChangesView(
+            baseView(
+                STYLESHEET,
+                FAVICON,
+                LOGO_WORDMARK,
+                LOGO_WORDMARK_DARK,
+                LOGO_LOCKUP,
+                LOGO_LOCKUP_DARK),
+            changelog);
+
+    String html =
+        new String(
+            HttpSupport.renderEncoded(ChangesViewRenderer.of(), view), StandardCharsets.UTF_8);
+
+    assertTrue(
+        html.contains(
+            "Read <a href=\"https://example.com/notes?x&#x3D;1&amp;y&#x3D;2\">&lt;notes&gt;</a>"
+                + " with <code>node</code>."),
+        html);
+  }
+
+  @Test
   void given_mutableRows_when_constructingView_then_defensivelyCopiesCollection() {
     var rows = new ArrayList<TokenListView.TokenRow>();
     var view =
@@ -133,7 +174,8 @@ final class RenderingTest {
             LOGO_LOCKUP_DARK,
             RuntimeMode.DEVELOPMENT,
             CurrentPage.VISUALIZATIONS,
-            CurrencySwitch.enabled(Currency.EUR, "/visualizations?currency=USD", Currency.USD));
+            CurrencySwitch.enabled(Currency.EUR, "/visualizations?currency=USD", Currency.USD),
+            "dev");
     var productionHome =
         new BaseView(
             "TokTrak",
@@ -146,7 +188,8 @@ final class RenderingTest {
             LOGO_LOCKUP_DARK,
             RuntimeMode.PRODUCTION,
             CurrentPage.NONE,
-            CurrencySwitch.disabled());
+            CurrencySwitch.disabled(),
+            "v2");
     var token =
         new TokenListView.TokenRow(
             "Laptop",
@@ -274,7 +317,8 @@ final class RenderingTest {
                 LOGO_LOCKUP_DARK,
                 RuntimeMode.PRODUCTION,
                 CurrentPage.NONE,
-                CurrencySwitch.disabled()));
+                CurrencySwitch.disabled(),
+                "v2"));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -289,7 +333,8 @@ final class RenderingTest {
                 LOGO_LOCKUP_DARK,
                 RuntimeMode.PRODUCTION,
                 CurrentPage.NONE,
-                CurrencySwitch.disabled()));
+                CurrencySwitch.disabled(),
+                "v2"));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -394,7 +439,8 @@ final class RenderingTest {
         logoLockupDark,
         RuntimeMode.PRODUCTION,
         CurrentPage.NONE,
-        CurrencySwitch.disabled());
+        CurrencySwitch.disabled(),
+        "v2");
   }
 
   private record FixedSizeRenderer(int size) implements Template.EncodedTemplate<String> {

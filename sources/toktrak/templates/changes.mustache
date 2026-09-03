@@ -1,0 +1,38 @@
+{{<base.mustache}}
+{{$content}}
+  <div class="scope-page changes-page">
+    <header class="page-heading">
+      <div>
+        <h1>What’s new</h1>
+        <p>Changes that affect how you install, run, or use TokTrak.</p>
+      </div>
+    </header>
+    <article class="current-release">
+      <header>
+        <h2>TokTrak {{changelog.current.version}}</h2>
+        <span>{{changelog.currentLabel}}</span>
+      </header>
+      <ul>
+{{#changelog.current.notes}}
+        <li>{{#segments}}{{#textSegment}}{{text}}{{/textSegment}}{{#codeSegment}}<code>{{text}}</code>{{/codeSegment}}{{#linkSegment}}<a href="{{url}}">{{text}}</a>{{/linkSegment}}{{/segments}}</li>
+{{/changelog.current.notes}}
+      </ul>
+    </article>
+{{#changelog.hasEarlier}}
+    <section class="release-history" aria-labelledby="release-history-title">
+      <h2 id="release-history-title">Earlier releases</h2>
+{{#changelog.earlier}}
+      <details>
+        <summary><span>TokTrak {{version}}</span><span class="disclosure-mark" aria-hidden="true"></span></summary>
+        <ul>
+{{#notes}}
+          <li>{{#segments}}{{#textSegment}}{{text}}{{/textSegment}}{{#codeSegment}}<code>{{text}}</code>{{/codeSegment}}{{#linkSegment}}<a href="{{url}}">{{text}}</a>{{/linkSegment}}{{/segments}}</li>
+{{/notes}}
+        </ul>
+      </details>
+{{/changelog.earlier}}
+    </section>
+{{/changelog.hasEarlier}}
+  </div>
+{{/content}}
+{{/base.mustache}}

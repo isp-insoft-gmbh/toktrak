@@ -248,6 +248,53 @@ final class ConfigTest {
     assertEquals(Path.of("output", "dev-data"), config.dataDirectory());
   }
 
+  @Test
+  void given_absentBuildMetadata_when_parsingConfig_then_usesDevelopmentIdentity() {
+    BuildInfo buildInfo =
+        Config.from(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true")).buildInfo();
+
+    assertEquals("dev", buildInfo.version());
+    assertEquals("dev", buildInfo.revision());
+    assertEquals("dev", buildInfo.shortRevision());
+    assertTrue(buildInfo.development());
+  }
+
+  @Test
+  void given_releaseBuildMetadata_when_parsingConfig_then_preservesVersionAndRevision() {
+    String revision = "a".repeat(40);
+    BuildInfo buildInfo =
+        Config.from(
+                new String[] {},
+                Map.of(
+                    "TOKTRAK_DEV_AUTH", "true",
+                    "TOKTRAK_VERSION", "v2",
+                    "TOKTRAK_REVISION", revision))
+            .buildInfo();
+
+    assertEquals("v2", buildInfo.version());
+    assertEquals(revision, buildInfo.revision());
+    assertEquals("a".repeat(12), buildInfo.shortRevision());
+    assertFalse(buildInfo.development());
+    assertDoesNotThrow(() -> new BuildInfo("dev", revision));
+  }
+
+  @Test
+  void given_invalidBuildMetadata_when_parsingConfig_then_rejectsEnvironment() {
+    for (Map<String, String> environment :
+        java.util.List.of(
+            Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_VERSION", "v2"),
+            Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_REVISION", "a".repeat(40)),
+            Map.of(
+                "TOKTRAK_DEV_AUTH", "true",
+                "TOKTRAK_VERSION", "garbage",
+                "TOKTRAK_REVISION", "a".repeat(40)))) {
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> Config.from(new String[] {}, environment),
+          environment.toString());
+    }
+  }
+
   private static Map<String, String> productionEnvironment(String baseUrl) {
     String secret = java.util.Base64.getEncoder().encodeToString(new byte[32]);
     return Map.of(

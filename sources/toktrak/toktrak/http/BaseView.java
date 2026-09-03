@@ -13,7 +13,8 @@ public record BaseView(
     String logoLockupDarkUrl,
     RuntimeMode runtimeMode,
     CurrentPage currentPage,
-    CurrencySwitch currencyControl) {
+    CurrencySwitch currencyControl,
+    String version) {
   public BaseView {
     Objects.requireNonNull(title, "title");
     Objects.requireNonNull(stylesheetUrl, "stylesheetUrl");
@@ -26,6 +27,7 @@ public record BaseView(
     Objects.requireNonNull(runtimeMode, "runtimeMode");
     Objects.requireNonNull(currentPage, "currentPage");
     Objects.requireNonNull(currencyControl, "currencyControl");
+    Objects.requireNonNull(version, "version");
     if (title.isBlank() || title.length() > 128) {
       throw new IllegalArgumentException("title is invalid");
     }
@@ -42,6 +44,14 @@ public record BaseView(
     requireSvgAsset(logoLockupDarkUrl, "logo-lockup-dark", "logoLockupDarkUrl");
     if (currencyControl.enabled() && currentPage == CurrentPage.NONE) {
       throw new IllegalArgumentException("currency switch is invalid");
+    }
+    if (!version.equals("dev")) {
+      try {
+        if (!version.matches("v(?:0|[1-9][0-9]{0,9})")) throw new NumberFormatException();
+        Integer.parseInt(version.substring(1));
+      } catch (NumberFormatException exception) {
+        throw new IllegalArgumentException("version is invalid", exception);
+      }
     }
   }
 
@@ -104,7 +114,8 @@ public record BaseView(
     OVERVIEW,
     VISUALIZATIONS,
     SCOPE,
-    TRACKER
+    TRACKER,
+    CHANGES
   }
 
   public enum Currency {

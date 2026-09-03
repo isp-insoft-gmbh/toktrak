@@ -1,3 +1,81 @@
+╔═ given_changesView_when_renderingEncodedHtml_then_matchesApprovedDocument ═╗
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="TokTrak">
+  <meta name="theme-color" content="#b5b9f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0909" media="(prefers-color-scheme: dark)">
+  <title>What’s new · TokTrak</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
+  <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
+  <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <a class="wordmark" href="/" aria-label="TokTrak home">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="/assets/logo-wordmark-dark.0123456789abcdef0123456789abcdef.svg">
+        <img src="/assets/logo-wordmark.0123456789abcdef0123456789abcdef.svg" alt="" width="540" height="120">
+      </picture>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="/">Overview</a>
+      <a href="/visualizations">Visualizations</a>
+      <a href="/tokens">My Tracker</a>
+      <a href="/scope">Data scope</a>
+    </nav>
+  </header>
+  <main id="content">
+  <div class="scope-page changes-page">
+    <header class="page-heading">
+      <div>
+        <h1>What’s new</h1>
+        <p>Changes that affect how you install, run, or use TokTrak.</p>
+      </div>
+    </header>
+    <article class="current-release">
+      <header>
+        <h2>TokTrak v2</h2>
+        <span>Current release</span>
+      </header>
+      <ul>
+        <li>Keep scheduled tracker uploads working when native schedulers omit Node.js from <code>PATH</code>.</li>
+        <li>Reject elevated Windows tracker installation before creating user-scoped scheduler state.</li>
+        <li>Restrict automatic development login to loopback authorities.</li>
+        <li>Document Node.js 22 as the minimum tracker runtime.</li>
+        <li>Show the running release and its change history in the UI.</li>
+      </ul>
+    </article>
+    <section class="release-history" aria-labelledby="release-history-title">
+      <h2 id="release-history-title">Earlier releases</h2>
+      <details>
+        <summary><span>TokTrak v1</span><span class="disclosure-mark" aria-hidden="true"></span></summary>
+        <ul>
+          <li>Bind OIDC discovery metadata to the configured issuer before trusting advertised endpoints.</li>
+          <li>Restore production EUR exchange-rate refresh.</li>
+          <li>Make Windows trackers catch up after sleep and continue on battery power.</li>
+        </ul>
+      </details>
+      <details>
+        <summary><span>TokTrak v0</span><span class="disclosure-mark" aria-hidden="true"></span></summary>
+        <ul>
+          <li>Initial TokTrak server, dashboard, workstation tracker, and production container.</li>
+          <li>Opt-in remote JMX/JFR diagnostics with shell-free <code>jcmd</code> and <code>jfr</code> tooling.</li>
+        </ul>
+      </details>
+    </section>
+  </div>
+
+  </main>
+  <footer class="site-footer">
+    <a href="/changes"><strong>TokTrak v2</strong><span aria-hidden="true"> · </span>What’s new</a>
+  </footer>
+</body>
+</html>
+
 ╔═ given_createdTokenView_when_renderingEncodedHtml_then_matchesApprovedDocument ═╗
 <!doctype html>
 <html lang="en">
@@ -63,6 +141,9 @@
   </div>
 
   </main>
+  <footer class="site-footer">
+    <a href="/changes"><strong>TokTrak v2</strong><span aria-hidden="true"> · </span>What’s new</a>
+  </footer>
 </body>
 </html>
 
@@ -99,6 +180,9 @@
   </div>
 
   </main>
+  <footer class="site-footer">
+    <a href="/changes"><strong>TokTrak dev</strong><span aria-hidden="true"> · </span>What’s new</a>
+  </footer>
 </body>
 </html>
 
@@ -183,6 +267,9 @@
   </div>
 
   </main>
+  <footer class="site-footer">
+    <a href="/changes"><strong>TokTrak v2</strong><span aria-hidden="true"> · </span>What’s new</a>
+  </footer>
 </body>
 </html>
 
@@ -224,6 +311,9 @@
   </div>
 
   </main>
+  <footer class="site-footer">
+    <a href="/changes"><strong>TokTrak v2</strong><span aria-hidden="true"> · </span>What’s new</a>
+  </footer>
 </body>
 </html>
 
@@ -330,6 +420,9 @@
   </div>
 
   </main>
+  <footer class="site-footer">
+    <a href="/changes"><strong>TokTrak dev</strong><span aria-hidden="true"> · </span>What’s new</a>
+  </footer>
 </body>
 </html>
 

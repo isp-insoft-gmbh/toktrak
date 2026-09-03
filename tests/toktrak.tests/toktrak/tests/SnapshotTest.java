@@ -16,6 +16,9 @@ import toktrak.http.BaseView;
 import toktrak.http.BaseView.CurrencySwitch;
 import toktrak.http.BaseView.CurrentPage;
 import toktrak.http.BaseView.RuntimeMode;
+import toktrak.http.Changelog;
+import toktrak.http.ChangesView;
+import toktrak.http.ChangesViewRenderer;
 import toktrak.http.CreatedTokenView;
 import toktrak.http.CreatedTokenViewRenderer;
 import toktrak.http.ErrorPage;
@@ -73,6 +76,27 @@ final class SnapshotTest {
                     HomeViewRenderer.of(),
                     new HomeView(base("TokTrak", true), SessionState.SIGNED_IN))))
         .toMatchDisk();
+  }
+
+  @Test
+  void given_changesView_when_renderingEncodedHtml_then_matchesApprovedDocument() throws Exception {
+    var changesBase =
+        new BaseView(
+            "What’s new · TokTrak",
+            STYLESHEET,
+            DATASTAR,
+            FAVICON,
+            LOGO_WORDMARK,
+            LOGO_WORDMARK_DARK,
+            LOGO_LOCKUP,
+            LOGO_LOCKUP_DARK,
+            RuntimeMode.PRODUCTION,
+            CurrentPage.CHANGES,
+            CurrencySwitch.disabled(),
+            "v2");
+    var view = new ChangesView(changesBase, Changelog.load("v2"));
+
+    expectSelfie(decode(HttpSupport.renderEncoded(ChangesViewRenderer.of(), view))).toMatchDisk();
   }
 
   @Test
@@ -193,7 +217,8 @@ final class SnapshotTest {
         LOGO_LOCKUP_DARK,
         development ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
         CurrentPage.TRACKER,
-        CurrencySwitch.disabled());
+        CurrencySwitch.disabled(),
+        development ? "dev" : "v2");
   }
 
   private static BaseView base(String title, boolean development) {
@@ -208,7 +233,8 @@ final class SnapshotTest {
         LOGO_LOCKUP_DARK,
         development ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
         CurrentPage.NONE,
-        CurrencySwitch.disabled());
+        CurrencySwitch.disabled(),
+        development ? "dev" : "v2");
   }
 
   private static String decode(byte[] bytes) throws Exception {

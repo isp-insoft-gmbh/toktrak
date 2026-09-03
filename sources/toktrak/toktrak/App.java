@@ -115,7 +115,16 @@ public final class App implements AutoCloseable {
     var usage = new UsageService(writer, config.clock());
     server.createContext(
         "/",
-        new Router(health, config.devAuth(), executor, assets, auth, usage, projection, baseUri));
+        new Router(
+            health,
+            config.devAuth(),
+            executor,
+            assets,
+            auth,
+            usage,
+            projection,
+            baseUri,
+            config.buildInfo()));
     server.setExecutor(Runnable::run);
     server.start();
     serverStarted = true;
@@ -124,7 +133,14 @@ public final class App implements AutoCloseable {
     if (port < 0 || port > 65_535)
       throw new IllegalStateException("HTTP server returned invalid port");
     String readyUrl = baseUri.toString();
-    LOG.info("TokTrak ready at " + readyUrl + (readyUrl.endsWith("/") ? "" : "/"));
+    LOG.info(
+        "TokTrak "
+            + config.buildInfo().version()
+            + " ("
+            + config.buildInfo().shortRevision()
+            + ") ready at "
+            + readyUrl
+            + (readyUrl.endsWith("/") ? "" : "/"));
   }
 
   private static URI baseUri(Config config, int boundPort) {

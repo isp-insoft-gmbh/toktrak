@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import toktrak.BuildInfo;
 import toktrak.auth.AuthService;
 import toktrak.auth.AuthService.Session;
 import toktrak.health.HealthState;
@@ -58,6 +59,8 @@ public final class Router implements HttpHandler {
   private final UsageService usage;
   private final Projection projection;
   private final TrackerScript trackerScript;
+  private final BuildInfo buildInfo;
+  private final Changelog changelog;
   private final int developmentPort;
 
   public Router(
@@ -68,7 +71,8 @@ public final class Router implements HttpHandler {
       AuthService auth,
       UsageService usage,
       Projection projection,
-      URI baseUri) {
+      URI baseUri,
+      BuildInfo buildInfo) {
     assert health != null;
     assert requestExecutor != null;
     this.health = health;
@@ -78,6 +82,8 @@ public final class Router implements HttpHandler {
     this.auth = Objects.requireNonNull(auth, "auth");
     this.usage = Objects.requireNonNull(usage, "usage");
     this.projection = Objects.requireNonNull(projection, "projection");
+    this.buildInfo = Objects.requireNonNull(buildInfo, "buildInfo");
+    this.changelog = Changelog.load(buildInfo.version());
     this.developmentPort = devAuth ? developmentPort(baseUri) : -1;
     this.trackerScript =
         new TrackerScript(assets.privateBytes("tracker.mjs"), Objects.requireNonNull(baseUri));
@@ -286,6 +292,10 @@ public final class Router implements HttpHandler {
     }
     if (path.equals("/scope") && method.equals("GET")) {
       scope(exchange);
+      return;
+    }
+    if (path.equals("/changes") && method.equals("GET")) {
+      changes(exchange);
       return;
     }
     if (path.equals("/") && method.equals("GET")) {
@@ -592,10 +602,8 @@ public final class Router implements HttpHandler {
   }
 
   private void home(HttpExchange exchange) throws IOException {
-    Session session;
-    try {
-      session = auth.requireSession(exchange.getRequestHeaders().getFirst("Cookie"));
-    } catch (IllegalArgumentException exception) {
+    Session session = optionalBrowserSession(exchange);
+    if (session == null) {
       var view = new HomeView(base("TokTrak"), SessionState.SIGNED_OUT);
       HttpSupport.encodedHtml(
           exchange,
@@ -664,6 +672,22 @@ public final class Router implements HttpHandler {
         exchange,
         200,
         render(ScopeViewRenderer.of(), view, "scope.mustache", "ScopeView", "ScopeViewRenderer"));
+  }
+
+  private void changes(HttpExchange exchange) throws IOException {
+    CurrentPage page =
+        optionalBrowserSession(exchange) == null ? CurrentPage.NONE : CurrentPage.CHANGES;
+    var view =
+        new ChangesView(base("What’s new · TokTrak", page, CurrencySwitch.disabled()), changelog);
+    HttpSupport.encodedHtml(
+        exchange,
+        200,
+        render(
+            ChangesViewRenderer.of(),
+            view,
+            "changes.mustache",
+            "ChangesView",
+            "ChangesViewRenderer"));
   }
 
   private DashboardCurrency dashboardCurrency(HttpExchange exchange, String path)
@@ -750,7 +774,16 @@ public final class Router implements HttpHandler {
         assets.publicUrl("logo-lockup-dark.svg"),
         devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
         currentPage,
-        currencyControl);
+        currencyControl,
+        buildInfo.version());
+  }
+
+  private Session optionalBrowserSession(HttpExchange exchange) {
+    try {
+      return auth.requireSession(exchange.getRequestHeaders().getFirst("Cookie"));
+    } catch (IllegalArgumentException exception) {
+      return null;
+    }
   }
 
   private Session browserSession(HttpExchange exchange) throws IOException {

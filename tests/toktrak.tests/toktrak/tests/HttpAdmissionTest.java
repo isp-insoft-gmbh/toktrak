@@ -16,6 +16,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import toktrak.BuildInfo;
 import toktrak.ClockSource;
 import toktrak.auth.AuthService;
 import toktrak.health.HealthState;
@@ -71,7 +72,8 @@ final class HttpAdmissionTest {
               auth,
               new UsageService(writer, ClockSource.system()),
               projection,
-              URI.create("http://127.0.0.1")));
+              URI.create("http://127.0.0.1"),
+              BuildInfo.from(java.util.Map.of())));
       server.setExecutor(Runnable::run);
       for (int index = 0; index < WORKER_COUNT; index++) {
         workers.execute(

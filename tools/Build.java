@@ -2841,7 +2841,7 @@ public final class Build {
     fingerprintArguments.addAll(errorProneJvmArguments());
     String fingerprint =
         applicationCompilationFingerprint(
-            List.of(APP_SOURCES, JUNIT_TEST_SOURCES, ERROR_PRONE_CONFIG),
+            List.of(APP_SOURCES, JUNIT_TEST_SOURCES, ERROR_PRONE_CONFIG, CHANGELOG),
             List.of(MAIN_DEPS, TEST_DEPS, SNAPSHOT_DEPS, BUILD_DEPS),
             fingerprintArguments,
             assetBundle);
@@ -2864,6 +2864,7 @@ public final class Build {
           for (Path template : templates) {
             Files.delete(stagingApp.resolve(TEMPLATE_SOURCES.relativize(template)));
           }
+          Files.copy(CHANGELOG, stagingApp.resolve(CHANGELOG.getFileName()));
           runJavacArgFile(
               writeArgFile(
                   "compile-toktrak-test-module", remapArguments(testArguments, MODULES, staging)));
@@ -3390,15 +3391,15 @@ public final class Build {
   private static void imageCommand(List<String> arguments) throws Exception {
     requireNoArguments(arguments, "image");
     int version = nextVersion(remoteReleaseTags());
-    imageBuild(version, gitHead());
+    imageBuild(version, gitHead(), "dev");
   }
 
   private static void containerVerifyCommand(List<String> arguments) throws Exception {
     requireNoArguments(arguments, "container-verify");
     int version = nextVersion(remoteReleaseTags());
     String revision = gitHead();
-    imageBuild(version, revision);
-    containerVerify(imageReference(version), version, revision);
+    imageBuild(version, revision, "dev");
+    containerVerify(imageReference(version), version, revision, "dev");
   }
 
   private static void releaseCommand(List<String> arguments) throws Exception {
@@ -3416,7 +3417,7 @@ public final class Build {
     jlinkProd();
     String image = imageReference(release.version());
     if (release.recovery()) {
-      inspectImage(image, release.version(), release.revision());
+      inspectImage(image, release.version(), release.revision(), "v" + release.version());
       String expectedImageId =
           gitOutput(List.of("tag", "--list", "v" + release.version(), "--format=%(contents)"))
               .lines()
@@ -3428,9 +3429,9 @@ public final class Build {
         throw new IllegalStateException("recovery image differs from the tagged artifact");
       }
     } else {
-      imageBuild(release.version(), release.revision());
+      imageBuild(release.version(), release.revision(), "v" + release.version());
     }
-    containerVerify(image, release.version(), release.revision());
+    containerVerify(image, release.version(), release.revision(), "v" + release.version());
     if (dryRun) {
       System.out.println(
           "Release v" + release.version() + " dry run complete; no tag or push performed");
@@ -3685,9 +3686,11 @@ public final class Build {
     }
   }
 
-  private static void imageBuild(int version, String revision) throws Exception {
+  private static void imageBuild(int version, String revision, String displayVersion)
+      throws Exception {
     assert version >= 0;
     assert revision != null && revision.matches("[0-9a-f]{40}|[0-9a-f]{64}");
+    assert displayVersion != null && displayVersion.matches("dev|v(?:0|[1-9][0-9]*)");
     requireFile(CONTAINERFILE);
     if (Files.size(CONTAINERFILE) > CONTAINERFILE_BYTES_MAX) {
       throw new IllegalStateException(
@@ -3712,10 +3715,12 @@ public final class Build {
             "VERSION=" + version,
             "--build-arg",
             "REVISION=" + revision,
+            "--build-arg",
+            "DISPLAY_VERSION=" + displayVersion,
             ROOT.toString()),
         ROOT,
         CONTAINER_BUILD_TIMEOUT);
-    inspectImage(image, version, revision);
+    inspectImage(image, version, revision, displayVersion);
     String runtimeProperties =
         runTool(
                 "podman",
@@ -3761,9 +3766,10 @@ public final class Build {
         PROCESS_TIMEOUT);
   }
 
-  private static void inspectImage(String image, int version, String revision) throws Exception {
+  private static void inspectImage(
+      String image, int version, String revision, String displayVersion) throws Exception {
     String format =
-        "{{.Os}}|{{.Config.User}}|{{.Config.ExposedPorts}}|{{.Config.Volumes}}|{{.Config.Labels}}";
+        "{{.Os}}|{{.Config.User}}|{{.Config.ExposedPorts}}|{{.Config.Volumes}}|{{.Config.Labels}}|{{.Config.Env}}";
     String output =
         runTool(
                 "podman",
@@ -3774,13 +3780,15 @@ public final class Build {
             .output()
             .strip();
     String[] fields = output.split("\\|", -1);
-    if (fields.length != 5
+    if (fields.length != 6
         || !fields[0].equals("linux")
         || !fields[1].equals("0")
         || !fields[2].contains("8080/tcp")
         || !fields[3].contains("/data")
         || !fields[4].contains(IMAGE_VERSION_LABEL + ":" + version)
-        || !fields[4].contains(IMAGE_REVISION_LABEL + ":" + revision)) {
+        || !fields[4].contains(IMAGE_REVISION_LABEL + ":" + revision)
+        || !fields[5].contains("TOKTRAK_VERSION=" + displayVersion)
+        || !fields[5].contains("TOKTRAK_REVISION=" + revision)) {
       throw new IllegalStateException("TokTrak image metadata is invalid");
     }
   }
@@ -3848,8 +3856,9 @@ public final class Build {
     return imageRepository() + ":v" + version;
   }
 
-  private static void containerVerify(String image, int version, String revision) throws Exception {
-    inspectImage(image, version, revision);
+  private static void containerVerify(
+      String image, int version, String revision, String displayVersion) throws Exception {
+    inspectImage(image, version, revision, displayVersion);
     String rootless =
         runTool(
                 "podman",

@@ -17,6 +17,7 @@ public record Config(
     Path corpus,
     boolean failWrites,
     ClockSource clock,
+    BuildInfo buildInfo,
     String oidcDiscoveryUrl,
     String oidcClientId,
     String oidcClientSecret,
@@ -38,6 +39,7 @@ public record Config(
     if (port < 0 || port > 65_535) throw new IllegalArgumentException("port must be 0..65535");
     Objects.requireNonNull(dataDirectory, "dataDirectory");
     Objects.requireNonNull(clock, "clock");
+    Objects.requireNonNull(buildInfo, "buildInfo");
     assert baseUrl == null || baseUrl.length() <= VALUE_CHARACTERS_MAX;
     assert devAuth == (oidcDiscoveryUrl == null);
   }
@@ -134,6 +136,7 @@ public record Config(
         corpus,
         failWrites,
         clock,
+        BuildInfo.from(environment),
         oidcDiscoveryUrl,
         oidcClientId,
         oidcClientSecret,

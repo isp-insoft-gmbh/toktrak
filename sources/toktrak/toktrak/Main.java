@@ -8,6 +8,9 @@ import toktrak.http.BaseView;
 import toktrak.http.BaseView.CurrencySwitch;
 import toktrak.http.BaseView.CurrentPage;
 import toktrak.http.BaseView.RuntimeMode;
+import toktrak.http.Changelog;
+import toktrak.http.ChangesView;
+import toktrak.http.ChangesViewRenderer;
 import toktrak.http.HomeView;
 import toktrak.http.HomeView.SessionState;
 import toktrak.http.HomeViewRenderer;
@@ -34,39 +37,49 @@ public final class Main {
       String logoWordmarkDarkUrl = assets.publicUrl("logo-wordmark-dark.svg");
       String logoLockupUrl = assets.publicUrl("logo-lockup.svg");
       String logoLockupDarkUrl = assets.publicUrl("logo-lockup-dark.svg");
-      byte[] html;
+      BuildInfo buildInfo = BuildInfo.from(System.getenv());
+      var base =
+          new BaseView(
+              "TokTrak",
+              stylesheetUrl,
+              datastarUrl,
+              faviconUrl,
+              logoWordmarkUrl,
+              logoWordmarkDarkUrl,
+              logoLockupUrl,
+              logoLockupDarkUrl,
+              RuntimeMode.PRODUCTION,
+              CurrentPage.NONE,
+              CurrencySwitch.disabled(),
+              buildInfo.version());
+      byte[] homeHtml;
+      byte[] changesHtml;
       try {
-        html =
+        homeHtml =
             HttpSupport.renderEncoded(
-                HomeViewRenderer.of(),
-                new HomeView(
-                    new BaseView(
-                        "TokTrak",
-                        stylesheetUrl,
-                        datastarUrl,
-                        faviconUrl,
-                        logoWordmarkUrl,
-                        logoWordmarkDarkUrl,
-                        logoLockupUrl,
-                        logoLockupDarkUrl,
-                        RuntimeMode.PRODUCTION,
-                        CurrentPage.NONE,
-                        CurrencySwitch.disabled()),
-                    SessionState.SIGNED_OUT));
+                HomeViewRenderer.of(), new HomeView(base, SessionState.SIGNED_OUT));
+        changesHtml =
+            HttpSupport.renderEncoded(
+                ChangesViewRenderer.of(),
+                new ChangesView(base, Changelog.load(buildInfo.version())));
       } catch (IOException exception) {
         throw new IllegalStateException("production renderer self-check failed", exception);
       }
-      String document = new String(html, StandardCharsets.UTF_8);
-      if (!document.contains("class=\"home-brand\"")
-          || !document.contains(logoLockupUrl)
-          || document.contains("{{")) {
+      String homeDocument = new String(homeHtml, StandardCharsets.UTF_8);
+      String changesDocument = new String(changesHtml, StandardCharsets.UTF_8);
+      if (!homeDocument.contains("class=\"home-brand\"")
+          || !homeDocument.contains(logoLockupUrl)
+          || !changesDocument.contains("class=\"current-release\"")
+          || !changesDocument.contains(buildInfo.version())
+          || homeDocument.contains("{{")
+          || changesDocument.contains("{{")) {
         throw new IllegalStateException("production renderer self-check failed");
       }
       System.out.println(
           "TokTrak assets and rendering ok: "
               + assets.publicCount()
               + ", "
-              + html.length
+              + Math.addExact(homeHtml.length, changesHtml.length)
               + " bytes");
       return;
     }
