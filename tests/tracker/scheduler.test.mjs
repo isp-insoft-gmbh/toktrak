@@ -81,6 +81,41 @@ async function temporaryDefinitions() {
   return new Set((await readdir(tmpdir())).filter((name) => name.startsWith("toktrak-task.")));
 }
 
+test("given_windowsGroupOutput_when_readingIntegrityLevel_then_returnsMandatoryLevel", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "toktrak-scheduler-test-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const { module: tracker } = await renderedTracker(directory);
+
+  assert.equal(tracker.windowsIntegrityLevel('"Mandatory Label","S-1-16-8192"'), 8_192);
+  assert.equal(tracker.windowsIntegrityLevel('"Mandatory Label","S-1-16-12288"'), 12_288);
+  assert.throws(() => tracker.windowsIntegrityLevel("no integrity SID"), /could not be determined/u);
+  assert.throws(() => tracker.windowsIntegrityLevel("S-1-16-8192 S-1-16-12288"), /could not be determined/u);
+});
+
+test("given_windowsProcess_when_verifyingInstallPrivileges_then_matchesWindowsPrincipal", {
+  skip: process.platform !== "win32",
+}, async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "toktrak-scheduler-test-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const { module: tracker } = await renderedTracker(directory);
+  const script =
+    "$identity=[Security.Principal.WindowsIdentity]::GetCurrent();" +
+    "$principal=[Security.Principal.WindowsPrincipal]::new($identity);" +
+    "$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)";
+  const { stdout } = await exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    timeout: 30_000,
+    maxBuffer: 64 * 1_024,
+    windowsHide: true,
+  });
+
+  if (stdout.trim() === "True") {
+    await assert.rejects(() => tracker.verifyWindowsInstallPrivileges(), /must run without administrator privileges/u);
+  } else {
+    assert.equal(stdout.trim(), "False");
+    await assert.doesNotReject(() => tracker.verifyWindowsInstallPrivileges());
+  }
+});
+
 test("given_schedulerInputs_when_renderingWindowsDefinition_then_emitsBoundedNativeXml", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "toktrak-tracker-test-"));
   context.after(() => rm(directory, { recursive: true, force: true }));

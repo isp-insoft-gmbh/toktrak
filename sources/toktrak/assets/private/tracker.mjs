@@ -163,6 +163,35 @@ function windowsSchedulerRevisionPath(scriptPath) {
   return path.join(path.dirname(scriptPath), "windows-scheduler-revision");
 }
 
+export function windowsIntegrityLevel(groups) {
+  if (typeof groups !== "string")
+    throw new Error("Windows privilege level could not be determined; installation stopped");
+  const levels = [...groups.matchAll(/S-1-16-([0-9]+)(?![0-9])/gu)];
+  if (levels.length !== 1) throw new Error("Windows privilege level could not be determined; installation stopped");
+  return Number.parseInt(levels[0][1], 10);
+}
+
+export async function verifyWindowsInstallPrivileges() {
+  if (process.platform !== "win32") return;
+  let stdout;
+  try {
+    const windowsDirectory = requiredPath(process.env.SystemRoot, "Windows directory");
+    if (!path.isAbsolute(windowsDirectory)) throw new Error("Windows directory is invalid");
+    ({ stdout } = await exec(path.join(windowsDirectory, "System32", "whoami.exe"), ["/groups", "/fo", "csv", "/nh"], {
+      timeout: 30_000,
+      maxBuffer: 64 * 1_024,
+      windowsHide: true,
+    }));
+  } catch {
+    throw new Error("Windows privilege level could not be determined; installation stopped");
+  }
+  if (windowsIntegrityLevel(stdout) >= 12_288) {
+    throw new Error(
+      "Windows installation must run without administrator privileges; close this terminal and run it from a normal PowerShell window",
+    );
+  }
+}
+
 async function atomicWrite(destination, bytes) {
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
   const temporary = `${destination}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
@@ -623,6 +652,7 @@ async function runUpload(full, updateTarget, fallback) {
 }
 
 async function install() {
+  await verifyWindowsInstallPrivileges();
   const target = installationPath();
   const sessions = await piSessions();
   log("info", `copying tracker to ${target}`);
