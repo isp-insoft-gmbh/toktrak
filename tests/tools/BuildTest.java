@@ -230,8 +230,7 @@ public final class BuildTest {
               "tools/refaster",
               "tools/perf",
               "tests/tools",
-              "deps",
-              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http")) {
+              "deps")) {
         Files.createDirectories(root.resolve(directory));
       }
       for (String file :
@@ -242,10 +241,10 @@ public final class BuildTest {
               "tools/perf/Perf.java",
               "tools/refaster/Rules.java",
               "tests/tools/BuildTest.java",
-              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http/CreatedTokenViewRenderer.java",
               "deps/main.jar",
               "deps/test.jar",
               "deps/snapshot.jar",
+              "deps/jmh.core.jar",
               "deps/error_prone_refaster-2.50.0.jar")) {
         Files.createFile(root.resolve(file));
       }
@@ -256,6 +255,7 @@ public final class BuildTest {
           List.of(root.resolve("deps/main.jar")),
           List.of(root.resolve("deps/test.jar")),
           List.of(root.resolve("deps/snapshot.jar")),
+          List.of(root.resolve("deps/jmh.core.jar")),
           root.resolve("deps/error_prone_refaster-2.50.0.jar"),
           27);
 
@@ -270,24 +270,29 @@ public final class BuildTest {
         }
       }
       parser.parse(output.resolve("toktrak/.factorypath").toFile());
+      parser.parse(output.resolve("toktrak.perf/.factorypath").toFile());
       String generated =
           Files.readString(output.resolve("toktrak/.project"))
               + Files.readString(output.resolve("toktrak/.classpath"))
               + Files.readString(output.resolve("toktrak/.factorypath"))
               + Files.readString(output.resolve("toktrak/.settings/org.eclipse.jdt.apt.core.prefs"))
+              + Files.readString(output.resolve("toktrak/.settings/org.eclipse.jdt.core.prefs"))
               + Files.readString(output.resolve("toktrak.tests/.project"))
               + Files.readString(output.resolve("toktrak.tests/.classpath"))
               + Files.readString(output.resolve("toktrak.build/.project"))
               + Files.readString(output.resolve("toktrak.build/.classpath"))
               + Files.readString(output.resolve("toktrak.perf/.project"))
-              + Files.readString(output.resolve("toktrak.perf/.classpath"));
+              + Files.readString(output.resolve("toktrak.perf/.classpath"))
+              + Files.readString(output.resolve("toktrak.perf/.factorypath"))
+              + Files.readString(
+                  output.resolve("toktrak.perf/.settings/org.eclipse.jdt.apt.core.prefs"));
       for (String expected :
           List.of(
               "<name>toktrak</name>",
               "<name>toktrak.tests</name>",
               "<name>toktrak.build</name>",
               "<name>toktrak.perf</name>",
-              "generated",
+              "path=\".apt_generated\"",
               "snapshot.jar",
               "toktrak.tests=ALL-UNNAMED",
               "name=\"add-reads\"",
@@ -299,9 +304,11 @@ public final class BuildTest {
               "src/tools",
               "test/tools",
               "tools/perf",
-              "generated/toktrak",
+              "jmh.core.jar",
+              "path=\"/toktrak\"",
               "error_prone_refaster-2.50.0.jar",
               "excluding=\"templates/**\"",
+              "org.eclipse.jdt.core.compiler.processAnnotations=enabled",
               "jstache.resourcesPath",
               "io.jstach.apt.jar")) {
         if (!generated.contains(expected)) {
@@ -333,9 +340,9 @@ public final class BuildTest {
               "sources/toktrak",
               "tests/toktrak.tests",
               "tools/refaster",
+              "tools/perf",
               "tests/tools",
-              "deps",
-              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http")) {
+              "deps")) {
         Files.createDirectories(root.resolve(directory));
       }
       for (String file :
@@ -345,10 +352,10 @@ public final class BuildTest {
               "tools/Build.java",
               "tools/refaster/Rules.java",
               "tests/tools/BuildTest.java",
-              "output/modules/target/generated-sources/annotations/toktrak/toktrak/http/CreatedTokenViewRenderer.java",
               "deps/main.jar",
               "deps/test.jar",
               "deps/snapshot.jar",
+              "deps/jmh.core.jar",
               "deps/error_prone_refaster-2.50.0.jar")) {
         Files.createFile(root.resolve(file));
       }
@@ -357,6 +364,12 @@ public final class BuildTest {
               Files.newOutputStream(root.resolve("deps/snapshot.jar")))) {
         jar.flush();
       }
+      Files.writeString(
+          root.resolve("sources/intellij-known-inspections.txt"),
+          "IgnoreResultOfCall\nSynchronizedMethod\nUnusedDeclaration\n");
+      Files.writeString(
+          root.resolve("sources/intellij-inspections.txt"),
+          "IgnoreResultOfCall\nSynchronizedMethod\n");
       Path idea = root.resolve(".idea");
       Files.createDirectories(idea);
       Path workspace = idea.resolve("workspace.xml");
@@ -367,6 +380,7 @@ public final class BuildTest {
           List.of(root.resolve("deps/main.jar")),
           List.of(root.resolve("deps/test.jar")),
           List.of(root.resolve("deps/snapshot.jar")),
+          List.of(root.resolve("deps/jmh.core.jar")),
           root.resolve("deps/error_prone_refaster-2.50.0.jar"),
           27);
 
@@ -376,6 +390,10 @@ public final class BuildTest {
               "modules.xml",
               "misc.xml",
               "compiler.xml",
+              "codeStyles/codeStyleConfig.xml",
+              "codeStyles/Project.xml",
+              "inspectionProfiles/profiles_settings.xml",
+              "inspectionProfiles/Project_Default.xml",
               "modules/toktrak.iml",
               "modules/toktrak.tests.iml",
               "modules/toktrak.build.iml",
@@ -386,6 +404,10 @@ public final class BuildTest {
           Files.readString(idea.resolve("modules.xml"))
               + Files.readString(idea.resolve("misc.xml"))
               + Files.readString(idea.resolve("compiler.xml"))
+              + Files.readString(idea.resolve("codeStyles/codeStyleConfig.xml"))
+              + Files.readString(idea.resolve("codeStyles/Project.xml"))
+              + Files.readString(idea.resolve("inspectionProfiles/profiles_settings.xml"))
+              + Files.readString(idea.resolve("inspectionProfiles/Project_Default.xml"))
               + Files.readString(idea.resolve("modules/toktrak.iml"))
               + Files.readString(idea.resolve("modules/toktrak.tests.iml"))
               + Files.readString(idea.resolve("modules/toktrak.build.iml"))
@@ -401,28 +423,58 @@ public final class BuildTest {
               "target=\"27\"",
               "isTestSource=\"true\"",
               "packagePrefix=\"tools\"",
-              "scope=\"TEST\"",
               "snapshot.jar",
+              "jmh.core.jar",
               "type=\"module-library\"",
               "module-name=\"toktrak\"",
               "ADDITIONAL_OPTIONS_OVERRIDE",
+              "--add-reads toktrak.tests=ALL-UNNAMED",
+              "--add-exports toktrak/toktrak.http=toktrak.tests",
+              "sourceOutputDir name=\"../../generated\"",
+              "sourceTestOutputDir name=\"../../generated-test\"",
+              "sourceOutputDir name=\"../../generated-perf\"",
+              "sourceTestOutputDir name=\"../../generated-perf-test\"",
               "-Ajstache.resourcesPath=",
-              "packagePrefix=\"toktrak\"",
-              "packagePrefix=\"selfie\"",
-              "tests/toktrak.tests/toktrak",
-              "tests/toktrak.tests/selfie",
-              "output/ide/intellij/generated/toktrak",
-              "generated=\"true\"",
-              "output/ide/intellij",
+              "sourceFolder url=\"file://$MODULE_DIR$/../../tests/toktrak.tests\""
+                  + " isTestSource=\"true\"",
+              "output/intellij/classes",
               "TokTrak JStachio",
+              "TokTrak JMH",
+              "org.openjdk.jmh.generators.BenchmarkProcessor",
+              "module name=\"toktrak.perf\"",
+              "output/intellij/generated\" isTestSource=\"false\" generated=\"true\"",
+              "output/intellij/generated-perf\" isTestSource=\"false\" generated=\"true\"",
               "jstache.resourcesPath",
               "io.jstach.apt.jar",
+              "USE_PER_PROJECT_SETTINGS",
+              "RIGHT_MARGIN\" value=\"100",
+              "PROJECT_PROFILE\" value=\"Project Default",
+              "class=\"IgnoreResultOfCall\" enabled=\"true\"",
+              "class=\"SynchronizedMethod\" enabled=\"true\"",
+              "class=\"UnusedDeclaration\" enabled=\"false\"",
               "content url=\"file://$MODULE_DIR$/../../tools/perf\"",
               "excludeFolder url=\"file://$MODULE_DIR$/../../sources/toktrak/templates\"",
               "excludeFolder url=\"file://$MODULE_DIR$/../../tools/perf\"")) {
         if (!generated.contains(expected)) {
           throw new AssertionError("missing IntelliJ metadata: " + expected);
         }
+      }
+      for (String module : List.of("toktrak", "toktrak.tests", "toktrak.build", "toktrak.perf")) {
+        String metadata = Files.readString(idea.resolve("modules/" + module + ".iml"));
+        if (!metadata.contains("output/intellij/classes/" + module)
+            || !metadata.contains("output/intellij/test-classes/" + module)) {
+          throw new AssertionError("incorrect IntelliJ output directories: " + module);
+        }
+      }
+      String testModule = Files.readString(idea.resolve("modules/toktrak.tests.iml"));
+      if (testModule.contains("packagePrefix=")
+          || testModule.contains("scope=\"TEST\"")
+          || !testModule.contains("tests/toktrak.tests\" isTestSource=\"true\"")) {
+        throw new AssertionError("incorrect IntelliJ test source root");
+      }
+      String perfModule = Files.readString(idea.resolve("modules/toktrak.perf.iml"));
+      if (!perfModule.contains("tools/perf\" isTestSource=\"false\"")) {
+        throw new AssertionError("incorrect IntelliJ performance source root");
       }
       if (generated.contains("file://$PROJECT_DIR$/sources")
           || generated.contains("jar://$PROJECT_DIR$/output")) {

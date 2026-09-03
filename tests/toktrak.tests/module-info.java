@@ -5,6 +5,7 @@ module toktrak.tests {
   requires java.net.http;
   requires jdk.httpserver;
   requires org.junit.jupiter.api;
+  requires org.junit.jupiter.engine;
   requires org.junit.platform.engine;
   requires org.junit.platform.launcher;
   requires toktrak;

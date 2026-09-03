@@ -10,6 +10,9 @@
   gate.
 - Run `mise run prod` when production runtime behavior or packaging can change.
 - Run `mise run clean` to remove generated output.
+- Generate editor metadata with `mise run ide [eclipse|intellij]`; `Build.java`
+  lint and `mise run fmt` remain authoritative over IDE diagnostics and
+  formatting.
 - Run the seeded server with `mise run dev`; use `mise run dev --fail-writes`
   for degraded-write behavior.
 - Reproduce CI with `mise run ci`, then `mise run coverage`. `ci` applies

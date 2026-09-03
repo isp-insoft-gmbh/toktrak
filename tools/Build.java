@@ -111,7 +111,7 @@ public final class Build {
   private static final Path REFASTER_SOURCE = ROOT.resolve("tools/refaster/Rules.java");
   private static final Path PERF_TOOL = ROOT.resolve("tools/perf/Perf.java");
   private static final Path PERF_CORPUS_REPLAY_BENCHMARK =
-      ROOT.resolve("tools/perf/CorpusReplayBenchmark.java");
+      ROOT.resolve("tools/perf/toktrak/perf/CorpusReplayBenchmark.java");
   private static final Path APP_SOURCES = ROOT.resolve("sources/toktrak");
   private static final Path ASSET_SOURCES = APP_SOURCES.resolve("assets");
   private static final Path TEMPLATE_SOURCES = APP_SOURCES.resolve("templates");
@@ -126,10 +126,12 @@ public final class Build {
   private static final List<Path> GOLEM_TEST_SOURCES =
       List.of(
           ROOT.resolve("tools/golem.test.mjs"),
-          ROOT.resolve(".claude/skills/file-upload/scripts/upload.test.mjs"),
-          ROOT.resolve(".claude/skills/toktrak-intellij-inspection/scripts/run.test.mjs"));
+          ROOT.resolve(".claude/skills/file-upload/scripts/upload.test.mjs"));
   private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
   private static final Path PMD_CONFIG = ROOT.resolve("sources/pmd.xml");
+  private static final Path INTELLIJ_INSPECTIONS = ROOT.resolve("sources/intellij-inspections.txt");
+  private static final Path INTELLIJ_KNOWN_INSPECTIONS =
+      ROOT.resolve("sources/intellij-known-inspections.txt");
   private static final Path PMD_REPORT = OUTPUT.resolve("pmd/report.txt");
   private static final List<Path> REPOSITORY_SKILLS =
       List.of(
@@ -137,7 +139,6 @@ public final class Build {
           ROOT.resolve(".claude/skills/toktrak-jstachio"),
           ROOT.resolve(".claude/skills/modern-css"),
           ROOT.resolve(".claude/skills/toktrak-quality"),
-          ROOT.resolve(".claude/skills/toktrak-intellij-inspection"),
           ROOT.resolve(".claude/skills/toktrak-refaster"),
           ROOT.resolve(".claude/skills/git-workflow"),
           ROOT.resolve(".claude/skills/gh-cli"),
@@ -942,27 +943,36 @@ public final class Build {
   private static void generateIdeMetadata(boolean eclipse, boolean intellij) throws Exception {
     assert eclipse || intellij;
     int javaFeature = Runtime.version().feature();
-    compile();
     ensureDependency(
         "sources/main-deps.txt", MAIN_DEPS, "resolve-toktrak-production-dependencies", true);
     ensureDependency("sources/test-deps.txt", TEST_DEPS, "resolve-toktrak-test-dependencies", true);
     ensureDependency(
         "sources/snapshot-deps.txt", SNAPSHOT_DEPS, "resolve-snapshot-dependencies", false);
+    ensureBuildDependencies();
+    ensurePerfDependencies();
     ensureRefasterDependencies();
     verifyModules(MAIN_DEPS);
     verifyModules(TEST_DEPS);
     List<Path> mainJars = jarPaths(List.of(MAIN_DEPS));
     List<Path> testJars = jarPaths(List.of(TEST_DEPS));
     List<Path> snapshotJars = jarPaths(List.of(SNAPSHOT_DEPS));
+    List<Path> perfJars = jarPaths(List.of(PERF_JMH_DEPS));
     Path refaster = refasterJar();
-    String fingerprint = ideFingerprint(mainJars, testJars, snapshotJars, refaster);
+    String fingerprint = ideFingerprint(mainJars, testJars, snapshotJars, perfJars, refaster);
     if (eclipse) {
       rebuildArtifact(
           ECLIPSE_IDE,
           fingerprint,
           staging ->
               generateEclipseProjects(
-                  ROOT, staging, mainJars, testJars, snapshotJars, refaster, javaFeature));
+                  ROOT,
+                  staging,
+                  mainJars,
+                  testJars,
+                  snapshotJars,
+                  perfJars,
+                  refaster,
+                  javaFeature));
     }
     if (intellij) {
       rebuildArtifact(
@@ -970,25 +980,38 @@ public final class Build {
           fingerprint,
           staging ->
               generateIntellijProjects(
-                  ROOT, staging, mainJars, testJars, snapshotJars, refaster, javaFeature));
+                  ROOT,
+                  staging,
+                  mainJars,
+                  testJars,
+                  snapshotJars,
+                  perfJars,
+                  refaster,
+                  javaFeature));
       installIntellijMetadata(INTELLIJ_METADATA, INTELLIJ_IDEA);
     }
   }
 
   private static String ideFingerprint(
-      List<Path> mainJars, List<Path> testJars, List<Path> snapshotJars, Path refaster)
+      List<Path> mainJars,
+      List<Path> testJars,
+      List<Path> snapshotJars,
+      List<Path> perfJars,
+      Path refaster)
       throws Exception {
     var digest = MessageDigest.getInstance("SHA-256");
     update(digest, "ide\n" + platformFingerprint() + "\n");
-    for (Path path : Stream.of(mainJars, testJars, snapshotJars).flatMap(List::stream).toList()) {
+    for (Path path :
+        Stream.of(mainJars, testJars, snapshotJars, perfJars).flatMap(List::stream).toList()) {
       update(digest, path.getFileName() + "\n");
       updateDigestFromFile(digest, path);
     }
     updateDigestFromFile(digest, refaster);
+    updateDigestFromFile(digest, INTELLIJ_INSPECTIONS);
+    updateDigestFromFile(digest, INTELLIJ_KNOWN_INSPECTIONS);
     updateDigestFromFile(digest, ROOT.resolve("tools/Build.java"));
     for (Path path : jarPaths(List.of(BUILD_DEPS))) updateDigestFromFile(digest, path);
     updateTree(digest, TEMPLATE_SOURCES, ".mustache");
-    updateTree(digest, GENERATED_SOURCES, ".java");
     return HexFormat.of().formatHex(digest.digest());
   }
 
@@ -1009,6 +1032,10 @@ public final class Build {
         "modules.xml",
         "misc.xml",
         "compiler.xml",
+        "codeStyles/codeStyleConfig.xml",
+        "codeStyles/Project.xml",
+        "inspectionProfiles/profiles_settings.xml",
+        "inspectionProfiles/Project_Default.xml",
         "modules/toktrak.iml",
         "modules/toktrak.tests.iml",
         "modules/toktrak.build.iml",
@@ -1021,11 +1048,12 @@ public final class Build {
       List<Path> mainJars,
       List<Path> testJars,
       List<Path> snapshotJars,
+      List<Path> perfJars,
       Path refasterJar,
       int javaFeature)
       throws IOException {
     generateEclipseProjects(
-        root, output, mainJars, testJars, snapshotJars, refasterJar, javaFeature);
+        root, output, mainJars, testJars, snapshotJars, perfJars, refasterJar, javaFeature);
   }
 
   private static void generateEclipseProjects(
@@ -1034,6 +1062,7 @@ public final class Build {
       List<Path> mainJars,
       List<Path> testJars,
       List<Path> snapshotJars,
+      List<Path> perfJars,
       Path refasterJar,
       int javaFeature)
       throws IOException {
@@ -1042,6 +1071,7 @@ public final class Build {
     assert mainJars != null;
     assert testJars != null;
     assert snapshotJars != null;
+    assert perfJars != null;
     assert refasterJar != null;
     assert javaFeature > 0;
     root = root.toAbsolutePath().normalize();
@@ -1056,10 +1086,12 @@ public final class Build {
     requireCollectionSize(mainJars, "Eclipse main JARs");
     requireCollectionSize(testJars, "Eclipse test JARs");
     requireCollectionSize(snapshotJars, "Eclipse snapshot JARs");
+    requireCollectionSize(perfJars, "Eclipse performance JARs");
     requireFile(refasterJar);
     for (Path jar : mainJars) requireFile(jar);
     for (Path jar : testJars) requireFile(jar);
     for (Path jar : snapshotJars) requireFile(jar);
+    for (Path jar : perfJars) requireFile(jar);
 
     List<Path> allTestJars = new ArrayList<>(mainJars);
     if (testJars.size() > COLLECTION_ENTRIES_MAX - allTestJars.size()) {
@@ -1072,7 +1104,6 @@ public final class Build {
     allTestJars.addAll(snapshotJars);
 
     deleteTree(output);
-    copyIdeGeneratedSources(root, output.resolve("generated/toktrak"));
     Path app = output.resolve("toktrak");
     Path tests = output.resolve("toktrak.tests");
     Path build = output.resolve("toktrak.build");
@@ -1080,22 +1111,16 @@ public final class Build {
     writeEclipseProject(
         output,
         app,
-        eclipseProject(
-            "toktrak",
-            "",
-            eclipseLink("src", "sources/toktrak")
-                + eclipseLink("generated", "output/ide/eclipse/generated/toktrak")),
+        eclipseProject("toktrak", "", eclipseLink("src", "sources/toktrak")),
         eclipseAppClasspath(mainJars, javaFeature));
     writeIdeFile(
         output,
         app.resolve(".settings/org.eclipse.jdt.apt.core.prefs"),
-        "eclipse.preferences.version=1\n"
-            + "org.eclipse.jdt.apt.aptEnabled=true\n"
-            + "org.eclipse.jdt.apt.genSrcDir=.apt_generated\n"
-            + "org.eclipse.jdt.apt.processorOptions/jstache.resourcesPath="
-            + root.resolve("sources/toktrak/templates").toString().replace('\\', '/')
-            + "\norg.eclipse.jdt.apt.processorOptions/jstache.incremental=true\n"
-            + "org.eclipse.jdt.apt.processorOptions/jstache.claim_annotations=true\n");
+        eclipseAnnotationProcessingPrefs(
+            "org.eclipse.jdt.apt.processorOptions/jstache.resourcesPath="
+                + root.resolve("sources/toktrak/templates").toString().replace('\\', '/')
+                + "\norg.eclipse.jdt.apt.processorOptions/jstache.incremental=true\n"
+                + "org.eclipse.jdt.apt.processorOptions/jstache.claim_annotations=true\n"));
     writeIdeFile(
         output, app.resolve(".factorypath"), eclipseFactoryPath(jarPaths(List.of(BUILD_DEPS))));
     writeEclipseProject(
@@ -1119,8 +1144,14 @@ public final class Build {
     writeEclipseProject(
         output,
         perf,
-        eclipseProject("toktrak.perf", "", eclipseLink("src", "tools/perf")),
-        eclipsePerfClasspath(javaFeature));
+        eclipseProject(
+            "toktrak.perf", "    <project>toktrak</project>\n", eclipseLink("src", "tools/perf")),
+        eclipsePerfClasspath(mainJars, perfJars, javaFeature));
+    writeIdeFile(
+        output,
+        perf.resolve(".settings/org.eclipse.jdt.apt.core.prefs"),
+        eclipseAnnotationProcessingPrefs(""));
+    writeIdeFile(output, perf.resolve(".factorypath"), eclipseFactoryPath(perfJars));
     assert Files.isRegularFile(app.resolve(".project"));
     assert Files.isRegularFile(tests.resolve(".project"));
     assert Files.isRegularFile(build.resolve(".project"));
@@ -1133,11 +1164,12 @@ public final class Build {
       List<Path> mainJars,
       List<Path> testJars,
       List<Path> snapshotJars,
+      List<Path> perfJars,
       Path refasterJar,
       int javaFeature)
       throws IOException {
     generateIntellijProjects(
-        root, idea, mainJars, testJars, snapshotJars, refasterJar, javaFeature);
+        root, idea, mainJars, testJars, snapshotJars, perfJars, refasterJar, javaFeature);
   }
 
   private static void generateIntellijProjects(
@@ -1146,6 +1178,7 @@ public final class Build {
       List<Path> mainJars,
       List<Path> testJars,
       List<Path> snapshotJars,
+      List<Path> perfJars,
       Path refasterJar,
       int javaFeature)
       throws IOException {
@@ -1154,6 +1187,7 @@ public final class Build {
     assert mainJars != null;
     assert testJars != null;
     assert snapshotJars != null;
+    assert perfJars != null;
     assert refasterJar != null;
     assert javaFeature > 0;
     root = root.toAbsolutePath().normalize();
@@ -1169,10 +1203,12 @@ public final class Build {
     requireCollectionSize(mainJars, "IntelliJ main JARs");
     requireCollectionSize(testJars, "IntelliJ test JARs");
     requireCollectionSize(snapshotJars, "IntelliJ snapshot JARs");
+    requireCollectionSize(perfJars, "IntelliJ performance JARs");
     requireFile(refasterJar);
     for (Path jar : mainJars) requireFile(jar);
     for (Path jar : testJars) requireFile(jar);
     for (Path jar : snapshotJars) requireFile(jar);
+    for (Path jar : perfJars) requireFile(jar);
 
     List<Path> allTestJars = new ArrayList<>(mainJars);
     if (testJars.size() > COLLECTION_ENTRIES_MAX - allTestJars.size()) {
@@ -1183,13 +1219,27 @@ public final class Build {
       throw new IllegalStateException("IntelliJ snapshot JARs exceed collection limit");
     }
     allTestJars.addAll(snapshotJars);
-    copyIdeGeneratedSources(root, idea.resolve("generated/toktrak"));
+    var allPerfJars = new ArrayList<>(mainJars);
+    if (perfJars.size() > COLLECTION_ENTRIES_MAX - allPerfJars.size()) {
+      throw new IllegalStateException("IntelliJ performance JARs exceed collection limit");
+    }
+    allPerfJars.addAll(perfJars);
     writeIdeFile(idea, idea.resolve("modules.xml"), intellijModules());
     writeIdeFile(idea, idea.resolve("misc.xml"), intellijMisc(javaFeature));
     writeIdeFile(
         idea,
         idea.resolve("compiler.xml"),
-        intellijCompiler(root, jarPaths(List.of(BUILD_DEPS)), javaFeature));
+        intellijCompiler(root, jarPaths(List.of(BUILD_DEPS)), perfJars, javaFeature));
+    writeIdeFile(idea, idea.resolve("codeStyles/codeStyleConfig.xml"), intellijCodeStyleConfig());
+    writeIdeFile(idea, idea.resolve("codeStyles/Project.xml"), intellijCodeStyle());
+    writeIdeFile(
+        idea,
+        idea.resolve("inspectionProfiles/profiles_settings.xml"),
+        intellijInspectionProfileSettings());
+    writeIdeFile(
+        idea,
+        idea.resolve("inspectionProfiles/Project_Default.xml"),
+        intellijInspectionProfile(root));
     writeIdeFile(
         idea,
         idea.resolve("modules/toktrak.iml"),
@@ -1201,8 +1251,8 @@ public final class Build {
         intellijModule(
             "toktrak.tests",
             intellijTestsContent(),
-            "    <orderEntry type=\"module\" module-name=\"toktrak\" scope=\"TEST\"/>\n"
-                + intellijLibrary(root, allTestJars, true),
+            "    <orderEntry type=\"module\" module-name=\"toktrak\"/>\n"
+                + intellijLibrary(root, allTestJars, false),
             javaFeature));
     writeIdeFile(
         idea,
@@ -1217,30 +1267,16 @@ public final class Build {
         idea,
         idea.resolve("modules/toktrak.perf.iml"),
         intellijModule(
-            "toktrak.perf", intellijContent("tools/perf", false, null), "", javaFeature));
+            "toktrak.perf",
+            intellijContent("tools/perf", false, null) + intellijGeneratedContent("generated-perf"),
+            "    <orderEntry type=\"module\" module-name=\"toktrak\"/>\n"
+                + intellijLibrary(root, allPerfJars, false),
+            javaFeature));
     assert Files.isRegularFile(idea.resolve("modules.xml"));
     assert Files.isRegularFile(idea.resolve("modules/toktrak.iml"));
     assert Files.isRegularFile(idea.resolve("modules/toktrak.tests.iml"));
     assert Files.isRegularFile(idea.resolve("modules/toktrak.build.iml"));
     assert Files.isRegularFile(idea.resolve("modules/toktrak.perf.iml"));
-  }
-
-  private static void copyIdeGeneratedSources(Path root, Path target) throws IOException {
-    assert root != null;
-    assert target != null;
-    Path source = root.resolve("output/modules/target/generated-sources/annotations/toktrak");
-    requireDirectory(source);
-    deleteTree(target);
-    for (Path path : treePaths(source, TREE_ENTRIES_MAX)) {
-      Path relative = source.relativize(path);
-      Path destination = target.resolve(relative);
-      if (Files.isDirectory(path)) {
-        Files.createDirectories(destination);
-      } else if (Files.isRegularFile(path)) {
-        Files.createDirectories(destination.getParent());
-        Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING);
-      }
-    }
   }
 
   private static String intellijModules() {
@@ -1271,22 +1307,123 @@ public final class Build {
     <?xml version="1.0" encoding="UTF-8"?>
     <project version="4">
       <component name="ProjectRootManager" version="2" languageLevel="JDK_%1$d" project-jdk-name="%1$d" project-jdk-type="JavaSDK">
-        <output url="file://$PROJECT_DIR$/output/ide/intellij"/>
+        <output url="file://$PROJECT_DIR$/output/intellij/classes"/>
       </component>
     </project>
     """
         .formatted(javaFeature);
   }
 
-  private static String intellijCompiler(Path root, List<Path> processorJars, int javaFeature) {
-    assert javaFeature > 0;
-    var processorPath = new StringBuilder();
-    for (Path jar : processorJars) {
-      processorPath
-          .append("            <entry name=\"")
-          .append(xml(jar.toAbsolutePath().normalize().toString().replace('\\', '/')))
-          .append("\"/>\n");
+  private static String intellijCodeStyleConfig() {
+    return """
+    <component name="ProjectCodeStyleConfiguration">
+      <state>
+        <option name="USE_PER_PROJECT_SETTINGS" value="true" />
+      </state>
+    </component>
+    """;
+  }
+
+  private static String intellijCodeStyle() {
+    return """
+    <component name="ProjectCodeStyleConfiguration">
+      <code_scheme name="Project" version="173">
+        <option name="LINE_SEPARATOR" value="&#10;" />
+        <option name="RIGHT_MARGIN" value="100" />
+        <JavaCodeStyleSettings>
+          <option name="CLASS_COUNT_TO_USE_IMPORT_ON_DEMAND" value="999" />
+          <option name="NAMES_COUNT_TO_USE_IMPORT_ON_DEMAND" value="999" />
+          <option name="PACKAGES_TO_USE_IMPORT_ON_DEMAND">
+            <value />
+          </option>
+        </JavaCodeStyleSettings>
+        <codeStyleSettings language="JAVA">
+          <option name="RIGHT_MARGIN" value="100" />
+          <option name="KEEP_FIRST_COLUMN_COMMENT" value="false" />
+          <option name="KEEP_BLANK_LINES_IN_DECLARATIONS" value="1" />
+          <option name="KEEP_BLANK_LINES_IN_CODE" value="1" />
+          <option name="KEEP_BLANK_LINES_BEFORE_RBRACE" value="0" />
+          <option name="CALL_PARAMETERS_WRAP" value="1" />
+          <option name="METHOD_PARAMETERS_WRAP" value="1" />
+          <option name="RESOURCE_LIST_WRAP" value="1" />
+          <option name="EXTENDS_LIST_WRAP" value="1" />
+          <option name="THROWS_LIST_WRAP" value="1" />
+          <option name="METHOD_CALL_CHAIN_WRAP" value="1" />
+          <option name="BINARY_OPERATION_WRAP" value="1" />
+          <option name="TERNARY_OPERATION_WRAP" value="1" />
+          <option name="ASSIGNMENT_WRAP" value="1" />
+          <option name="ASSERT_STATEMENT_WRAP" value="1" />
+          <option name="WRAP_ON_TYPING" value="0" />
+          <indentOptions>
+            <option name="INDENT_SIZE" value="2" />
+            <option name="CONTINUATION_INDENT_SIZE" value="4" />
+            <option name="TAB_SIZE" value="2" />
+          </indentOptions>
+        </codeStyleSettings>
+      </code_scheme>
+    </component>
+    """;
+  }
+
+  private static String intellijInspectionProfileSettings() {
+    return """
+    <component name="InspectionProjectProfileManager">
+      <settings>
+        <option name="PROJECT_PROFILE" value="Project Default" />
+        <option name="USE_PROJECT_PROFILE" value="true" />
+        <version value="1.0" />
+      </settings>
+    </component>
+    """;
+  }
+
+  private static String intellijInspectionProfile(Path root) throws IOException {
+    List<String> known =
+        intellijInspectionIds(root.resolve("sources/intellij-known-inspections.txt"));
+    Set<String> accepted =
+        Set.copyOf(intellijInspectionIds(root.resolve("sources/intellij-inspections.txt")));
+    if (!Set.copyOf(known).containsAll(accepted)) {
+      throw new IllegalStateException("accepted IntelliJ inspections must be known");
     }
+    var tools = new StringBuilder();
+    for (String id : known) {
+      boolean enabled = accepted.contains(id);
+      tools
+          .append("    <inspection_tool class=\"")
+          .append(xml(id))
+          .append("\" enabled=\"")
+          .append(enabled)
+          .append("\" level=\"WARNING\" enabled_by_default=\"")
+          .append(enabled)
+          .append("\" />\n");
+    }
+    return """
+    <component name="InspectionProjectProfileManager">
+      <profile version="1.0">
+        <option name="myName" value="Project Default" />
+    %s  </profile>
+    </component>
+    """
+        .formatted(tools);
+  }
+
+  private static List<String> intellijInspectionIds(Path source) throws IOException {
+    requireFile(source);
+    List<String> ids = Files.readAllLines(source, StandardCharsets.UTF_8);
+    List<String> sorted = ids.stream().distinct().sorted().toList();
+    if (ids.isEmpty()
+        || ids.size() > COLLECTION_ENTRIES_MAX
+        || ids.stream().anyMatch(id -> id.isBlank() || id.length() > 256)
+        || !ids.equals(sorted)) {
+      throw new IllegalStateException(
+          "IntelliJ inspection IDs must be bounded, unique, and sorted: " + source);
+    }
+    return ids;
+  }
+
+  private static String intellijCompiler(
+      Path root, List<Path> jstachioProcessorJars, List<Path> jmhProcessorJars, int javaFeature) {
+    assert javaFeature > 0;
     String templates =
         root.resolve("sources/toktrak/templates")
             .toAbsolutePath()
@@ -1297,14 +1434,18 @@ public final class Build {
         "-Ajstache.resourcesPath="
             + templates
             + " -Ajstache.incremental=true -Ajstache.claim_annotations=true";
+    var testJavacOptions = new StringBuilder("--add-reads toktrak.tests=ALL-UNNAMED");
+    for (String export : TEST_EXPORTS) {
+      testJavacOptions.append(" --add-exports ").append(export);
+    }
     return """
     <?xml version="1.0" encoding="UTF-8"?>
     <project version="4">
       <component name="CompilerConfiguration">
         <annotationProcessing>
           <profile default="false" name="TokTrak JStachio" enabled="true">
-            <sourceOutputDir name="output/ide/intellij/generated"/>
-            <sourceTestOutputDir name="output/ide/intellij/generated-test"/>
+            <sourceOutputDir name="../../generated"/>
+            <sourceTestOutputDir name="../../generated-test"/>
             <processorPath useClasspath="false">
     %s        </processorPath>
             <processor name="io.jstach.apt.GenerateRendererProcessor"/>
@@ -1313,17 +1454,43 @@ public final class Build {
             <option name="jstache.claim_annotations" value="true"/>
             <module name="toktrak"/>
           </profile>
+          <profile default="false" name="TokTrak JMH" enabled="true">
+            <sourceOutputDir name="../../generated-perf"/>
+            <sourceTestOutputDir name="../../generated-perf-test"/>
+            <processorPath useClasspath="false">
+    %s        </processorPath>
+            <processor name="org.openjdk.jmh.generators.BenchmarkProcessor"/>
+            <module name="toktrak.perf"/>
+          </profile>
         </annotationProcessing>
         <bytecodeTargetLevel target="%d"/>
       </component>
       <component name="JavacSettings">
         <option name="ADDITIONAL_OPTIONS_OVERRIDE">
           <module name="toktrak" options="%s"/>
+          <module name="toktrak.tests" options="%s"/>
         </option>
       </component>
     </project>
     """
-        .formatted(processorPath, xml(templates), javaFeature, xml(javacOptions));
+        .formatted(
+            intellijProcessorPath(jstachioProcessorJars),
+            xml(templates),
+            intellijProcessorPath(jmhProcessorJars),
+            javaFeature,
+            xml(javacOptions),
+            xml(testJavacOptions.toString()));
+  }
+
+  private static String intellijProcessorPath(List<Path> processorJars) {
+    var processorPath = new StringBuilder();
+    for (Path jar : processorJars) {
+      processorPath
+          .append("            <entry name=\"")
+          .append(xml(jar.toAbsolutePath().normalize().toString().replace('\\', '/')))
+          .append("\"/>\n");
+    }
+    return processorPath.toString();
   }
 
   private static String intellijModule(
@@ -1336,8 +1503,8 @@ public final class Build {
     <?xml version="1.0" encoding="UTF-8"?>
     <module type="JAVA_MODULE" version="4">
       <component name="NewModuleRootManager" LANGUAGE_LEVEL="JDK_%d" inherit-compiler-output="false">
-        <output url="file://$MODULE_DIR$/../../output/ide/intellij/classes/%s"/>
-        <output-test url="file://$MODULE_DIR$/../../output/ide/intellij/test-classes/%s"/>
+        <output url="file://$MODULE_DIR$/../../output/intellij/classes/%s"/>
+        <output-test url="file://$MODULE_DIR$/../../output/intellij/test-classes/%s"/>
         <exclude-output/>
     %s    <orderEntry type="inheritedJdk"/>
         <orderEntry type="sourceFolder" forTests="false"/>
@@ -1353,19 +1520,22 @@ public final class Build {
           <sourceFolder url="file://$MODULE_DIR$/../../sources/toktrak" isTestSource="false"/>
           <excludeFolder url="file://$MODULE_DIR$/../../sources/toktrak/templates"/>
         </content>
-        <content url="file://$MODULE_DIR$/../../output/ide/intellij/generated/toktrak">
-          <sourceFolder url="file://$MODULE_DIR$/../../output/ide/intellij/generated/toktrak" isTestSource="false" generated="true"/>
-        </content>
-    """;
+    """
+        + intellijGeneratedContent("generated");
   }
 
   private static String intellijTestsContent() {
+    return intellijContent("tests/toktrak.tests", true, null);
+  }
+
+  private static String intellijGeneratedContent(String directory) {
+    assert directory != null && !directory.isBlank();
     return """
-        <content url="file://$MODULE_DIR$/../../tests/toktrak.tests">
-          <sourceFolder url="file://$MODULE_DIR$/../../tests/toktrak.tests/toktrak" isTestSource="true" packagePrefix="toktrak"/>
-          <sourceFolder url="file://$MODULE_DIR$/../../tests/toktrak.tests/selfie" isTestSource="true" packagePrefix="selfie"/>
+        <content url="file://$MODULE_DIR$/../../output/intellij/%1$s">
+          <sourceFolder url="file://$MODULE_DIR$/../../output/intellij/%1$s" isTestSource="false" generated="true"/>
         </content>
-    """;
+    """
+        .formatted(xml(directory));
   }
 
   private static String intellijContent(String path, boolean test, String packagePrefix) {
@@ -1483,6 +1653,14 @@ public final class Build {
         .formatted(xml(name), xml(target));
   }
 
+  private static String eclipseAnnotationProcessingPrefs(String processorOptions) {
+    assert processorOptions != null;
+    return "eclipse.preferences.version=1\n"
+        + "org.eclipse.jdt.apt.aptEnabled=true\n"
+        + "org.eclipse.jdt.apt.genSrcDir=.apt_generated\n"
+        + processorOptions;
+  }
+
   private static String eclipseFactoryPath(List<Path> jars) {
     var entries = new StringBuilder("<factorypath>\n");
     for (Path jar : jars) {
@@ -1499,18 +1677,20 @@ public final class Build {
     entries.append(
         "  <classpathentry excluding=\"templates/**\" kind=\"src\" path=\"src\""
             + " output=\"bin/main\"/>\n");
-    entries.append(
-        """
-          <classpathentry kind="src" path="generated" output="bin/main">
-            <attributes>
-              <attribute name="module" value="true"/>
-              <attribute name="optional" value="true"/>
-            </attributes>
-          </classpathentry>
-        """);
+    entries.append(eclipseGeneratedSource());
     entries.append(eclipseJre(javaFeature, true));
     for (Path jar : jars) entries.append(eclipseLibrary(jar, true, false));
     return eclipseClasspath(entries);
+  }
+
+  private static String eclipseGeneratedSource() {
+    return """
+      <classpathentry kind="src" path=".apt_generated">
+        <attributes>
+          <attribute name="optional" value="true"/>
+        </attributes>
+      </classpathentry>
+    """;
   }
 
   private static String eclipseTestClasspath(
@@ -1546,10 +1726,21 @@ public final class Build {
     return eclipseClasspath(entries);
   }
 
-  private static String eclipsePerfClasspath(int javaFeature) {
+  private static String eclipsePerfClasspath(
+      List<Path> mainJars, List<Path> perfJars, int javaFeature) {
     var entries = new StringBuilder();
     entries.append(eclipseSource("src", "bin/main", null, null, false));
-    entries.append(eclipseJre(javaFeature, false));
+    entries.append(eclipseGeneratedSource());
+    entries.append(eclipseJre(javaFeature, true));
+    entries.append(
+        eclipseEntry(
+            "  <classpathentry combineaccessrules=\"false\" kind=\"src\" path=\"/toktrak\">\n",
+            true,
+            false,
+            null,
+            null));
+    for (Path jar : mainJars) entries.append(eclipseLibrary(jar, true, false));
+    for (Path jar : perfJars) entries.append(eclipseLibrary(jar, false, false));
     return eclipseClasspath(entries);
   }
 
@@ -1651,6 +1842,7 @@ public final class Build {
     org.eclipse.jdt.core.compiler.problem.enablePreviewFeatures=disabled
     org.eclipse.jdt.core.compiler.problem.forbiddenReference=warning
     org.eclipse.jdt.core.compiler.problem.reportPreviewFeatures=ignore
+    org.eclipse.jdt.core.compiler.processAnnotations=enabled
     org.eclipse.jdt.core.compiler.release=disabled
     org.eclipse.jdt.core.compiler.source=26
     """;
