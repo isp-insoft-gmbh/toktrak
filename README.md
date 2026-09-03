@@ -72,7 +72,7 @@ layout, generated-code boundaries, and verification commands.
 
 ## Install the tracker
 
-1. Install Node.js.
+1. Install Node.js 22 or newer.
 2. Sign in at <https://toktrak.isp-insoft.de>.
 3. Create a tracker token.
 4. Download `toktrak.mjs` and run it with Node from the download location.
