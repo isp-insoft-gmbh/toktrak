@@ -98,61 +98,46 @@ public final class Router implements HttpHandler {
     if (exceedsUtf8Limit(rawPath, PATH_BYTES_MAX)
         || exceedsUtf8Limit(path, PATH_BYTES_MAX)
         || exceedsUtf8Limit(rawQuery, QUERY_BYTES_MAX)) {
-      String requestId = UUID.randomUUID().toString();
-      try (exchange) {
-        respondError(
-            exchange,
-            414,
-            "uri_too_long",
-            "request URI is too long",
-            "Request URI is too long.",
-            requestId,
-            null);
-      }
+      reject(exchange, 414, "uri_too_long", "request URI is too long", "Request URI is too long.");
       return;
     }
     String method = exchange.getRequestMethod();
     if (method == null || method.isBlank() || method.length() > METHOD_CHARACTERS_MAX) {
-      String requestId = UUID.randomUUID().toString();
-      try (exchange) {
-        respondError(
-            exchange,
-            400,
-            "invalid_method",
-            "request method is invalid",
-            "Request method is invalid.",
-            requestId,
-            null);
-      }
+      reject(
+          exchange,
+          400,
+          "invalid_method",
+          "request method is invalid",
+          "Request method is invalid.");
       return;
     }
     if (!acceptsDevelopmentAuthority(exchange)) {
-      String requestId = UUID.randomUUID().toString();
-      try (exchange) {
-        respondError(
-            exchange,
-            421,
-            "misdirected_request",
-            "request authority is not accepted",
-            "Request authority is not accepted.",
-            requestId,
-            null);
-      }
+      reject(
+          exchange,
+          421,
+          "misdirected_request",
+          "request authority is not accepted",
+          "Request authority is not accepted.");
       return;
     }
     try {
       requestExecutor.execute(() -> handleAccepted(exchange));
     } catch (RejectedExecutionException exception) {
-      try (exchange) {
-        respondError(
-            exchange,
-            503,
-            "server_busy",
-            "server is busy",
-            "Server is busy. Try again.",
-            UUID.randomUUID().toString(),
-            null);
-      }
+      reject(exchange, 503, "server_busy", "server is busy", "Server is busy. Try again.");
+    }
+  }
+
+  private void reject(
+      HttpExchange exchange, int status, String code, String jsonMessage, String browserMessage)
+      throws IOException {
+    assert exchange != null;
+    assert status >= 400 && status <= 599;
+    assert code != null && !code.isBlank();
+    assert jsonMessage != null && !jsonMessage.isBlank();
+    assert browserMessage != null && !browserMessage.isBlank();
+    String requestId = UUID.randomUUID().toString();
+    try (exchange) {
+      respondError(exchange, status, code, jsonMessage, browserMessage, requestId, null);
     }
   }
 
