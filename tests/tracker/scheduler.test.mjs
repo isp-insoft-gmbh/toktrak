@@ -183,15 +183,16 @@ test("given_dailyMacScheduler_when_renderingDefinition_then_runsOnceAtNine", asy
 test("given_releasedWildcardMacSchedule_when_preparingRuns_then_repairsAndRunsOncePerDay", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "toktrak-scheduler-test-"));
   const platform = Object.getOwnPropertyDescriptor(process, "platform");
-  const home = process.env.HOME;
+  const homeVariable = process.platform === "win32" ? "USERPROFILE" : "HOME";
+  const home = process.env[homeVariable];
   context.after(async () => {
     Object.defineProperty(process, "platform", platform);
-    if (home === undefined) delete process.env.HOME;
-    else process.env.HOME = home;
+    if (home === undefined) delete process.env[homeVariable];
+    else process.env[homeVariable] = home;
     await rm(directory, { recursive: true, force: true });
   });
   Object.defineProperty(process, "platform", { ...platform, value: "darwin" });
-  process.env.HOME = directory;
+  process.env[homeVariable] = directory;
   const { module: tracker } = await renderedTracker(directory);
   const scriptPath = path.join(directory, "Library", "Application Support", "TokTrak", "toktrak.mjs");
   const plistPath = path.join(directory, "Library", "LaunchAgents", "de.isp-insoft.toktrak.plist");
