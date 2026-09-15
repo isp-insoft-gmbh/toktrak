@@ -184,6 +184,39 @@ final class UsageHttpTest {
     }
   }
 
+  @Test
+  void
+      given_individuallyValidUsageCounters_when_teamTotalExceedsLongRange_then_servesExactAnalyticsAndDashboard()
+          throws Exception {
+    try (var app = start()) {
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      String cookie = login(client, base);
+      String token = createTrackerToken(client, base, cookie);
+
+      HttpResponse<String> uploaded =
+          send(
+              client,
+              base.resolve("/api/usage"),
+              "POST",
+              "application/json",
+              null,
+              usageBeyondLongTotal(),
+              token);
+      assertEquals(200, uploaded.statusCode(), uploaded.body());
+
+      HttpResponse<String> analytics =
+          send(client, base.resolve("/api/analytics"), "GET", null, cookie, null);
+      assertEquals(200, analytics.statusCode(), analytics.body());
+      assertTrue(
+          analytics.body().contains("\"totalTokens\":9223372036854775808"), analytics.body());
+
+      HttpResponse<String> dashboard = send(client, base.resolve("/"), "GET", null, cookie, null);
+      assertEquals(200, dashboard.statusCode(), dashboard.body());
+      assertTrue(dashboard.body().contains("9,223,372,036,854,775,808"), dashboard.body());
+    }
+  }
+
   private App start() {
     return App.start(
         new String[] {"--clock", CLOCK},
@@ -229,6 +262,19 @@ final class UsageHttpTest {
         + "\",\"reports\":{\"daily\":"
         + daily
         + ",\"session\":{\"ok\":true,\"json\":{\"session\":[{\"period\":\"codex-session\",\"agent\":\"codex\",\"modelsUsed\":[\"gpt-test\"],\"totalCost\":0.2,\"totalTokens\":12,\"metadata\":{\"lastActivity\":\"2026-07-14T22:00:00Z\"}}]}},\"blocks\":{\"ok\":true,\"json\":{\"blocks\":[]}},\"sourceReports\":{\"codex\":{\"daily\":{\"ok\":true,\"json\":{\"daily\":[{\"futureDailyField\":\"preserved\"}],\"totals\":{}}},\"session\":{\"ok\":true,\"json\":{\"sessions\":[{\"sessionId\":\"codex-session\",\"futureSourceField\":\"preserved\"}],\"totals\":{}}}}}}}";
+  }
+
+  private static String usageBeyondLongTotal() {
+    return """
+    {"trackerVersion":"1","ccusageVersion":"20.0.17","clientTimeZone":"UTC","full":true,
+     "generatedAt":"2026-07-14T23:00:00Z","reports":{"daily":{"ok":true,"json":{"daily":[
+       {"period":"2026-07-13","agent":"claude","inputTokens":0,"outputTokens":0,
+        "cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":9223372036854775807,
+        "totalCost":0},
+       {"period":"2026-07-14","agent":"claude","inputTokens":0,"outputTokens":0,
+        "cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":1,"totalCost":0}
+     ]}}}}}
+    """;
   }
 
   private static HttpResponse<String> send(
