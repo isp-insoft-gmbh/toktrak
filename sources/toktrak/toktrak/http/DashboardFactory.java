@@ -1,6 +1,7 @@
 package toktrak.http;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
@@ -204,10 +205,11 @@ final class DashboardFactory {
   }
 
   private static List<DashboardMetricRow> tokenTypes(Summary summary) {
-    long maximum =
-        Math.max(
-            Math.max(summary.inputTokens(), summary.outputTokens()),
-            Math.max(summary.cacheCreationTokens(), summary.cacheReadTokens()));
+    BigInteger maximum =
+        summary
+            .inputTokens()
+            .max(summary.outputTokens())
+            .max(summary.cacheCreationTokens().max(summary.cacheReadTokens()));
     return List.of(
         metric("Input", summary.inputTokens(), maximum),
         metric("Output", summary.outputTokens(), maximum),
@@ -215,20 +217,17 @@ final class DashboardFactory {
         metric("Cache read", summary.cacheReadTokens(), maximum));
   }
 
-  private static DashboardMetricRow metric(String label, long value, long maximum) {
+  private static DashboardMetricRow metric(String label, BigInteger value, BigInteger maximum) {
     String percentage =
-        maximum == 0
+        maximum.signum() == 0
             ? "0% of largest type"
-            : BigDecimal.valueOf(value)
+            : new BigDecimal(value)
                     .multiply(BigDecimal.valueOf(100))
-                    .divide(BigDecimal.valueOf(maximum), 0, RoundingMode.HALF_UP)
+                    .divide(new BigDecimal(maximum), 0, RoundingMode.HALF_UP)
                     .toPlainString()
                 + "% of largest type";
     return new DashboardMetricRow(
-        label,
-        integer(value),
-        percentage,
-        bar(BigDecimal.valueOf(value), BigDecimal.valueOf(maximum)));
+        label, integer(value), percentage, bar(new BigDecimal(value), new BigDecimal(maximum)));
   }
 
   private static List<DashboardMetricRow> models(
@@ -238,7 +237,7 @@ final class DashboardFactory {
       for (Map<String, Object> breakdown : objectList(row.data().get("modelBreakdowns"))) {
         String name = text(breakdown.get("modelName"), "Unknown model", 256);
         BigDecimal cost = decimal(breakdown.get("cost"));
-        long tokens =
+        BigInteger tokens =
             add(
                 whole(breakdown.get("inputTokens")),
                 whole(breakdown.get("outputTokens")),
@@ -299,7 +298,9 @@ final class DashboardFactory {
                 .getDayOfWeek();
         totals.merge(
             day,
-            new Totals(decimal(row.data().get("costUSD")), whole(row.data().get("totalTokens"))),
+            new Totals(
+                decimal(row.data().get("costUSD")),
+                BigInteger.valueOf(whole(row.data().get("totalTokens")))),
             Totals::add);
       } catch (DateTimeParseException ignored) {
         // Unknown optional block timestamps do not make canonical daily totals unusable.
@@ -417,7 +418,7 @@ final class DashboardFactory {
   private static Totals totals(Row row) {
     return new Totals(
         UsageUpload.nonnegativeDecimal(row.data(), "totalCost"),
-        UsageUpload.nonnegativeLong(row.data(), "totalTokens"));
+        BigInteger.valueOf(UsageUpload.nonnegativeLong(row.data(), "totalTokens")));
   }
 
   private static String money(BigDecimal usd, DashboardCurrency currency, FxRate rate) {
@@ -443,7 +444,12 @@ final class DashboardFactory {
   }
 
   private static String integer(long value) {
-    if (value < 0) throw new IllegalArgumentException("value is negative");
+    return integer(BigInteger.valueOf(value));
+  }
+
+  private static String integer(BigInteger value) {
+    Objects.requireNonNull(value, "value");
+    if (value.signum() < 0) throw new IllegalArgumentException("value is negative");
     return new DecimalFormat("#,##0", DecimalFormatSymbols.getInstance(Locale.US)).format(value);
   }
 
@@ -547,22 +553,22 @@ final class DashboardFactory {
     }
   }
 
-  private static long add(long... values) {
-    long result = 0;
-    for (long value : values) result = Math.addExact(result, value);
+  private static BigInteger add(long... values) {
+    BigInteger result = BigInteger.ZERO;
+    for (long value : values) result = result.add(BigInteger.valueOf(value));
     return result;
   }
 
-  private record Totals(BigDecimal cost, long tokens) {
-    private static final Totals ZERO = new Totals(BigDecimal.ZERO, 0);
+  private record Totals(BigDecimal cost, BigInteger tokens) {
+    private static final Totals ZERO = new Totals(BigDecimal.ZERO, BigInteger.ZERO);
 
     private Totals {
       assert cost != null && cost.signum() >= 0;
-      assert tokens >= 0;
+      assert tokens != null && tokens.signum() >= 0;
     }
 
     private Totals add(Totals other) {
-      return new Totals(cost.add(other.cost), Math.addExact(tokens, other.tokens));
+      return new Totals(cost.add(other.cost), tokens.add(other.tokens));
     }
   }
 }

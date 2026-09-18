@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static toktrak.store.EventTypes.*;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -65,7 +66,7 @@ final class UsageProjectionTest {
     assertEquals(2, summary.dailyRows());
     assertEquals(1, summary.sessionRows());
     assertEquals(1, summary.blockRows());
-    assertEquals(70, summary.totalTokens());
+    assertEquals(BigInteger.valueOf(70), summary.totalTokens());
     var rows = projection.usageRows(Report.DAILY);
     assertEquals("equal-later", rows.getFirst().data().get("unknownField"));
     assertEquals("filled", rows.getLast().data().get("unknownField"));

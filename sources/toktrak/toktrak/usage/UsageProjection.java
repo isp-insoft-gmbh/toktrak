@@ -1,6 +1,7 @@
 package toktrak.usage;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -87,27 +88,29 @@ public final class UsageProjection {
 
   public Summary summary() {
     BigDecimal costUsd = BigDecimal.ZERO;
-    long inputTokens = 0;
-    long outputTokens = 0;
-    long cacheCreationTokens = 0;
-    long cacheReadTokens = 0;
-    long totalTokens = 0;
+    BigInteger inputTokens = BigInteger.ZERO;
+    BigInteger outputTokens = BigInteger.ZERO;
+    BigInteger cacheCreationTokens = BigInteger.ZERO;
+    BigInteger cacheReadTokens = BigInteger.ZERO;
+    BigInteger totalTokens = BigInteger.ZERO;
     var users = new java.util.HashSet<UserKey>();
     Map<Key, Row> daily = rowsByReport.get(Report.DAILY);
     assert daily != null;
     for (Row row : daily.values()) {
       costUsd = costUsd.add(UsageUpload.nonnegativeDecimal(row.data, "totalCost"));
       inputTokens =
-          Math.addExact(inputTokens, UsageUpload.nonnegativeLong(row.data, "inputTokens"));
+          inputTokens.add(BigInteger.valueOf(UsageUpload.nonnegativeLong(row.data, "inputTokens")));
       outputTokens =
-          Math.addExact(outputTokens, UsageUpload.nonnegativeLong(row.data, "outputTokens"));
+          outputTokens.add(
+              BigInteger.valueOf(UsageUpload.nonnegativeLong(row.data, "outputTokens")));
       cacheCreationTokens =
-          Math.addExact(
-              cacheCreationTokens, UsageUpload.nonnegativeLong(row.data, "cacheCreationTokens"));
+          cacheCreationTokens.add(
+              BigInteger.valueOf(UsageUpload.nonnegativeLong(row.data, "cacheCreationTokens")));
       cacheReadTokens =
-          Math.addExact(cacheReadTokens, UsageUpload.nonnegativeLong(row.data, "cacheReadTokens"));
+          cacheReadTokens.add(
+              BigInteger.valueOf(UsageUpload.nonnegativeLong(row.data, "cacheReadTokens")));
       totalTokens =
-          Math.addExact(totalTokens, UsageUpload.nonnegativeLong(row.data, "totalTokens"));
+          totalTokens.add(BigInteger.valueOf(UsageUpload.nonnegativeLong(row.data, "totalTokens")));
       users.add(row.owner);
     }
     return new Summary(
@@ -195,23 +198,52 @@ public final class UsageProjection {
 
   public record Summary(
       BigDecimal costUsd,
-      long inputTokens,
-      long outputTokens,
-      long cacheCreationTokens,
-      long cacheReadTokens,
-      long totalTokens,
+      BigInteger inputTokens,
+      BigInteger outputTokens,
+      BigInteger cacheCreationTokens,
+      BigInteger cacheReadTokens,
+      BigInteger totalTokens,
       int dailyRows,
       int sessionRows,
       int blockRows,
       int activeUsers) {
+    public Summary(
+        BigDecimal costUsd,
+        long inputTokens,
+        long outputTokens,
+        long cacheCreationTokens,
+        long cacheReadTokens,
+        long totalTokens,
+        int dailyRows,
+        int sessionRows,
+        int blockRows,
+        int activeUsers) {
+      this(
+          costUsd,
+          BigInteger.valueOf(inputTokens),
+          BigInteger.valueOf(outputTokens),
+          BigInteger.valueOf(cacheCreationTokens),
+          BigInteger.valueOf(cacheReadTokens),
+          BigInteger.valueOf(totalTokens),
+          dailyRows,
+          sessionRows,
+          blockRows,
+          activeUsers);
+    }
+
     public Summary {
       Objects.requireNonNull(costUsd, "costUsd");
+      Objects.requireNonNull(inputTokens, "inputTokens");
+      Objects.requireNonNull(outputTokens, "outputTokens");
+      Objects.requireNonNull(cacheCreationTokens, "cacheCreationTokens");
+      Objects.requireNonNull(cacheReadTokens, "cacheReadTokens");
+      Objects.requireNonNull(totalTokens, "totalTokens");
       if (costUsd.signum() < 0
-          || inputTokens < 0
-          || outputTokens < 0
-          || cacheCreationTokens < 0
-          || cacheReadTokens < 0
-          || totalTokens < 0
+          || inputTokens.signum() < 0
+          || outputTokens.signum() < 0
+          || cacheCreationTokens.signum() < 0
+          || cacheReadTokens.signum() < 0
+          || totalTokens.signum() < 0
           || dailyRows < 0
           || sessionRows < 0
           || blockRows < 0
