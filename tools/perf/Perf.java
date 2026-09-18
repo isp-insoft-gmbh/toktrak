@@ -12,6 +12,8 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.regex.Pattern;
 
 /// TokTrak performance suite entrypoint.
 ///
@@ -27,6 +29,20 @@ public final class Perf {
   private static final Path PERF_CLASSES = ROOT.resolve("output/perf-classes");
   private static final Path PERF_DEPENDENCIES = ROOT.resolve("sources/perf-deps.txt");
   private static final String RESULT_FILE_ARGUMENT = "{result-file}";
+  private static final long BENCHMARK_RESULT_BYTES_MAX = 1024L * 1024;
+  private static final String JSON_NUMBER_PATTERN =
+      "-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?";
+  private static final Pattern JMH_PRIMARY_SCORE_PATTERN =
+      Pattern.compile(
+          "\\\"primaryMetric\\\"\\s*:\\s*\\{\\s*"
+              + "\\\"score\\\"\\s*:\\s*("
+              + JSON_NUMBER_PATTERN
+              + ")\\s*,\\s*"
+              + "\\\"scoreError\\\"\\s*:\\s*("
+              + JSON_NUMBER_PATTERN
+              + ")\\s*,");
+  private static final Pattern JMH_SCORE_UNIT_PATTERN =
+      Pattern.compile("\\\"scoreUnit\\\"\\s*:\\s*\\\"([A-Za-z]+/[A-Za-z]+)\\\"");
   private static final DateTimeFormatter RUN_DIRECTORY_FORMAT =
       DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'", Locale.ROOT).withZone(ZoneOffset.UTC);
 
@@ -77,6 +93,7 @@ public final class Perf {
         new Benchmark(
             "corpus-replay",
             "Rebuild the in-memory projection from the development event corpus",
+            ResultFormat.JMH_JSON,
             List.of(
                 javaExecutable(),
                 "-ea",
@@ -132,7 +149,67 @@ public final class Perf {
         benchmarkDirectory.resolve("benchmark.json"),
         benchmark.json(command, exitCode, elapsedNanos),
         StandardCharsets.UTF_8);
-    return new Result(benchmark, exitCode, elapsedNanos);
+    Optional<Measurement> measurement =
+        exitCode == 0
+            ? Optional.of(
+                measurement(benchmark.resultFormat(), benchmarkDirectory.resolve("result.json")))
+            : Optional.empty();
+    return new Result(benchmark, exitCode, elapsedNanos, measurement);
+  }
+
+  private static Measurement measurement(ResultFormat format, Path resultFile) throws IOException {
+    assert format != null;
+    assert resultFile != null;
+    return switch (format) {
+      case JMH_JSON -> jmhMeasurement(resultFile);
+    };
+  }
+
+  private static Measurement jmhMeasurement(Path resultFile) throws IOException {
+    if (!Files.isRegularFile(resultFile)) {
+      throw new IllegalStateException("JMH result is missing: " + projectPath(resultFile));
+    }
+    long resultBytes = Files.size(resultFile);
+    if (resultBytes <= 0 || resultBytes > BENCHMARK_RESULT_BYTES_MAX) {
+      throw new IllegalStateException(
+          "JMH result must be 1.."
+              + BENCHMARK_RESULT_BYTES_MAX
+              + " bytes: "
+              + projectPath(resultFile));
+    }
+    String json = Files.readString(resultFile, StandardCharsets.UTF_8);
+    var scoreMatcher = JMH_PRIMARY_SCORE_PATTERN.matcher(json);
+    if (!scoreMatcher.find()) {
+      throw new IllegalStateException(
+          "JMH result has no primary score: " + projectPath(resultFile));
+    }
+    int scoreEnd = scoreMatcher.end();
+    double score = finiteNonnegative(scoreMatcher.group(1), "score", resultFile);
+    double error = finiteNonnegative(scoreMatcher.group(2), "score error", resultFile);
+    if (scoreMatcher.find()) {
+      throw new IllegalStateException(
+          "JMH result has multiple primary scores: " + projectPath(resultFile));
+    }
+    var unitMatcher = JMH_SCORE_UNIT_PATTERN.matcher(json);
+    unitMatcher.region(scoreEnd, json.length());
+    int secondaryMetrics = json.indexOf("\"secondaryMetrics\"", scoreEnd);
+    if (!unitMatcher.find() || secondaryMetrics < 0 || unitMatcher.start() > secondaryMetrics) {
+      throw new IllegalStateException(
+          "JMH result has no primary score unit: " + projectPath(resultFile));
+    }
+    return new Measurement(score, error, unitMatcher.group(1));
+  }
+
+  private static double finiteNonnegative(String value, String description, Path resultFile) {
+    assert value != null;
+    assert description != null && !description.isBlank();
+    assert resultFile != null;
+    double parsed = Double.parseDouble(value);
+    if (!Double.isFinite(parsed) || parsed < 0) {
+      throw new IllegalStateException(
+          "JMH " + description + " is invalid: " + projectPath(resultFile));
+    }
+    return parsed;
   }
 
   private static Host host() {
@@ -263,8 +340,8 @@ public final class Perf {
           "No benchmarks registered yet. Perf golem owns adding the first benchmark.\n");
       return markdown.toString();
     }
-    markdown.append("| Benchmark | Purpose | Exit | Elapsed |\n");
-    markdown.append("| --- | --- | ---: | ---: |\n");
+    markdown.append("| Benchmark | Purpose | JMH score ± 99.9% error | Exit | Elapsed |\n");
+    markdown.append("| --- | --- | ---: | ---: | ---: |\n");
     results.stream()
         .sorted(Comparator.comparing(result -> result.benchmark().id()))
         .forEach(
@@ -274,6 +351,8 @@ public final class Perf {
                     .append(result.benchmark().id())
                     .append("` | ")
                     .append(result.benchmark().purpose())
+                    .append(" | ")
+                    .append(result.measurement().map(Measurement::display).orElse("unavailable"))
                     .append(" | ")
                     .append(result.exitCode())
                     .append(" | ")
@@ -315,12 +394,15 @@ public final class Perf {
     return escaped.append('"').toString();
   }
 
-  record Benchmark(String id, String purpose, List<String> commandTemplate) {
+  record Benchmark(
+      String id, String purpose, ResultFormat resultFormat, List<String> commandTemplate) {
     Benchmark {
       if (!id.matches("[a-z0-9][a-z0-9-]{0,62}"))
         throw new IllegalArgumentException("invalid benchmark id: " + id);
       commandTemplate = List.copyOf(commandTemplate);
       if (purpose.isBlank()) throw new IllegalArgumentException("empty benchmark purpose: " + id);
+      if (resultFormat == null)
+        throw new IllegalArgumentException("empty benchmark result format: " + id);
       if (commandTemplate.isEmpty())
         throw new IllegalArgumentException("empty benchmark command: " + id);
     }
@@ -356,7 +438,37 @@ public final class Perf {
     }
   }
 
-  record Result(Benchmark benchmark, int exitCode, long elapsedNanos) {}
+  enum ResultFormat {
+    JMH_JSON
+  }
+
+  record Measurement(double score, double error, String unit) {
+    Measurement {
+      if (!Double.isFinite(score) || score < 0) {
+        throw new IllegalArgumentException("measurement score is invalid");
+      }
+      if (!Double.isFinite(error) || error < 0) {
+        throw new IllegalArgumentException("measurement error is invalid");
+      }
+      if (unit == null || !unit.matches("[A-Za-z]+/[A-Za-z]+")) {
+        throw new IllegalArgumentException("measurement unit is invalid");
+      }
+    }
+
+    String display() {
+      return String.format(Locale.ROOT, "%.3f ± %.3f %s", score, error, unit);
+    }
+  }
+
+  record Result(
+      Benchmark benchmark, int exitCode, long elapsedNanos, Optional<Measurement> measurement) {
+    Result {
+      assert benchmark != null;
+      assert elapsedNanos >= 0;
+      assert measurement != null;
+      assert (exitCode == 0) == measurement.isPresent();
+    }
+  }
 
   record Host(
       String runnerLabel,

@@ -18,8 +18,9 @@ Use the simplest tool per workload:
 
 The observational `corpus-replay` JMH benchmark rebuilds the production
 projection from `tests/corpus/dev.jsonl`. It measures across two fresh JVM
-forks, records average replay time in `corpus-replay/result.json`, and fails if
-the fixture's identity or canonical totals change unexpectedly.
+forks, reports its score and 99.9% error in `summary.md`, retains the complete
+JMH data in `corpus-replay/result.json`, and fails if the fixture identity or
+event count changes unexpectedly.
 
 Compare performance only for the same `hostKey`. Use recorded environment fields
 as caveats, not automatic history invalidators. New benchmarks do not apply
