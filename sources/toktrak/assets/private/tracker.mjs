@@ -42,11 +42,17 @@ const PROJECT_PATH_CHARACTERS_MAX = 2_048;
 const UPDATE_BYTES_MAX = 512 * 1_024;
 const SETTINGS_BYTES_MAX = 256 * 1_024;
 const CONFIG_CHARACTERS_MAX = 8 * 1_024;
+const MAC_PLIST_BYTES_MAX = 64 * 1_024;
+const MAC_LAST_UPLOAD_DATE_BYTES_MAX = 10;
 const LOG_CHARACTERS_MAX = 1_000;
 const WINDOWS_SCHEDULER_REVISION_BYTES_MAX = 32;
 const TASK_START_BOUNDARY = "2020-01-01T09:00:00";
 const WINDOWS_SCHEDULER_REVISION = "1";
 const WINDOWS_TASK_NAME = "TokTrak";
+const MAC_LAUNCH_AGENT_LABEL = "de.isp-insoft.toktrak";
+const MAC_WILDCARD_TRIGGER = "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>9</integer></dict>";
+const MAC_DAILY_TRIGGER =
+  "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>";
 const CURRENT_SCRIPT = fileURLToPath(import.meta.url);
 const PLATFORM_NAME = process.platform === "win32" ? "Windows" : process.platform === "darwin" ? "macOS" : "Linux";
 const exec = promisify(execFile);
@@ -111,15 +117,83 @@ export function macPlist(nodePath, scriptPath, piSessionsPath) {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>de.isp-insoft.toktrak</string>
+  <key>Label</key><string>${MAC_LAUNCH_AGENT_LABEL}</string>
   <key>ProgramArguments</key>
   <array><string>${xml(nodePath)}</string><string>${xml(scriptPath)}</string><string>daily</string><string>--scheduled</string>${fallback}</array>
-  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>9</integer></dict>
+  ${MAC_DAILY_TRIGGER}
   <key>StandardOutPath</key><string>/dev/null</string>
   <key>StandardErrorPath</key><string>/dev/null</string>
 </dict>
 </plist>
 `;
+}
+
+function macPlistPath() {
+  return path.join(homedir(), "Library", "LaunchAgents", `${MAC_LAUNCH_AGENT_LABEL}.plist`);
+}
+
+function macLastUploadDatePath(scriptPath) {
+  return path.join(path.dirname(scriptPath), "mac-last-upload-date");
+}
+
+function localCalendarDate(now) {
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new Error("scheduled date is invalid");
+  const year = String(now.getFullYear()).padStart(4, "0");
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function repairMacSchedulerDefinition() {
+  const destination = macPlistPath();
+  let current;
+  try {
+    current = await readBounded(destination, MAC_PLIST_BYTES_MAX);
+  } catch (error) {
+    if (error?.code !== "ENOENT") log("warning", "macOS scheduler definition is unreadable; leaving it unchanged");
+    return;
+  }
+  const text = current.toString("utf8");
+  if (!Buffer.from(text).equals(current)) {
+    log("warning", "macOS scheduler definition is not UTF-8; leaving it unchanged");
+    return;
+  }
+  const trigger = text.indexOf(MAC_WILDCARD_TRIGGER);
+  if (trigger < 0) return;
+  if (trigger !== text.lastIndexOf(MAC_WILDCARD_TRIGGER)) {
+    log("warning", "macOS scheduler definition is ambiguous; leaving it unchanged");
+    return;
+  }
+  await atomicWrite(destination, Buffer.from(text.replace(MAC_WILDCARD_TRIGGER, MAC_DAILY_TRIGGER)));
+  log("info", "macOS scheduler definition repaired");
+}
+
+export async function prepareMacScheduledRun(scriptPath, now = new Date()) {
+  if (process.platform !== "darwin" || path.resolve(scriptPath) !== path.resolve(installationPath())) {
+    return { status: "untracked" };
+  }
+  try {
+    await repairMacSchedulerDefinition();
+  } catch (error) {
+    log("warning", `macOS scheduler repair failed: ${error?.message || "unknown error"}`);
+  }
+  // launchd keeps the released wildcard trigger loaded until it reloads; suppress duplicate starts meanwhile.
+  const date = localCalendarDate(now);
+  const datePath = macLastUploadDatePath(scriptPath);
+  let lastUploadDate;
+  try {
+    lastUploadDate = (await readBounded(datePath, MAC_LAST_UPLOAD_DATE_BYTES_MAX)).toString("utf8");
+  } catch (error) {
+    if (error?.code !== "ENOENT") log("warning", "macOS schedule state is unreadable; replacing it after upload");
+  }
+  return lastUploadDate === date ? { status: "uploaded" } : { status: "pending", date, datePath };
+}
+
+export async function completeMacScheduledRun(schedule) {
+  if (schedule.status !== "pending" || !/^\d{4}-\d{2}-\d{2}$/u.test(schedule.date) || !schedule.datePath) {
+    throw new Error("macOS schedule state is invalid");
+  }
+  await atomicWrite(schedule.datePath, Buffer.from(schedule.date));
 }
 
 export function windowsTaskXml(nodePath, scriptPath, piSessionsPath) {
@@ -249,7 +323,7 @@ async function installScheduler(scriptPath, piSessionsPath) {
     return;
   }
   if (process.platform === "darwin") {
-    const plistPath = path.join(homedir(), "Library", "LaunchAgents", "de.isp-insoft.toktrak.plist");
+    const plistPath = macPlistPath();
     log("info", `creating user LaunchAgent at ${plistPath}`);
     await atomicWrite(plistPath, Buffer.from(macPlist(process.execPath, scriptPath, piSessionsPath)));
     const domain = `gui/${process.getuid()}`;
@@ -295,10 +369,11 @@ async function uninstallScheduler(scriptPath) {
     return;
   }
   if (process.platform === "darwin") {
-    const plistPath = path.join(homedir(), "Library", "LaunchAgents", "de.isp-insoft.toktrak.plist");
+    const plistPath = macPlistPath();
     log("info", `removing user LaunchAgent at ${plistPath}`);
     await nativeCommand("launchctl", ["bootout", `gui/${process.getuid()}`, plistPath], true);
     await rm(plistPath, { force: true });
+    await rm(macLastUploadDatePath(scriptPath), { force: true });
     return;
   }
   const unitDirectory = path.join(configHome(), "systemd", "user");
@@ -697,15 +772,23 @@ async function main() {
     case "full":
       await runUpload(true, CURRENT_SCRIPT);
       break;
-    case "daily":
+    case "daily": {
+      let macSchedule = { status: "untracked" };
       if (scheduled) {
         await migrateWindowsScheduler(CURRENT_SCRIPT, fallback);
+        macSchedule = await prepareMacScheduledRun(CURRENT_SCRIPT);
+        if (macSchedule.status === "uploaded") {
+          log("info", "scheduled macOS upload already completed today");
+          break;
+        }
         const jitterMillis = randomInt(JITTER_MILLIS_MAX + 1);
         log("info", `scheduled run waiting ${Math.ceil(jitterMillis / 1_000)} seconds`);
         await delay(jitterMillis);
       }
       await runUpload(false, CURRENT_SCRIPT, fallback);
+      if (macSchedule.status === "pending") await completeMacScheduledRun(macSchedule);
       break;
+    }
     case "uninstall":
       await uninstall();
       break;

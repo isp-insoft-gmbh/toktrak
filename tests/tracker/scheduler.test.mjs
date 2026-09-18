@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -165,6 +165,48 @@ test("given_schedulerInputs_when_renderingPortableDefinitions_then_quotesAndEsca
   assert.match(mac, /<string>\/Applications\/Node &amp; &lt;Runtime&gt;\/node<\/string>/u);
   assert.match(mac, /<string>\/Users\/O&apos;Connor\/&quot;tracker&quot;\.mjs<\/string>/u);
   assert.match(mac, /<string>--pi-path<\/string><string>\/Users\/Pi &amp; Sessions<\/string>/u);
+});
+
+test("given_dailyMacScheduler_when_renderingDefinition_then_runsOnceAtNine", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "toktrak-scheduler-test-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const { module: tracker } = await renderedTracker(directory);
+
+  const document = tracker.macPlist("/usr/local/bin/node", "/Users/example/toktrak.mjs");
+
+  assert.match(
+    document,
+    /<key>StartCalendarInterval<\/key><dict><key>Hour<\/key><integer>9<\/integer><key>Minute<\/key><integer>0<\/integer><\/dict>/u,
+  );
+});
+
+test("given_releasedWildcardMacSchedule_when_preparingRuns_then_repairsAndRunsOncePerDay", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "toktrak-scheduler-test-"));
+  const platform = Object.getOwnPropertyDescriptor(process, "platform");
+  const homeVariable = process.platform === "win32" ? "USERPROFILE" : "HOME";
+  const home = process.env[homeVariable];
+  context.after(async () => {
+    Object.defineProperty(process, "platform", platform);
+    if (home === undefined) delete process.env[homeVariable];
+    else process.env[homeVariable] = home;
+    await rm(directory, { recursive: true, force: true });
+  });
+  Object.defineProperty(process, "platform", { ...platform, value: "darwin" });
+  process.env[homeVariable] = directory;
+  const { module: tracker } = await renderedTracker(directory);
+  const scriptPath = path.join(directory, "Library", "Application Support", "TokTrak", "toktrak.mjs");
+  const plistPath = path.join(directory, "Library", "LaunchAgents", "de.isp-insoft.toktrak.plist");
+  const released = tracker.macPlist(process.execPath, scriptPath).replace("<key>Minute</key><integer>0</integer>", "");
+  await mkdir(path.dirname(plistPath), { recursive: true });
+  await writeFile(plistPath, released);
+
+  const first = await tracker.prepareMacScheduledRun(scriptPath, new Date(2026, 8, 7, 9));
+
+  assert.equal(first.status, "pending");
+  assert.match(await readFile(plistPath, "utf8"), /<key>Minute<\/key><integer>0<\/integer>/u);
+  await tracker.completeMacScheduledRun(first);
+  assert.equal((await tracker.prepareMacScheduledRun(scriptPath, new Date(2026, 8, 7, 10))).status, "uploaded");
+  assert.equal((await tracker.prepareMacScheduledRun(scriptPath, new Date(2026, 8, 8, 9))).status, "pending");
 });
 
 test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreservesFiles", {
