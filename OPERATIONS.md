@@ -61,7 +61,7 @@ token. Never set `TOKTRAK_DEV_AUTH` in production.
 
 ## Deploy
 
-A simple recommended deployment uses an immutable `vN` image tag:
+A simple recommended deployment uses the current immutable release tag:
 
 ```sh
 podman volume create toktrak-data
@@ -69,7 +69,7 @@ podman run -d --name toktrak --replace --restart=always \
   --env-file=$HOME/.config/toktrak/server.env \
   --volume=toktrak-data:/data \
   --publish=127.0.0.1:8080:8080 \
-  registry.example.com/team/toktrak:v0
+  registry.example.com/team/toktrak:v2
 ```
 
 Proxy public HTTPS to host loopback port `8080`. Do not expose the container
