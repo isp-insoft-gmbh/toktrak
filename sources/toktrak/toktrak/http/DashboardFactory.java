@@ -253,12 +253,30 @@ final class DashboardFactory {
       List<Row> rows, DashboardCurrency currency, FxRate rate) {
     var totals = new HashMap<String, Totals>();
     for (Row row : rows) {
-      String source = row.secondKey();
-      if (row.data().get("metadata") instanceof Map<?, ?> metadata) {
-        List<String> agents = strings(metadata.get("agents"), 8);
-        if (!agents.isEmpty()) source = String.join(" + ", agents);
+      int breakdownCount = 0;
+      for (Map<String, Object> breakdown : objectList(row.data().get("agents"))) {
+        String source = text(breakdown.get("agent"), "", 256);
+        if (source.isEmpty()) continue;
+        Totals breakdownTotals;
+        try {
+          breakdownTotals =
+              new Totals(
+                  UsageUpload.nonnegativeDecimal(breakdown, "totalCost"),
+                  BigInteger.valueOf(UsageUpload.nonnegativeLong(breakdown, "totalTokens")));
+        } catch (IllegalStateException exception) {
+          continue;
+        }
+        totals.merge(source, breakdownTotals, Totals::add);
+        breakdownCount = Math.addExact(breakdownCount, 1);
       }
-      totals.merge(source, totals(row), Totals::add);
+      if (breakdownCount == 0) {
+        String source = row.secondKey();
+        if (row.data().get("metadata") instanceof Map<?, ?> metadata) {
+          List<String> agents = strings(metadata.get("agents"), 8);
+          if (!agents.isEmpty()) source = String.join(" + ", agents);
+        }
+        totals.merge(source, totals(row), Totals::add);
+      }
     }
     return metricRows(totals, currency, rate);
   }
