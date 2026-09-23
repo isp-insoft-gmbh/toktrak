@@ -4,6 +4,7 @@ import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -30,6 +31,7 @@ public final class Perf {
   private static final Path PERF_DEPENDENCIES = ROOT.resolve("sources/perf-deps.txt");
   private static final String RESULT_FILE_ARGUMENT = "{result-file}";
   private static final long BENCHMARK_RESULT_BYTES_MAX = 1024L * 1024;
+  private static final long GITHUB_SUMMARY_BYTES_MAX = 1024L * 1024;
   private static final String JSON_NUMBER_PATTERN =
       "-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?";
   private static final Pattern JMH_PRIMARY_SCORE_PATTERN =
@@ -67,10 +69,9 @@ public final class Perf {
     for (Benchmark benchmark : selected) {
       results.add(runBenchmark(runDirectory, benchmark));
     }
-    Files.writeString(
-        runDirectory.resolve("summary.md"),
-        summary(runDirectory, host, results),
-        StandardCharsets.UTF_8);
+    String summary = summary(runDirectory, host, results);
+    Files.writeString(runDirectory.resolve("summary.md"), summary, StandardCharsets.UTF_8);
+    appendGitHubSummary(summary);
     if (results.stream().anyMatch(result -> result.exitCode() != 0)) {
       throw new IllegalStateException("one or more performance benchmarks failed");
     }
@@ -359,6 +360,23 @@ public final class Perf {
                     .append(formatDuration(result.elapsedNanos()))
                     .append(" |\n"));
     return markdown.toString();
+  }
+
+  private static void appendGitHubSummary(String markdown) throws IOException {
+    assert markdown != null && !markdown.isBlank();
+    String configured = System.getenv("GITHUB_STEP_SUMMARY");
+    if (configured == null) return;
+    Path summary = Path.of(configured).toAbsolutePath().normalize();
+    if (Files.isSymbolicLink(summary) || !Files.isRegularFile(summary)) {
+      throw new IllegalStateException("GITHUB_STEP_SUMMARY is not a regular file: " + summary);
+    }
+    long resultingBytes =
+        Math.addExact(Files.size(summary), markdown.getBytes(StandardCharsets.UTF_8).length);
+    if (resultingBytes > GITHUB_SUMMARY_BYTES_MAX) {
+      throw new IllegalStateException(
+          "GITHUB_STEP_SUMMARY would exceed " + GITHUB_SUMMARY_BYTES_MAX + " bytes: " + summary);
+    }
+    Files.writeString(summary, markdown, StandardCharsets.UTF_8, StandardOpenOption.APPEND);
   }
 
   private static String projectPath(Path path) {
