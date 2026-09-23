@@ -32,14 +32,10 @@ jobs:
         with:
           path: output/pit.history
           key: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
-      - if: always()
-        run: |
-          {
-            echo "## PIT mutation tests"
-            echo
-            echo "Download the \`mutation-report\` artifact and open \`index.html\`."
-          } >> "$GITHUB_STEP_SUMMARY"
-      - if: always() && hashFiles('output/mutations/**') != ''
+      - name: Upload mutation report
+        id: mutation-artifact
+        if: always() && hashFiles('output/mutations/**') != ''
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mutation-report
@@ -47,3 +43,21 @@ jobs:
           if-no-files-found: error
           overwrite: true
           retention-days: 14
+      - name: Summarize mutation report
+        if: always()
+        env:
+          ARTIFACT_OUTCOME: ${{ steps.mutation-artifact.outcome }}
+        run: |
+          {
+            echo "## PIT mutation tests"
+            echo
+            if [[ "$ARTIFACT_OUTCOME" == "success" ]]; then
+              echo "Download the \`mutation-report\` artifact and open \`index.html\`."
+            else
+              echo "> [!WARNING]"
+              echo "> Mutation report is unavailable. The PIT step result remains authoritative."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$ARTIFACT_OUTCOME" == "failure" ]]; then
+            echo "::warning::The downloadable mutation report could not be uploaded."
+          fi

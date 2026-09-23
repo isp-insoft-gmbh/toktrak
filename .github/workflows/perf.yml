@@ -35,11 +35,20 @@ jobs:
           install_args: java node hyperfine
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - run: mise run perf
-      - if: always() && hashFiles('output/perf/**') != ''
+      - name: Upload performance report
+        id: performance-artifact
+        if: always() && hashFiles('output/perf/**') != ''
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: perf-${{ github.run_id }}-${{ github.run_attempt }}
           path: output/perf
           if-no-files-found: error
           overwrite: true
-          retention-days: 30
+          retention-days: 14
+      - name: Report unavailable performance artifact
+        if: always() && steps.performance-artifact.outcome == 'failure'
+        run: |
+          echo "::warning::The downloadable performance report could not be uploaded."
+          echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
+          echo "> Performance report upload failed. Results above remain authoritative." >> "$GITHUB_STEP_SUMMARY"
