@@ -185,6 +185,47 @@ final class UsageHttpTest {
   }
 
   @Test
+  void given_dailyUsageWithAgentBreakdowns_when_renderingVisualizations_then_splitsHarnessMix()
+      throws Exception {
+    try (var app = start()) {
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      String cookie = login(client, base);
+      String token = createTrackerToken(client, base, cookie);
+
+      HttpResponse<String> uploaded =
+          send(
+              client,
+              base.resolve("/api/usage"),
+              "POST",
+              "application/json",
+              null,
+              usageWithAgentBreakdowns(),
+              token);
+      assertEquals(200, uploaded.statusCode(), uploaded.body());
+
+      HttpResponse<String> visualizations =
+          send(client, base.resolve("/visualizations"), "GET", null, cookie, null);
+      assertEquals(200, visualizations.statusCode());
+      assertTrue(
+          visualizations
+              .body()
+              .matches(
+                  "(?s).*<strong>claude</strong>.*?<span>\\$0\\.75</span><small>15"
+                      + " tokens</small>.*"),
+          visualizations.body());
+      assertTrue(
+          visualizations
+              .body()
+              .matches(
+                  "(?s).*<strong>codex</strong>.*?<span>\\$0\\.25</span><small>4 tokens</small>.*"),
+          visualizations.body());
+      assertFalse(
+          visualizations.body().contains("<strong>claude + codex</strong>"), visualizations.body());
+    }
+  }
+
+  @Test
   void
       given_individuallyValidUsageCounters_when_teamTotalExceedsLongRange_then_servesExactAnalyticsAndDashboard()
           throws Exception {
@@ -262,6 +303,22 @@ final class UsageHttpTest {
         + "\",\"reports\":{\"daily\":"
         + daily
         + ",\"session\":{\"ok\":true,\"json\":{\"session\":[{\"period\":\"codex-session\",\"agent\":\"codex\",\"modelsUsed\":[\"gpt-test\"],\"totalCost\":0.2,\"totalTokens\":12,\"metadata\":{\"lastActivity\":\"2026-07-14T22:00:00Z\"}}]}},\"blocks\":{\"ok\":true,\"json\":{\"blocks\":[]}},\"sourceReports\":{\"codex\":{\"daily\":{\"ok\":true,\"json\":{\"daily\":[{\"futureDailyField\":\"preserved\"}],\"totals\":{}}},\"session\":{\"ok\":true,\"json\":{\"sessions\":[{\"sessionId\":\"codex-session\",\"futureSourceField\":\"preserved\"}],\"totals\":{}}}}}}}";
+  }
+
+  private static String usageWithAgentBreakdowns() {
+    return """
+    {"trackerVersion":"1","ccusageVersion":"20.0.17","clientTimeZone":"UTC","full":true,
+     "generatedAt":"2026-07-14T23:00:00Z","reports":{"daily":{"ok":true,"json":{"daily":[
+       {"period":"2026-07-14","agent":"all","inputTokens":10,"outputTokens":2,
+        "cacheCreationTokens":3,"cacheReadTokens":4,"totalTokens":19,"totalCost":1,
+        "metadata":{"agents":["claude","codex"]},"agents":[
+          {"agent":"claude","inputTokens":8,"outputTokens":1,"cacheCreationTokens":2,
+           "cacheReadTokens":4,"totalTokens":15,"totalCost":0.75},
+          {"agent":"codex","inputTokens":2,"outputTokens":1,"cacheCreationTokens":1,
+           "cacheReadTokens":0,"totalTokens":4,"totalCost":0.25}
+        ]}
+       ]}}}}}
+    """;
   }
 
   private static String usageBeyondLongTotal() {
