@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Semaphore;
 import toktrak.ClockSource;
 import toktrak.http.HttpSupport;
 import toktrak.json.Json;
@@ -35,6 +36,7 @@ public final class OidcClient {
   private static final int PROVIDER_BODY_BYTES_MAX = 1024 * 1024;
   private static final int QUERY_CHARACTERS_MAX = 8 * 1024;
   private static final int FIELD_CHARACTERS_MAX = 8 * 1024;
+  private static final int PROVIDER_REQUESTS_MAX = 4;
   private static final String DISCOVERY_SUFFIX = "/.well-known/openid-configuration";
 
   private final URI discoveryUri;
@@ -44,6 +46,7 @@ public final class OidcClient {
   private final ClockSource clock;
   private final HttpClient http;
   private final SecureRandom random;
+  private final Semaphore providerRequests = new Semaphore(PROVIDER_REQUESTS_MAX);
 
   public OidcClient(
       URI discoveryUri,
@@ -236,6 +239,9 @@ public final class OidcClient {
 
   private String send(HttpRequest request) {
     assert request != null;
+    if (!providerRequests.tryAcquire()) {
+      throw new IllegalStateException("OIDC provider request limit reached");
+    }
     try {
       HttpResponse<java.io.InputStream> response =
           http.send(request, HttpResponse.BodyHandlers.ofInputStream());
@@ -250,6 +256,9 @@ public final class OidcClient {
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("OIDC provider request interrupted", exception);
+    } finally {
+      providerRequests.release();
+      assert providerRequests.availablePermits() <= PROVIDER_REQUESTS_MAX;
     }
   }
 
