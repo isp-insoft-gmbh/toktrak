@@ -1,4 +1,4 @@
-FROM docker.io/library/eclipse-temurin:26-jdk@sha256:317693565b302133e01e1990fe04514b4894670530f80a55584453f82df94d04 AS build
+FROM docker.io/library/eclipse-temurin:26-jdk@sha256:36b64fe7a1a20c63a61c8f7ab33ae01d850e53fac7fceebaf2a20f8e07ce6085 AS build
 WORKDIR /src
 COPY CHANGELOG.md CHANGELOG.md
 COPY sources sources
