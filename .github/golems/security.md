@@ -1,6 +1,6 @@
 ---
 harness: codex
-model: gpt-5.6-sol
+model: gpt-6-astra
 thinking: max
 weekday: tuesday
 ---

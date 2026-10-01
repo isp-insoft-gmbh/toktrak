@@ -1,6 +1,6 @@
 ---
 harness: pi
-model: openai-codex/gpt-5.5
+model: openai-codex/gpt-6.1-sol
 thinking: medium
 weekday: thursday
 ---
