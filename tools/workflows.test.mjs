@@ -140,6 +140,23 @@ test("given_pullRequest_when_pitRuns_then_recomputesMutationsWithoutSharedHistor
   );
 });
 
+test("given_dprintPluginUpdate_when_publishingPr_then_doesNotExecuteCandidatePlugins", () => {
+  const dprint = workflow("dprint");
+  assert.match(dprint, /persist-credentials: false/u);
+  assert.match(dprint, /run: node tools\/update-dprint\.mjs/u);
+  assert.doesNotMatch(dprint, /jdx\/mise-action@|mise run fmt|mise run check/u);
+  assert.ok(
+    dprint.indexOf("run: node tools/update-dprint.mjs") < dprint.indexOf("name: Mint repository GitHub App token"),
+  );
+});
+
+test("given_renovateUpdate_when_configured_then_disablesAutomaticMerge", () => {
+  const renovate = JSON.parse(readFileSync(join(process.cwd(), "renovate.json"), "utf8"));
+  assert.equal(renovate.automerge, false);
+  assert.notEqual(renovate.platformAutomerge, true);
+  for (const rule of renovate.packageRules) assert.notEqual(rule.automerge, true);
+});
+
 test("given_linuxWorkflows_when_choosingRunners_then_usesGithubHostedUbuntu", () => {
   for (const file of readdirSync(workflowDirectory).filter((entry) => entry.endsWith(".yml"))) {
     const source = readFileSync(join(workflowDirectory, file), "utf8");

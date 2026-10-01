@@ -29,10 +29,6 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.event.repository.default_branch }}
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
-        with:
-          version: 2026.9.18
-          cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - name: Update pinned plugin versions and checksums
         run: node tools/update-dprint.mjs
       - name: Check for updates
@@ -44,11 +40,6 @@ jobs:
           else
             echo "updated=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Format and validate updated plugins
-        if: steps.changes.outputs.updated == 'true'
-        run: |
-          mise run fmt
-          mise run check
       - name: Mint repository GitHub App token
         if: steps.changes.outputs.updated == 'true'
         id: app-token
@@ -69,8 +60,10 @@ jobs:
           commit-message: "chore: update dprint plugins"
           title: "chore: update dprint plugins"
           body: |
-            Weekly dprint plugin refresh with pinned SHA-256 checksums and resulting formatting changes.
-            Review formatter output and required CI before merging.
+            Weekly dprint plugin metadata refresh with pinned SHA-256 checksums.
+            Candidate plugins are not executed in this privileged workflow.
+            Review plugin provenance before running new versions in a disposable environment without repository credentials.
+            Inspect formatter changes and required CI before merging.
       - name: Summarize pull request
         if: steps.pr.outputs.pull-request-url != ''
         env:
