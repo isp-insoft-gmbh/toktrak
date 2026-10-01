@@ -62,11 +62,34 @@ final class EventEnvelopeTest {
                     EventEnvelope.create(
                         "event", AT, "system", Map.of("value", "x".repeat(1_048_577))))
             .getMessage());
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            EventEnvelope.create(
-                "event", AT, "system", Map.of("value", java.math.BigInteger.TEN.pow(5_000))));
+    assertEquals(
+        "event data number exceeds 256 characters",
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                    EventEnvelope.create(
+                        "event",
+                        AT,
+                        "system",
+                        Map.of("value", new java.math.BigInteger("1".repeat(257)))))
+            .getMessage());
+    assertEquals(
+        "event data string exceeds 1048576 characters",
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                    EventEnvelope.create(
+                        "event", AT, "system", Map.of("x".repeat(1_048_577), "value")))
+            .getMessage());
+  }
+
+  @Test
+  void given_dataStringAndNumberAtCharacterLimits_when_creatingEnvelope_then_preservesData() {
+    var number = new java.math.BigInteger("1".repeat(256));
+    var data = Map.<String, Object>of("string", "x".repeat(1_048_576), "number", number);
+    var event = EventEnvelope.create("event", AT, "system", data);
+    assertEquals(1_048_576, ((String) event.data().get("string")).length());
+    assertEquals(number, event.data().get("number"));
   }
 
   @Test
@@ -76,6 +99,24 @@ final class EventEnvelopeTest {
             IllegalArgumentException.class,
             () -> EventEnvelope.create("t".repeat(129), AT, "system", Map.of()));
     assertEquals("event type exceeds 128 UTF-8 bytes", ex.getMessage());
+  }
+
+  @Test
+  void given_multiByteTypeAboveUtf8Limit_when_creatingEnvelope_then_rejectsType() {
+    String type = "€".repeat(43);
+    assertEquals(129, type.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+    var ex =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> EventEnvelope.create(type, AT, "system", Map.of()));
+    assertEquals("event type exceeds 128 UTF-8 bytes", ex.getMessage());
+  }
+
+  @Test
+  void given_typeAndActorAtUtf8Limits_when_creatingEnvelope_then_acceptsFields() {
+    var event = EventEnvelope.create("t".repeat(128), AT, "a".repeat(256), Map.of());
+    assertEquals("t".repeat(128), event.type());
+    assertEquals("a".repeat(256), event.actor());
   }
 
   @Test
@@ -98,6 +139,18 @@ final class EventEnvelopeTest {
   }
 
   @Test
+  void given_nestedMapEntriesAroundValueLimit_when_creatingEnvelope_then_enforcesExactLimit() {
+    var atLimit = EventEnvelope.create("event", AT, "system", Map.of("values", entries(99_998)));
+    assertEquals(99_998, ((Map<?, ?>) atLimit.data().get("values")).size());
+
+    var exception =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> EventEnvelope.create("event", AT, "system", Map.of("values", entries(99_999))));
+    assertEquals("event data exceeds 100000 values", exception.getMessage());
+  }
+
+  @Test
   void given_dataAtValueAndDepthLimits_when_creatingEnvelope_then_preservesData() {
     var values = Collections.nCopies(99_998, 0);
     var valueLimited = EventEnvelope.create("event", AT, "system", Map.of("values", values));
@@ -111,9 +164,7 @@ final class EventEnvelopeTest {
 
   @Test
   void given_topLevelDataAtEntryLimit_when_creatingEnvelope_then_acceptsData() {
-    var data = new LinkedHashMap<String, Object>();
-    for (int index = 0; index < 1_024; index++) data.put(Integer.toString(index), index);
-    var event = new EventEnvelope(UUID.randomUUID(), AT, "event", 1, "system", data);
+    var event = new EventEnvelope(UUID.randomUUID(), AT, "event", 1, "system", entries(1_024));
     assertEquals(1_024, event.data().size());
   }
 
@@ -131,13 +182,16 @@ final class EventEnvelopeTest {
 
   @Test
   void given_topLevelDataAboveEntryLimit_when_creatingEnvelope_then_rejectsData() {
-    var data = new LinkedHashMap<String, Object>();
-    for (int index = 0; index < 1_025; index++) data.put(Integer.toString(index), index);
-
     var ex =
         assertThrows(
             IllegalArgumentException.class,
-            () -> new EventEnvelope(UUID.randomUUID(), AT, "event", 1, "system", data));
+            () -> new EventEnvelope(UUID.randomUUID(), AT, "event", 1, "system", entries(1_025)));
     assertEquals("event data exceeds 1024 entries", ex.getMessage());
+  }
+
+  private static Map<String, Object> entries(int count) {
+    var entries = new LinkedHashMap<String, Object>();
+    for (int index = 0; index < count; index++) entries.put(Integer.toString(index), index);
+    return entries;
   }
 }
