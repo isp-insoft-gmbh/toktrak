@@ -15,6 +15,7 @@ final class TrackerScriptTest {
   @Test
   void given_invalidTemplateInputs_when_renderingTracker_then_rejectsThem() {
     byte[] template = Assets.load().privateBytes("tracker.mjs");
+    var scripts = new TrackerScript(template, URI.create("https://toktrak.example/"));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -34,7 +35,6 @@ final class TrackerScriptTest {
         () ->
             new TrackerScript(
                 new byte[exactLimit.length + 1], URI.create("https://toktrak.example")));
-    var scripts = new TrackerScript(template, URI.create("https://toktrak.example/"));
     assertThrows(IllegalArgumentException.class, () -> scripts.render("invalid"));
 
     TrackerScript.Personalized personalized = scripts.render(TOKEN);
