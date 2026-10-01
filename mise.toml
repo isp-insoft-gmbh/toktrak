@@ -8,7 +8,7 @@ java = "temurin-26.0.2+10"
 node = "26.8.1"
 oxlint = "1.80.0"
 markdownlint-cli2 = "0.23.2"
-watchexec = "2.7.2"
+watchexec = "2.7.3"
 
 [tasks.clean]
 description = "Delete disposable output"
