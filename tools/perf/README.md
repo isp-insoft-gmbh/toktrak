@@ -18,11 +18,11 @@ Use the simplest tool per workload:
 
 The observational `corpus-replay` JMH benchmark rebuilds the production
 projection from `tests/corpus/dev.jsonl`. It measures across two fresh JVM
-forks, reports its score and 99.9% error in `summary.md`, retains the complete
-JMH data in `corpus-replay/result.json`, and fails if the fixture identity or
-event count changes unexpectedly. In GitHub Actions, the same report is also
-shown in the job summary so the measurement remains visible without downloading
-the artifact.
+forks, reports its score and 99.9% error in the command output and `summary.md`,
+retains the complete JMH data in `corpus-replay/result.json`, and fails if the
+fixture identity or event count changes unexpectedly. In GitHub Actions, the
+same report is also shown in the job summary so the measurement remains visible
+without downloading the artifact.
 
 Compare performance only for the same `hostKey`. Use recorded environment fields
 as caveats, not automatic history invalidators. New benchmarks do not apply

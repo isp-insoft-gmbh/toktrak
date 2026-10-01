@@ -72,10 +72,10 @@ public final class Perf {
     String summary = summary(runDirectory, host, results);
     Files.writeString(runDirectory.resolve("summary.md"), summary, StandardCharsets.UTF_8);
     appendGitHubSummary(summary);
+    System.out.print(summary);
     if (results.stream().anyMatch(result -> result.exitCode() != 0)) {
       throw new IllegalStateException("one or more performance benchmarks failed");
     }
-    System.out.println("perf artifacts: " + projectPath(runDirectory));
   }
 
   private static void requireAssertions() {
