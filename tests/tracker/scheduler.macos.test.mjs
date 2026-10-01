@@ -56,6 +56,7 @@ test("given_macGuiScheduler_when_runningTrackerAgent_then_executesAndRemovesIsol
         return false;
       } catch (error) {
         if (error.code === "ESRCH") return true;
+        if (error.code === "EPERM") return false;
         throw error;
       }
     }, "LaunchAgent did not exit");
