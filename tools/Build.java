@@ -123,9 +123,11 @@ public final class Build {
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
   private static final Path GOLEM_SCRIPT = ROOT.resolve("tools/golem.mjs");
+  private static final Path TRACKER_TEST_SOURCES = ROOT.resolve("tests/tracker");
   private static final List<Path> GOLEM_TEST_SOURCES =
       List.of(
           ROOT.resolve("tools/golem.test.mjs"),
+          ROOT.resolve("tools/update-dprint.test.mjs"),
           ROOT.resolve(".claude/skills/file-upload/scripts/upload.test.mjs"));
   private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
   private static final Path PMD_CONFIG = ROOT.resolve("sources/pmd.xml");
@@ -169,6 +171,7 @@ public final class Build {
   private static final int ARGUMENTS_MAX = 10_000;
   private static final int ARGUMENT_BYTES_MAX = 32 * 1024;
   private static final int ARGFILE_BYTES_MAX = 8 * 1024 * 1024;
+  private static final int MISE_TEST_PATH_ARGUMENT_CHARACTERS_MAX = 16_384;
   // OS command-line limits vary. Keep formatter commands below 24 KiB and 128 source files;
   // split larger source sets into bounded batches so repository growth cannot break fmt/check.
   private static final int COMMAND_BYTES_MAX = 24 * 1024;
@@ -349,7 +352,7 @@ public final class Build {
           case "clean" -> clean();
           case "check" -> check();
           case "test" -> testCommand(commandArguments);
-          case "refactor" -> refactor();
+          case "refactor" -> refactorCommand(commandArguments);
           case "ci" -> ci();
           case "verify" -> verify();
           case "ide" -> ideCommand(commandArguments);
@@ -2399,6 +2402,10 @@ public final class Build {
     var digest = MessageDigest.getInstance("SHA-256");
     update(digest, "test\n" + platformFingerprint() + "\n" + compileFingerprint + "\n");
     update(digest, argumentFileContent(arguments));
+    for (Path source : List.of(ROOT.resolve(".gitattributes"), CONTAINERFILE)) {
+      update(digest, ROOT.relativize(source) + "\n");
+      updateDigestFromFile(digest, source);
+    }
     return HexFormat.of().formatHex(digest.digest());
   }
 
@@ -2417,31 +2424,33 @@ public final class Build {
       System.out.println("usage: mise run fmt [Java files or directories...]");
       return;
     }
-    format(true, paths);
+    runTool(
+        "dprint",
+        "format non-Java sources",
+        List.of("fmt", "--excludes", "**/*.java"),
+        ROOT,
+        PROCESS_TIMEOUT);
+    format(paths);
   }
 
-  private static void format(boolean replace, List<String> paths) throws Exception {
+  private static void format(List<String> paths) throws Exception {
     assert paths != null;
     List<String> sourcePaths = javaSourcePaths(paths).stream().map(Path::toString).toList();
     if (sourcePaths.isEmpty()) return;
-    for (List<String> arguments : formatterArguments(replace, sourcePaths)) {
-      runArguments(
-          googleJavaFormatExecutable(),
-          replace ? "format Java sources" : "check Java source format",
-          arguments);
+    for (List<String> arguments : formatterArguments(sourcePaths)) {
+      runArguments("dprint", "format Java sources", arguments);
     }
   }
 
   static List<List<String>> formatterArgumentsForTest(List<String> sourcePaths) {
-    return formatterArguments(false, sourcePaths);
+    return formatterArguments(sourcePaths);
   }
 
-  private static List<List<String>> formatterArguments(boolean replace, List<String> sourcePaths) {
+  private static List<List<String>> formatterArguments(List<String> sourcePaths) {
     assert sourcePaths != null;
     if (sourcePaths.isEmpty()) throw new IllegalArgumentException("sourcePaths are empty");
-    List<String> options =
-        replace ? List.of("--replace") : List.of("--dry-run", "--set-exit-if-changed");
-    String executable = googleJavaFormatExecutable();
+    List<String> options = List.of("fmt");
+    String executable = "dprint";
     int commandBytes = commandBytes(executable, options);
     int files = 0;
     var batch = new ArrayList<>(options);
@@ -2470,7 +2479,14 @@ public final class Build {
   }
 
   private static void check() throws Exception {
-    format(false, List.of());
+    runTool("dprint", "check source formatting", List.of("check"), ROOT, PROCESS_TIMEOUT);
+    runTool("rumdl", "lint Markdown", List.of("check", "."), ROOT, PROCESS_TIMEOUT);
+    runTool(
+        "oxlint",
+        "lint tracker JavaScript",
+        List.of("sources/toktrak/assets/private/tracker.mjs", "tests/tracker"),
+        ROOT,
+        PROCESS_TIMEOUT);
     validateRepositorySkills();
     runGolemDefinitionCheck();
     compile();
@@ -2516,11 +2532,28 @@ public final class Build {
   }
 
   private static void runGolemTests() throws Exception {
-    var command = new ArrayList<String>();
-    command.add("node");
-    command.add("--test");
-    command.addAll(GOLEM_TEST_SOURCES.stream().map(Path::toString).toList());
-    runProcess(new ProcessBuilder(command).directory(ROOT.toFile()));
+    runGolemTests(GOLEM_TEST_SOURCES);
+  }
+
+  private static void runGolemTests(List<Path> sources) throws Exception {
+    runNodeTests(sources);
+  }
+
+  private static void runTrackerTests() throws Exception {
+    runNodeTests(
+        selectedFiles(
+            List.of(),
+            List.of(TRACKER_TEST_SOURCES),
+            candidate -> candidate.getFileName().toString().endsWith(".test.mjs"),
+            "tracker test source"));
+  }
+
+  private static void runNodeTests(List<Path> sources) throws Exception {
+    assert sources != null && !sources.isEmpty();
+    var arguments = new ArrayList<String>();
+    arguments.add("--test");
+    arguments.addAll(sources.stream().map(Path::toString).toList());
+    runProcess(new ProcessBuilder(command("node", arguments)).directory(ROOT.toFile()));
   }
 
   private static void validateRepositorySkills() throws IOException {
@@ -2839,9 +2872,12 @@ public final class Build {
     List<String> fingerprintArguments = new ArrayList<>(appArguments);
     fingerprintArguments.addAll(testArguments);
     fingerprintArguments.addAll(errorProneJvmArguments());
+    var sources =
+        new ArrayList<>(List.of(APP_SOURCES, JUNIT_TEST_SOURCES, ERROR_PRONE_CONFIG, CHANGELOG));
+    sources.addAll(templates);
     String fingerprint =
         applicationCompilationFingerprint(
-            List.of(APP_SOURCES, JUNIT_TEST_SOURCES, ERROR_PRONE_CONFIG, CHANGELOG),
+            sources,
             List.of(MAIN_DEPS, TEST_DEPS, SNAPSHOT_DEPS, BUILD_DEPS),
             fingerprintArguments,
             assetBundle);
@@ -2927,35 +2963,141 @@ public final class Build {
     return matches.getFirst();
   }
 
-  private static void testCommand(List<String> paths) throws Exception {
-    if (paths.equals(List.of("--help"))) {
-      System.out.println("usage: mise run test [test files or directories...]");
+  private static void testCommand(List<String> arguments) throws Exception {
+    if (!arguments.isEmpty() && arguments.getFirst().equals("--mise-usage")) {
+      arguments = decodeMiseTestArgumentsForTest(arguments);
+    }
+    if (arguments.equals(List.of("--help"))) {
+      System.out.println("usage: mise run test [--only <test files or directories...>]");
       return;
     }
-    if (paths.size() == 1 && GOLEM_TEST_SOURCES.contains(ROOT.resolve(paths.getFirst()))) {
-      runGolemTests();
+    if (arguments.isEmpty()) {
+      testAll();
       return;
     }
-    test(paths);
-  }
-
-  private static void test(List<String> paths) throws Exception {
-    assert paths != null;
+    List<String> paths = focusedTestPathsForTest(arguments);
+    List<Path> javascriptSources = javascriptTestPathsForTest(paths);
+    if (!javascriptSources.isEmpty()) {
+      runNodeTests(javascriptSources);
+      return;
+    }
     TestSelection selection = testSelection(paths);
     if (!selection.classNames().isEmpty()) compile();
-    runTests(selection);
+    runTests(selection, SnapshotMode.INTERACTIVE);
+  }
+
+  static List<String> decodeMiseTestArgumentsForTest(List<String> arguments) {
+    assert arguments != null && !arguments.isEmpty();
+    if (!arguments.getFirst().equals("--mise-usage")) {
+      throw new IllegalArgumentException("missing Mise test argument marker");
+    }
+    var decoded = new ArrayList<String>();
+    for (String token : arguments.subList(1, arguments.size())) {
+      if (token.equals("--only") && decoded.isEmpty()) {
+        decoded.add(token);
+        continue;
+      }
+      if (!token.startsWith("p:") || token.length() > MISE_TEST_PATH_ARGUMENT_CHARACTERS_MAX) {
+        throw new IllegalArgumentException("invalid Mise test path argument");
+      }
+      try {
+        byte[] bytes = Base64.getDecoder().decode(token.substring(2));
+        String path =
+            StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString();
+        if (path.isEmpty()) throw new IllegalArgumentException("empty Mise test path");
+        decoded.add(path);
+      } catch (CharacterCodingException | IllegalArgumentException exception) {
+        throw new IllegalArgumentException("invalid encoded Mise test path", exception);
+      }
+    }
+    return List.copyOf(decoded);
+  }
+
+  static List<String> focusedTestPathsForTest(List<String> arguments) {
+    assert arguments != null;
+    if (arguments.size() < 2
+        || !arguments.getFirst().equals("--only")
+        || arguments.subList(1, arguments.size()).stream()
+            .anyMatch(path -> path.startsWith("--"))) {
+      throw new IllegalArgumentException(
+          "usage: mise run test [--only <test files or directories...>]");
+    }
+    return List.copyOf(arguments.subList(1, arguments.size()));
+  }
+
+  static List<Path> javascriptTestPathsForTest(List<String> paths) throws IOException {
+    assert paths != null;
+    var sources = new TreeSet<Path>();
+    boolean otherPaths = false;
+    for (String requested : paths) {
+      Path path = resolveProjectPath(requested);
+      if (GOLEM_TEST_SOURCES.contains(path)) {
+        sources.add(path);
+      } else if (path.startsWith(TRACKER_TEST_SOURCES)) {
+        sources.addAll(
+            selectedFiles(
+                List.of(requested),
+                List.of(TRACKER_TEST_SOURCES),
+                candidate ->
+                    candidate.startsWith(TRACKER_TEST_SOURCES)
+                        && candidate.getFileName().toString().endsWith(".test.mjs"),
+                "tracker test source"));
+      } else {
+        otherPaths = true;
+      }
+    }
+    if (!sources.isEmpty() && otherPaths) {
+      throw new IllegalArgumentException("Java and JavaScript test paths cannot be mixed");
+    }
+    return List.copyOf(sources);
+  }
+
+  private static void testAll() throws Exception {
+    check();
+    runGolemTests();
+    runTrackerTests();
+    runTests(testSelection(List.of()), SnapshotMode.READ_ONLY);
+  }
+
+  private static void refactorCommand(List<String> arguments) throws Exception {
+    if (arguments.equals(List.of("--check"))) {
+      compile();
+      checkRefaster();
+    } else if (arguments.isEmpty()) {
+      refactor();
+    } else {
+      throw new IllegalArgumentException("usage: mise run refactor [--check]");
+    }
   }
 
   private static void refactor() throws Exception {
     compile();
     applyRefasterToModules();
     applyRefasterToBuildTool();
-    format(true, List.of());
+    format(List.of());
   }
 
   private static void applyRefasterToModules() throws Exception {
+    List<String> arguments = refasterModuleArguments(REFASTER_APPLY_MODULES, "IN_PLACE");
+    rebuildArtifact(
+        REFASTER_APPLY_MODULES,
+        "refaster-application",
+        staging ->
+            runJavacArgFile(
+                writeArgFile(
+                    "apply-refaster-to-modules",
+                    remapArguments(arguments, REFASTER_APPLY_MODULES, staging))));
+  }
+
+  private static List<String> refasterModuleArguments(Path destination, String patchLocation)
+      throws IOException {
     var arguments = new ArrayList<String>();
-    arguments.addAll(refasterPatchArguments());
+    arguments.addAll(refasterPatchArguments(patchLocation));
     arguments.add("-proc:none");
     addModuleSourcePaths(arguments);
     arguments.add("--module-path");
@@ -2968,26 +3110,14 @@ public final class Build {
     arguments.add("toktrak.tests=ALL-UNNAMED");
     addExports(arguments);
     arguments.add("-d");
-    arguments.add(REFASTER_APPLY_MODULES.toString());
+    arguments.add(destination.toString());
     arguments.add("--module");
     arguments.add("toktrak,toktrak.tests");
-    rebuildArtifact(
-        REFASTER_APPLY_MODULES,
-        "refaster-application",
-        staging ->
-            runJavacArgFile(
-                writeArgFile(
-                    "apply-refaster-to-modules",
-                    remapArguments(arguments, REFASTER_APPLY_MODULES, staging))));
+    return arguments;
   }
 
   private static void applyRefasterToBuildTool() throws Exception {
-    var arguments = new ArrayList<String>();
-    arguments.addAll(refasterPatchArguments());
-    arguments.add("-d");
-    arguments.add(REFASTER_APPLY_BUILD.toString());
-    arguments.add(ROOT.resolve("tools/Build.java").toString());
-    arguments.add(BUILD_TEST_SOURCE.toString());
+    List<String> arguments = refasterBuildToolArguments(REFASTER_APPLY_BUILD, "IN_PLACE");
     rebuildArtifact(
         REFASTER_APPLY_BUILD,
         "refaster-application",
@@ -2998,12 +3128,69 @@ public final class Build {
                     remapArguments(arguments, REFASTER_APPLY_BUILD, staging))));
   }
 
-  private static void ci() throws Exception {
-    refactor();
-    if (isGitDirty(ROOT)) {
-      throw new IllegalStateException("working tree is dirty after refactor");
+  private static List<String> refasterBuildToolArguments(Path destination, String patchLocation)
+      throws IOException {
+    var arguments = new ArrayList<String>();
+    arguments.addAll(refasterPatchArguments(patchLocation));
+    arguments.add("-d");
+    arguments.add(destination.toString());
+    arguments.add(ROOT.resolve("tools/Build.java").toString());
+    arguments.add(BUILD_TEST_SOURCE.toString());
+    return arguments;
+  }
+
+  private static void checkRefaster() throws Exception {
+    Path root = REFASTER_OUTPUT.resolve("check");
+    deleteTree(root);
+    Path modules = root.resolve("modules");
+    Path build = root.resolve("build");
+    for (Path directory : List.of(modules, build)) {
+      Files.createDirectories(directory.resolve("patches"));
     }
-    verify();
+    String moduleOutput =
+        runRefasterCheck(
+            "check-refaster-modules",
+            refasterModuleArguments(modules, modules.resolve("patches").toString()));
+    requireNoRefasterPatch(modules.resolve("patches/error-prone.patch"), moduleOutput);
+    String buildOutput =
+        runRefasterCheck(
+            "check-refaster-build-tool",
+            refasterBuildToolArguments(build, build.resolve("patches").toString()));
+    requireNoRefasterPatch(build.resolve("patches/error-prone.patch"), buildOutput);
+  }
+
+  private static String runRefasterCheck(String name, List<String> arguments) throws Exception {
+    var command = new ArrayList<>(errorProneJvmArguments());
+    command.add("@" + writeArgFile(name, arguments));
+    return runTool(javacExecutable(), name, command, ROOT, PROCESS_TIMEOUT).output();
+  }
+
+  static void requireNoRefasterPatch(Path patch, String output) throws IOException {
+    assert patch != null;
+    assert output != null;
+    if (output.contains("Failed to apply diff to file")
+        || (Files.exists(patch) && (!Files.isRegularFile(patch) || Files.size(patch) == 0))) {
+      throw new IllegalStateException("Refaster patch generation failed: " + patch);
+    }
+    if (Files.exists(patch)) {
+      throw new IllegalStateException("Refaster changes required; run mise run refactor: " + patch);
+    }
+  }
+
+  private static void ci() throws Exception {
+    if (isGitDirty(ROOT)) {
+      throw new IllegalStateException("CI requires a clean working tree");
+    }
+    check();
+    checkRefaster();
+    runGolemTests();
+    runTrackerTests();
+    testBuildTool();
+    verifyLinkedProductionRuntime();
+    runCoverageTests();
+    if (isGitDirty(ROOT)) {
+      throw new IllegalStateException("CI changed the working tree");
+    }
   }
 
   static boolean isGitDirtyForTest(Path repository) throws Exception {
@@ -3023,20 +3210,26 @@ public final class Build {
   }
 
   private static void verify() throws Exception {
-    check();
-    runGolemTests();
-    runTests(testSelection(List.of()));
+    testAll();
+    verifyLinkedProductionRuntime();
   }
 
   private static void coverage() throws Exception {
     compile();
+    runCoverageTests();
+  }
+
+  private static void runCoverageTests() throws Exception {
     ensureCoverageDependencies();
     TestSelection allTests = testSelection(List.of());
     rebuildArtifact(
         COVERAGE,
         "coverage",
         staging -> {
-          runTests(new TestSelection(false, allTests.classNames()), jacocoAgentArgument(staging));
+          runTests(
+              new TestSelection(false, allTests.classNames()),
+              jacocoAgentArgument(staging),
+              SnapshotMode.READ_ONLY);
           Path executionData = staging.resolve("jacoco.exec");
           if (!Files.isRegularFile(executionData) || Files.size(executionData) == 0) {
             throw new IllegalStateException("JaCoCo execution data is missing or empty");
@@ -3271,12 +3464,20 @@ public final class Build {
     return matches.getFirst();
   }
 
-  private static void runTests(TestSelection selection) throws Exception {
-    runTests(selection, null);
+  private enum SnapshotMode {
+    READ_ONLY,
+    INTERACTIVE
   }
 
-  private static void runTests(TestSelection selection, String javaAgent) throws Exception {
+  private static void runTests(TestSelection selection, SnapshotMode snapshotMode)
+      throws Exception {
+    runTests(selection, null, snapshotMode);
+  }
+
+  private static void runTests(TestSelection selection, String javaAgent, SnapshotMode snapshotMode)
+      throws Exception {
     assert selection != null;
+    assert snapshotMode != null;
     if (selection.buildTool()) testBuildTool();
     if (selection.classNames().isEmpty()) return;
     Path runtime = ensureTestRuntime();
@@ -3294,8 +3495,10 @@ public final class Build {
     addExports(arguments);
     arguments.add("-m");
     arguments.add("toktrak.tests/toktrak.tests.TestLauncher");
-    runTestGroup(runtime, arguments, selection.classNames(), "--unit", javaAgent != null);
-    runTestGroup(runtime, arguments, selection.classNames(), "--tagged", javaAgent != null);
+    runTestGroup(
+        runtime, arguments, selection.classNames(), "--unit", javaAgent != null, snapshotMode);
+    runTestGroup(
+        runtime, arguments, selection.classNames(), "--tagged", javaAgent != null, snapshotMode);
   }
 
   private static void runTestGroup(
@@ -3303,18 +3506,31 @@ public final class Build {
       List<String> baseArguments,
       List<String> classNames,
       String group,
-      boolean coverage)
+      boolean coverage,
+      SnapshotMode snapshotMode)
       throws Exception {
     Duration timeout = testTimeout(group);
     var arguments = new ArrayList<>(baseArguments);
     arguments.add(group);
     arguments.addAll(classNames);
-    runArgFile(
-        runtimeJava(runtime),
-        "run-toktrak-" + group.substring(2) + "-test-suite" + (coverage ? "-with-coverage" : ""),
-        arguments,
-        timeout,
-        group.equals("--unit"));
+    Path argFile =
+        writeArgFile(
+            "run-toktrak-"
+                + group.substring(2)
+                + "-test-suite"
+                + (coverage ? "-with-coverage" : ""),
+            arguments);
+    String java = runtimeJava(runtime);
+    printInvocation(java, argFile);
+    ProcessBuilder process = new ProcessBuilder(java, "@" + argFile);
+    if (snapshotMode == SnapshotMode.READ_ONLY) enforceReadonlySnapshots(process);
+    runProcess(process, timeout, group.equals("--unit"));
+  }
+
+  static void enforceReadonlySnapshots(ProcessBuilder process) {
+    assert process != null;
+    process.environment().put("selfie", "readonly");
+    process.environment().put("SELFIE", "readonly");
   }
 
   static Duration testTimeout(String group) {
@@ -4071,6 +4287,10 @@ public final class Build {
 
   private static void jlinkProd() throws Exception {
     compile();
+    verifyLinkedProductionRuntime();
+  }
+
+  private static void verifyLinkedProductionRuntime() throws Exception {
     verifyModules(MAIN_DEPS);
     Path runtime = ensureRuntime("prod", List.of(MAIN_DEPS), PROD_RUNTIME_ROOTS, true);
     verifyProductionRuntime(runtime);
@@ -4323,8 +4543,12 @@ public final class Build {
   }
 
   static List<String> refasterArgumentsForTest() throws IOException {
+    return refasterArgumentsForTest("IN_PLACE");
+  }
+
+  static List<String> refasterArgumentsForTest(String location) throws IOException {
     var arguments = new ArrayList<>(errorProneJvmArguments());
-    arguments.addAll(refasterPatchArguments());
+    arguments.addAll(refasterPatchArguments(location));
     return List.copyOf(arguments);
   }
 
@@ -4346,9 +4570,10 @@ public final class Build {
     return errorProneArguments("");
   }
 
-  private static List<String> refasterPatchArguments() throws IOException {
+  private static List<String> refasterPatchArguments(String location) throws IOException {
+    assert location != null && !location.isBlank();
     return errorProneArguments(
-        " -XepPatchChecks:refaster:" + REFASTER_RULE + " -XepPatchLocation:IN_PLACE");
+        " -XepPatchChecks:refaster:" + REFASTER_RULE + " -XepPatchLocation:" + location);
   }
 
   private static List<String> errorProneArguments(String pluginArguments) throws IOException {
@@ -5525,10 +5750,6 @@ public final class Build {
   private static String javacExecutable() {
     return Path.of(System.getProperty("java.home"), "bin", isWindows() ? "javac.exe" : "javac")
         .toString();
-  }
-
-  private static String googleJavaFormatExecutable() {
-    return isWindows() ? "google-java-format.exe" : "google-java-format";
   }
 
   private static String jlinkExecutable() {

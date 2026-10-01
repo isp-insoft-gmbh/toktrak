@@ -27,9 +27,9 @@ description: "Use when adding or updating TokTrak Java tests, Selfie snapshots, 
   changed fragment. An unchanged renderer, unexplained effect, nondeterminism,
   or broken security/accessibility invariant is a potential bug—investigate it.
 - For one expected change, replace `toMatchDisk()` with `toMatchDisk_TODO()`,
-  run `mise run test <path>`, inspect the generated `.ss` diff against the
-  renderer change, and commit the golden file plus Selfie's rewritten Java. Use
-  `//selfieonce` for a file; never commit update markers.
+  run `mise run test --only <path>`, inspect the generated `.ss` diff against
+  the renderer change, and commit the golden file plus Selfie's rewritten Java.
+  Use `//selfieonce` for a file; never commit update markers.
 - Keep timestamps, random IDs, ports, secrets, and machine paths out of
   snapshots; normalize at the test boundary.
 - Run `mise run coverage` after changing tests; open
@@ -37,5 +37,6 @@ description: "Use when adding or updating TokTrak Java tests, Selfie snapshots, 
 - When editing tests, run `mise run pit --history -- <production paths>` and
   inspect `output/mutations/index.html`. Delete `output/pit.history` and rerun
   without history if results are inconsistent.
-- Before pushing, run `mise run ci`. CI keeps Selfie readonly and publishes
+- Before pushing, run `mise run ci` from a clean tree. CI rejects Refaster
+  rewrites without applying them, keeps Selfie readonly, and publishes
   coverage/PIT summaries plus downloadable HTML reports.

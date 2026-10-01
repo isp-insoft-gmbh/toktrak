@@ -1,67 +1,68 @@
 min_version = "2026.9.18"
 
-[tools]
-dprint = "0.58.0"
-google-java-format = "1.36.1"
-hyperfine = "1.20.0"
-java = "temurin-26.0.2+10"
-node = "26.10.0"
-oxlint = "1.80.0"
-markdownlint-cli2 = "0.23.3"
-watchexec = "2.7.3"
+[tool_alias]
+hyperfine = "github:sharkdp/hyperfine"
 
-[tasks.clean]
-description = "Delete disposable output"
-run = "java -ea tools/Build.java clean"
+[tools]
+dprint = "latest"
+google-java-format = "latest"
+java = "temurin"
+node = "latest"
+oxlint = "latest"
+rumdl = "latest"
+watchexec = "latest"
+
+[tools.hyperfine]
+version = "latest"
+
+[tool_config]
+locked = true
+
+[settings]
+lockfile_platforms = ["linux-x64", "macos-arm64", "windows-x64"]
+
+# Main read-only ladder: each gate includes the guarantees above it.
+[tasks.check]
+description = "Base gate: formatting, definitions, compilation, and static analysis"
+run = "java -ea tools/Build.java check"
+
+[tasks.test]
+description = "Check plus core tests; --only runs selected tests without check"
+usage = '''
+flag "--only" help="Run selected paths without repository-wide checks"
+arg "[paths]" var=#true help="Test files or directories; requires --only"
+'''
+# Parsed paths use Base64 to cross both POSIX sh and Windows cmd without shell expansion.
+run = "java -ea tools/Build.java test --mise-usage{% if usage.only %} --only{% endif %}{% for path in usage.paths %} p:{{ path | b64_encode }}{% endfor %}"
+
+[tasks.verify]
+description = "Check, core tests, and linked production runtime verification"
+run = "java -ea tools/Build.java verify"
+
+[tasks.ci]
+description = "Clean-tree gate: check, Refaster, tests, runtime, and coverage floors"
+run = "java -ea tools/Build.java ci"
+
+# Local authoring.
+[tasks.dev]
+description = "Run seeded TokTrak and restart when development files change"
+usage = 'flag "--fail-writes" help="Start with degraded writes"'
+run = "mise watch --restart --watch sources --watch tools --watch tests/corpus/dev.jsonl --watch mise.toml -- dev-server{% if usage.fail_writes %} --fail-writes{% endif %}"
 
 [tasks.fmt]
 description = "Format Markdown and Java sources, optionally limiting Java paths"
 raw_args = true
-run = ["dprint fmt", "java -ea tools/Build.java fmt"]
+run = "java -ea tools/Build.java fmt"
 
-[tasks.markdown-check]
-hide = true
-run = ["dprint check", "markdownlint-cli2"]
+# Focused quality and developer utilities.
+[tasks.refactor]
+description = "Apply Refaster rewrites; --check validates without edits (also in ci)"
+usage = 'flag "--check" help="Validate Refaster conformance without editing"'
+run = "java -ea tools/Build.java refactor{% if usage.check %} --check{% endif %}"
 
-[tasks.tracker-lint]
-description = "Lint the tracker and tracker tests"
-run = "oxlint sources/toktrak/assets/private/tracker.mjs tests/tracker"
-
-[tasks.check]
-description = "Check Markdown, tracker JavaScript, and compile/lint all Java modules"
-depends = ["markdown-check", "tracker-lint"]
-run = "java -ea tools/Build.java check"
-
-[tasks.watch-check]
-description = "Rerun checks when project files change"
-run = "mise watch --restart --watch . -- check"
-
-[tasks.golem-check]
-description = "Validate golem definition files"
-run = "node tools/golem.mjs check"
-
-[tasks.golem-auth-check]
-description = "Authenticate one configured task or one task per harness"
-raw_args = true
-run = "node tools/golem.mjs auth-check"
-
-[tasks.golem]
-description = "Run one complete local golem lifecycle"
-raw_args = true
-run = "node tools/golem.mjs run"
-
-[tasks.test]
-description = "Run tests, optionally limited to test files or directories"
-raw_args = true
-run = "java -ea tools/Build.java test"
-
-[tasks.tracker-test]
-description = "Run tracker unit and native scheduler integration tests"
-run = 'node --test "tests/tracker/**/*.test.mjs"'
-
-[tasks.watch-test]
-description = "Rerun the full cached test suite when Java inputs change"
-run = "mise watch --restart --watch sources --watch tests --watch tools --watch vendored --watch mise.toml -- test"
+[tasks.coverage]
+description = "Run JaCoCo tests, generate reports, and enforce floors (also in ci)"
+run = "java -ea tools/Build.java coverage"
 
 [tasks.pit]
 description = "Run PIT options directly; use --history while iterating; source filters follow --"
@@ -73,49 +74,46 @@ description = "Run observational performance benchmarks and write output/perf ar
 raw_args = true
 run = "java -ea tools/Build.java perf"
 
-[tasks.coverage]
-description = "Run tests with JaCoCo and generate HTML, XML, and CSV coverage reports"
-run = "java -ea tools/Build.java coverage"
-
-[tasks.refactor]
-description = "Apply Refaster rules and format Java sources"
-run = "java -ea tools/Build.java refactor"
-
 [tasks.ide]
 description = "Generate IDE metadata; choose eclipse or intellij, or omit for both"
 raw_args = true
 run = "java -ea tools/Build.java ide"
 
-[tasks.verify]
-description = "Check Markdown and code, then run the full test suite"
-depends = ["markdown-check", "tracker-lint"]
-run = "java -ea tools/Build.java verify"
+[tasks.clean]
+description = "Delete disposable output"
+run = "java -ea tools/Build.java clean"
 
-[tasks.ci]
-description = "Check Markdown and tracker JavaScript, apply Refaster, require a clean tree, and verify"
-depends = ["markdown-check", "tracker-lint"]
-run = "java -ea tools/Build.java ci"
+# Focused tracker tests and golem workflows.
+[tasks.tracker-test]
+description = "Run tracker and scheduler tests through Build.java (also in test, verify, and ci)"
+run = "java -ea tools/Build.java test --only tests/tracker"
 
-[tasks.dev]
-description = "Run seeded TokTrak and restart when development files change"
-usage = 'flag "--fail-writes" help="Start with degraded writes"'
-run = "mise watch --restart --watch sources --watch tools --watch tests/corpus/dev.jsonl --watch mise.toml -- dev-server{% if usage.fail_writes %} --fail-writes{% endif %}"
+[task_templates.golem-tools]
+tools = { "aqua:earendil-works/pi" = "latest", "aqua:anthropics/claude-code" = "latest", "aqua:openai/codex" = "latest" }
 
-[tasks.dev-server]
-hide = true
-env = { TOKTRAK_DEV_AUTH = "true" }
-run = "java -ea tools/Build.java dev -- --corpus tests/corpus/dev.jsonl"
+[tasks.golem-auth-check]
+extends = "golem-tools"
+description = "Probe live harness authentication; separate from repository checks"
+raw_args = true
+run = "node tools/golem.mjs auth-check"
 
-[tasks.prod]
+[tasks.golem]
+extends = "golem-tools"
+description = "Run one complete local golem lifecycle"
+raw_args = true
+run = "node tools/golem.mjs run"
+
+# Production packaging and release.
+[tasks.runtime-build]
 description = "Build and verify the self-contained production runtime"
 run = "java -ea tools/Build.java prod"
 
-[tasks.image]
+[tasks.container-build]
 description = "Build and inspect the immutable TokTrak container image"
 run = "java -ea tools/Build.java image"
 
 [tasks.container-verify]
-description = "Build and verify the image with rootless Podman"
+description = "Verify the image with rootless Podman; separate from core verify"
 run = "java -ea tools/Build.java container-verify"
 run_windows = "set CONTAINER_CONNECTION=podman-machine-default&& java -ea tools/Build.java container-verify"
 
@@ -124,3 +122,9 @@ description = "Verify and publish the next immutable integer release"
 raw_args = true
 run = "java -ea tools/Build.java release"
 run_windows = "set CONTAINER_CONNECTION=podman-machine-default&& java -ea tools/Build.java release"
+
+# Internal support for the dev watcher.
+[tasks.dev-server]
+hide = true
+env = { TOKTRAK_DEV_AUTH = "true" }
+run = "java -ea tools/Build.java dev -- --corpus tests/corpus/dev.jsonl"

@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ruleset name="TokTrak PMD"
-    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.github.io/pmd-7.0.0/ruleset_xml_schema.xsd">
+<ruleset
+  name="TokTrak PMD"
+  xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.github.io/pmd-7.0.0/ruleset_xml_schema.xsd"
+>
   <description>Curated rules matching accepted TokTrak inspection triage findings.</description>
 
   <rule ref="category/java/bestpractices.xml/ImplicitFunctionalInterface" />

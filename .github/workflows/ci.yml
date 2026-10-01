@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
+  core:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     steps:
@@ -25,7 +25,6 @@ jobs:
           version: 2026.9.18
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - run: mise run ci
-      - run: mise run coverage
       - name: Upload coverage report
         id: coverage-artifact
         if: always() && hashFiles('output/coverage/**') != ''
@@ -43,3 +42,20 @@ jobs:
           echo "::warning::The downloadable coverage report could not be uploaded."
           echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
           echo "> Coverage report upload failed. Validation results above remain authoritative." >> "$GITHUB_STEP_SUMMARY"
+
+  tracker:
+    uses: ./.github/workflows/tracker.yml
+
+  ci:
+    needs: [core, tracker]
+    if: always()
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 1
+    steps:
+      - name: Require core and cross-platform tracker tests
+        env:
+          CORE_RESULT: ${{ needs.core.result }}
+          TRACKER_RESULT: ${{ needs.tracker.result }}
+        run: |
+          test "$CORE_RESULT" = success
+          test "$TRACKER_RESULT" = success

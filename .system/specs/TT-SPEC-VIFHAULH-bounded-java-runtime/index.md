@@ -35,4 +35,4 @@ behavior.
 Streaming replay, sparse oversized input, count/shape limits, full-buffer
 writes, HTTP saturation, writer abort, process timeout, assertion-enabled
 launches, and warning-free production linking are directly tested.
-`mise run check`, `mise run verify`, and `mise run prod` pass.
+`mise run check`, `mise run verify`, and `mise run runtime-build` pass.

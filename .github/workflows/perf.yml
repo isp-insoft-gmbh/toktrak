@@ -8,6 +8,8 @@ on:
       - .containerignore
       - Containerfile
       - mise.toml
+      - mise.lock
+      - .mise/locks/**
       - sources/**
       - tests/corpus/**
       - tools/**

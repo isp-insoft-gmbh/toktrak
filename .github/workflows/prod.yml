@@ -8,6 +8,8 @@ on:
       - .github/workflows/prod.yml
       - Containerfile
       - mise.toml
+      - mise.lock
+      - .mise/locks/**
       - sources/**
       - tools/**
       - vendored/**
@@ -18,6 +20,8 @@ on:
       - .github/workflows/prod.yml
       - Containerfile
       - mise.toml
+      - mise.lock
+      - .mise/locks/**
       - tools/**
   workflow_dispatch:
 
@@ -40,5 +44,5 @@ jobs:
         with:
           version: 2026.9.18
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
-      - run: mise run prod
+      - run: mise run runtime-build
       - run: mise run container-verify

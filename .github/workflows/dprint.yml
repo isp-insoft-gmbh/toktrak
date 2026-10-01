@@ -1,0 +1,79 @@
+name: Update dprint plugins
+
+on:
+  schedule:
+    - cron: "43 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dprint-plugin-updates
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
+    steps:
+      - name: Require the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+            echo "Dprint updates run only from $DEFAULT_BRANCH" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          version: 2026.9.18
+          cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
+      - name: Update pinned plugin versions and checksums
+        run: node tools/update-dprint.mjs
+      - name: Check for updates
+        id: changes
+        run: |
+          if git diff --quiet -- dprint.json; then
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+            echo "Dprint plugins are up to date." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Format and validate updated plugins
+        if: steps.changes.outputs.updated == 'true'
+        run: |
+          mise run fmt
+          mise run check
+      - name: Mint repository GitHub App token
+        if: steps.changes.outputs.updated == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.TOKTRAK_AGENT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TOKTRAK_AGENT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Create or update pull request
+        if: steps.changes.outputs.updated == 'true'
+        id: pr
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: maintenance/dprint-plugins
+          delete-branch: true
+          commit-message: "chore: update dprint plugins"
+          title: "chore: update dprint plugins"
+          body: |
+            Weekly dprint plugin refresh with pinned SHA-256 checksums and resulting formatting changes.
+            Review formatter output and required CI before merging.
+      - name: Summarize pull request
+        if: steps.pr.outputs.pull-request-url != ''
+        env:
+          PR_URL: ${{ steps.pr.outputs.pull-request-url }}
+        run: |
+          echo "Dprint update PR: $PR_URL" >> "$GITHUB_STEP_SUMMARY"

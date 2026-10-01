@@ -5,18 +5,24 @@
 - Install tools with `mise install`; establish baseline health with
   `mise run check`.
 - Format Markdown and Java with `mise run fmt [paths...]`.
-- Run focused tests with `mise run test [test paths...]` while iterating.
-- Run `mise run verify` before completion; it is the complete read-only local
-  gate.
-- Run `mise run prod` when production runtime behavior or packaging can change.
+- Run focused tests with `mise run test --only [test paths...]` while iterating.
+- Use the source-preserving ladder `mise run check`, `mise run test`, then
+  `mise run verify` as needed; each rung includes the preceding guarantees.
+  Tracker tests exercise temporary native user schedulers on the host.
+- Run `mise run verify` before completion; it also verifies the linked
+  production runtime.
+- Run `mise run runtime-build` when production runtime behavior or packaging can
+  change.
 - Run `mise run clean` to remove generated output.
 - Generate editor metadata with `mise run ide [eclipse|intellij]`; `Build.java`
   lint and `mise run fmt` remain authoritative over IDE diagnostics and
   formatting.
 - Run the seeded server with `mise run dev`; use `mise run dev --fail-writes`
   for degraded-write behavior.
-- Reproduce CI with `mise run ci`, then `mise run coverage`. `ci` applies
-  Refaster and requires the resulting tree to remain clean.
+- Reproduce CI with `mise run ci` from a clean tree; it checks Refaster
+  conformance without rewriting source and enforces coverage floors. Use
+  `mise run refactor --check` while iterating and `mise run refactor` to apply
+  required rewrites.
 
 ## Quality gates
 
@@ -55,6 +61,8 @@
 
 ## Design
 
+- Keep orchestration one-way: Mise invokes `tools/Build.java`; `Build.java` must
+  never invoke Mise.
 - Keep interfaces small and define fault behavior.
 - Isolate nondeterministic I/O behind deterministic logic; push control flow
   upward and data transformation downward.

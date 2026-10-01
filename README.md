@@ -63,6 +63,12 @@ rebuilds the in-memory projection during startup.
 There is no Maven, Gradle, Spring, servlet container, npm install, bundler, or
 DB server.
 
+Run `mise run check`, `mise run test`, `mise run verify`, then `mise run ci` for
+progressively stronger guarantees. Use `mise run test --only <paths...>` for
+focused iteration without the full ladder. Tracker tests run within `test`,
+`verify`, and `ci`; the required CI result also waits for native integration on
+Linux, macOS, and Windows.
+
 ![TokTrak build and contributor workflow](.system/overview-build.svg)
 
 ## Contribute
@@ -88,18 +94,19 @@ CLI. Task definitions live in `.github/golems`; `_golem.md` supplies shared
 instructions. Each task explicitly declares its harness, model, thinking level,
 and weekday. `mise run check` validates their strict structure offline.
 
-Install and authenticate all three CLIs with their provider subscriptions:
+Mise installs pinned CLI versions for the golem tasks. Authenticate each harness
+with its provider subscription:
 
 - Pi and Codex CLI use ChatGPT Pro authentication. Pi models must use the
   `openai-codex/` provider; metered API fallback is forbidden.
-- Claude Code uses Claude Max authentication.
+- Claude Code uses Claude subscription authentication, not a metered API key.
 - `gh` uses an account authorized for this repository.
 
-Then validate task definitions, check one authenticated task per configured
-harness, and run one task:
+Then validate definitions through the base gate, probe one authenticated task
+per configured harness, and run one task:
 
 ```sh
-mise run golem-check
+mise run check
 mise run golem-auth-check
 mise run golem bugs
 ```
@@ -122,10 +129,11 @@ harness may place small safe diagrams, screenshots, or videos under
 `output/golem-evidence` and reference them in pull-request prose as
 `[evidence:<filename>]`; the parent uploads them after the harness exits.
 
-To change or add a task, edit one lowercase kebab-case `.md` file, run
-`mise run check`, then `mise run golem-check`. Tracked `.claude/skills` are
-canonical; Pi points to them through `.pi/settings.json`, Claude discovers them
-directly, and Codex follows the tracked `.agents/skills` bridge.
+To change or add a task, edit one lowercase kebab-case `.md` file, then run
+`mise run check` for offline validation. `golem-auth-check` probes live harness
+credentials separately. Tracked `.claude/skills` are canonical; Pi points to
+them through `.pi/settings.json`, Claude discovers them directly, and Codex
+follows the tracked `.agents/skills` bridge.
 
 ### Golem CI
 

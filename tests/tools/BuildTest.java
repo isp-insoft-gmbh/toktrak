@@ -14,6 +14,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
@@ -67,6 +68,10 @@ public final class BuildTest {
     given_projectSources_when_generatingEclipseProjects_then_writesValidMetadata();
     given_projectSources_when_generatingIntellijProjects_then_writesValidMetadata();
     given_testPaths_when_selectingTests_then_returnsExpectedClasses();
+    given_focusedTestArguments_when_parsing_then_requiresExplicitOnlyFlag();
+    given_miseTestArguments_when_decoding_then_preservesPathsAndRejectsMalformedValues();
+    given_javascriptTestPaths_when_selecting_then_runsOnlyRequestedFiles();
+    given_interactiveSnapshotEnvironment_when_enforcingReadonly_then_overridesBothNames();
     given_productionPath_when_selectingTests_then_rejectsInput();
     given_symbolicSourceAncestor_when_selectingPitTargets_then_rejectsInput();
     given_pitArguments_when_selectingTargets_then_parsesOptions();
@@ -89,6 +94,7 @@ public final class BuildTest {
     given_runtimeAssetBounds_when_buildingBundle_then_rejectsExcess();
     given_runtimeAssetBundle_when_writingModule_then_copiesAndVerifiesResources();
     given_runtimeAssets_when_fingerprintingCompilation_then_changesFingerprint();
+    given_templateChange_when_fingerprintingCompilation_then_changesFingerprint();
     given_explodedAssets_when_fingerprintingRuntime_then_changesFingerprint();
     given_completedProcess_when_waitingForExit_then_returnsExitCode();
     given_completedProcess_when_waitingWithoutTimeout_then_returnsExitCode();
@@ -97,6 +103,7 @@ public final class BuildTest {
     given_manyFormatterSources_when_batchingSources_then_preservesSourceCount();
     given_commandAboveLengthLimit_when_buildingCommand_then_rejectsInput();
     given_windowsOsNamePattern_when_applyingRefaster_then_rewritesOnlyOsCheck();
+    given_refasterPattern_when_checkingPatch_then_detectsChangeWithoutEditingSource();
     given_gitTreeWithUntrackedFile_when_checkingStatus_then_reportsDirty();
     given_releaseTags_when_selectingNextVersion_then_requiresConsecutiveIntegers();
     given_dirtyOrDivergedTree_when_checkingRelease_then_rejectsPreflight();
@@ -491,6 +498,109 @@ public final class BuildTest {
       for (int index = paths.size() - 1; index >= 0; index--) {
         Files.deleteIfExists(paths.get(index));
       }
+    }
+  }
+
+  private static void given_focusedTestArguments_when_parsing_then_requiresExplicitOnlyFlag() {
+    List<String> paths = Build.focusedTestPathsForTest(List.of("--only", "tests/tools"));
+    if (!paths.equals(List.of("tests/tools"))) {
+      throw new AssertionError("unexpected focused test paths: " + paths);
+    }
+    for (List<String> arguments :
+        List.of(
+            List.<String>of(),
+            List.of("tests/tools"),
+            List.of("--only"),
+            List.of("--only", "--unknown"))) {
+      try {
+        Build.focusedTestPathsForTest(arguments);
+        throw new AssertionError("accepted invalid test arguments: " + arguments);
+      } catch (IllegalArgumentException expected) {
+        if (!expected.getMessage().contains("mise run test")) throw expected;
+      }
+    }
+  }
+
+  private static void
+      given_miseTestArguments_when_decoding_then_preservesPathsAndRejectsMalformedValues() {
+    String path = "tests/spaces ü % ! & ^ ' $() \\ name.java";
+    String token = "p:" + Base64.getEncoder().encodeToString(path.getBytes(StandardCharsets.UTF_8));
+    if (!Build.decodeMiseTestArgumentsForTest(List.of("--mise-usage", "--only", token))
+        .equals(List.of("--only", path))) {
+      throw new AssertionError("Mise test transport altered a path");
+    }
+    if (!Build.decodeMiseTestArgumentsForTest(List.of("--mise-usage")).isEmpty()) {
+      throw new AssertionError("Mise test transport added paths to full test run");
+    }
+    for (String invalid : List.of("plain", "p:", "p:/w==", "p:not-base64?")) {
+      try {
+        Build.decodeMiseTestArgumentsForTest(List.of("--mise-usage", "--only", invalid));
+        throw new AssertionError("accepted malformed Mise test path: " + invalid);
+      } catch (IllegalArgumentException expected) {
+        if (!expected.getMessage().contains("Mise test")) throw expected;
+      }
+    }
+  }
+
+  private static void given_javascriptTestPaths_when_selecting_then_runsOnlyRequestedFiles()
+      throws Exception {
+    Path expected = Path.of("tools/golem.test.mjs").toAbsolutePath();
+    List<Path> selected = Build.javascriptTestPathsForTest(List.of("./tools/golem.test.mjs"));
+    if (!selected.equals(List.of(expected))) {
+      throw new AssertionError("unexpected JavaScript tests: " + selected);
+    }
+    Path tracker = Path.of("tests/tracker/usage.test.mjs").toAbsolutePath();
+    if (!Build.javascriptTestPathsForTest(List.of("tests/tracker/usage.test.mjs"))
+        .equals(List.of(tracker))) {
+      throw new AssertionError("focused tracker test was not selected");
+    }
+    List<Path> trackerSuite = Build.javascriptTestPathsForTest(List.of("tests/tracker"));
+    if (trackerSuite.size() != 7
+        || !trackerSuite.contains(tracker)
+        || !trackerSuite.contains(
+            Path.of("tests/tracker/scheduler.linux.test.mjs").toAbsolutePath())
+        || !trackerSuite.contains(
+            Path.of("tests/tracker/scheduler.macos.test.mjs").toAbsolutePath())
+        || !trackerSuite.contains(
+            Path.of("tests/tracker/scheduler.win32.test.mjs").toAbsolutePath())) {
+      throw new AssertionError("tracker suite selection is incomplete: " + trackerSuite);
+    }
+    if (!Build.javascriptTestPathsForTest(
+            List.of("tests/tracker/usage.test.mjs", "./tests/tracker/usage.test.mjs"))
+        .equals(List.of(tracker))) {
+      throw new AssertionError("duplicate tracker test was not deduplicated");
+    }
+    if (!Build.javascriptTestPathsForTest(List.of("tests/tools")).isEmpty()) {
+      throw new AssertionError("Java test paths were selected as JavaScript tests");
+    }
+    for (List<String> invalid :
+        List.of(
+            List.of("tests/tools", "tools/golem.test.mjs"),
+            List.of("tests/tools", "tests/tracker"))) {
+      try {
+        Build.javascriptTestPathsForTest(invalid);
+        throw new AssertionError("accepted mixed Java and JavaScript test paths: " + invalid);
+      } catch (IllegalArgumentException expectedFailure) {
+        if (!expectedFailure.getMessage().contains("cannot be mixed")) throw expectedFailure;
+      }
+    }
+    expectFailure(
+        () -> Build.javascriptTestPathsForTest(List.of("tests/tracker/missing.test.mjs")),
+        "path does not exist");
+    expectFailure(
+        () -> Build.javascriptTestPathsForTest(List.of("tests/tracker/nope.mjs")),
+        "path does not exist");
+  }
+
+  private static void
+      given_interactiveSnapshotEnvironment_when_enforcingReadonly_then_overridesBothNames() {
+    ProcessBuilder process = new ProcessBuilder("java");
+    process.environment().put("selfie", "interactive");
+    process.environment().put("SELFIE", "interactive");
+    Build.enforceReadonlySnapshots(process);
+    if (!process.environment().get("selfie").equals("readonly")
+        || !process.environment().get("SELFIE").equals("readonly")) {
+      throw new AssertionError("snapshot override is not read-only");
     }
   }
 
@@ -1274,6 +1384,33 @@ public final class BuildTest {
     }
   }
 
+  private static void given_templateChange_when_fingerprintingCompilation_then_changesFingerprint()
+      throws Exception {
+    Path root = Files.createTempDirectory("toktrak-templates-compile-fingerprint-");
+    try {
+      Path sources = Files.createDirectories(root.resolve("sources"));
+      Path template = sources.resolve("layout.mustache");
+      Files.writeString(sources.resolve("Main.java"), "final class Main {}");
+      Files.writeString(template, "<main>before</main>\n");
+      Path dependencies = Files.createDirectories(root.resolve("dependencies"));
+      Path assets = Files.createDirectories(root.resolve("assets/public")).getParent();
+      Files.writeString(assets.resolve("public/main.css"), "body{}");
+      List<Path> compileSources = List.of(sources, template);
+      String before =
+          Build.applicationCompilationFingerprintForTest(
+              compileSources, List.of(dependencies), List.of("-Xlint:all"), assets);
+      Files.writeString(template, "<main>after</main>\n");
+      String after =
+          Build.applicationCompilationFingerprintForTest(
+              compileSources, List.of(dependencies), List.of("-Xlint:all"), assets);
+      if (before.equals(after)) {
+        throw new AssertionError("changed template did not change compilation fingerprint");
+      }
+    } finally {
+      deleteTestTree(root);
+    }
+  }
+
   private static void given_explodedAssets_when_fingerprintingRuntime_then_changesFingerprint()
       throws Exception {
     Path root = Files.createTempDirectory("toktrak-assets-runtime-fingerprint-");
@@ -1378,8 +1515,9 @@ public final class BuildTest {
     if (batches.size() != 3) throw new AssertionError("unexpected formatter batches: " + batches);
     int sourceCount = 0;
     for (List<String> batch : batches) {
-      Build.commandForTest("google-java-format", batch);
-      sourceCount = Math.addExact(sourceCount, batch.size() - 2);
+      Build.commandForTest("dprint", batch);
+      if (!batch.getFirst().equals("fmt")) throw new AssertionError("unexpected command: " + batch);
+      sourceCount = Math.addExact(sourceCount, batch.size() - 1);
     }
     if (sourceCount != sources.size()) {
       throw new AssertionError("formatter sources lost: " + sourceCount);
@@ -1422,6 +1560,52 @@ public final class BuildTest {
       if (!transformed.contains("value.toLowerCase(Locale.ROOT).contains(\"win\")")) {
         throw new AssertionError("arbitrary string pattern was refactored: " + transformed);
       }
+    } finally {
+      List<Path> paths = Build.treePathsForTest(directory, 100);
+      for (int index = paths.size() - 1; index >= 0; index--)
+        Files.deleteIfExists(paths.get(index));
+    }
+  }
+
+  private static void
+      given_refasterPattern_when_checkingPatch_then_detectsChangeWithoutEditingSource()
+          throws Exception {
+    Path directory =
+        Files.createTempDirectory(Path.of("output").toAbsolutePath(), "refaster-check-");
+    try {
+      Path source = directory.resolve("Demo.java");
+      String original =
+          "import java.util.Locale; final class Demo { boolean windows() { return"
+              + " System.getProperty(\"os.name\").toLowerCase(Locale.ROOT).contains(\"win\"); } }";
+      Files.writeString(source, original);
+      Path patches = directory.resolve("patches");
+      Files.createDirectories(patches);
+      var arguments = new ArrayList<>(Build.refasterArgumentsForTest(patches.toString()));
+      arguments.add("-d");
+      arguments.add(directory.toString());
+      arguments.add(source.toString());
+      Process process =
+          new ProcessBuilder(Build.commandForTest(javacExecutable(), arguments))
+              .redirectErrorStream(true)
+              .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+              .start();
+      int exitCode =
+          Build.waitForProcessForTest(process, Duration.ofSeconds(30), Duration.ofSeconds(2), true);
+      if (exitCode != 0) throw new AssertionError("Refaster patch check failed: " + exitCode);
+      if (!Files.readString(source).equals(original)) {
+        throw new AssertionError("Refaster modified the source in patch mode");
+      }
+      Path patch = patches.resolve("error-prone.patch");
+      String content = Files.readString(patch);
+      if (!content.contains("System.getProperty(\"os.name\").startsWith(\"Windows\")")) {
+        throw new AssertionError("Refaster patch missed the expected change: " + content);
+      }
+      expectFailure(() -> Build.requireNoRefasterPatch(patch, ""), "Refaster changes required");
+      Files.delete(patch);
+      Build.requireNoRefasterPatch(patch, "");
+      expectFailure(
+          () -> Build.requireNoRefasterPatch(patch, "Failed to apply diff to file"),
+          "Refaster patch generation failed");
     } finally {
       List<Path> paths = Build.treePathsForTest(directory, 100);
       for (int index = paths.size() - 1; index >= 0; index--)

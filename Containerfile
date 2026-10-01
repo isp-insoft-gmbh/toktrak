@@ -1,4 +1,5 @@
-FROM docker.io/library/eclipse-temurin:26-jdk@sha256:317693565b302133e01e1990fe04514b4894670530f80a55584453f82df94d04 AS build
+FROM docker.io/library/amazoncorretto:27-jdk@sha256:bda485d0d89dcbc58f60681ed07121e941e512f8713713776a1afeb2aa6159ce AS build
+RUN dnf install -y binutils && dnf clean all
 WORKDIR /src
 COPY CHANGELOG.md CHANGELOG.md
 COPY sources sources
@@ -17,7 +18,7 @@ LABEL org.opencontainers.image.title="TokTrak" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$REVISION" \
       org.opencontainers.image.source="https://github.com/isp-insoft-gmbh/toktrak"
-COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /src/output/runtimes/prod /opt/toktrak
 VOLUME ["/data"]
 EXPOSE 8080
