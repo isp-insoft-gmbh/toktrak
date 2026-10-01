@@ -118,7 +118,7 @@ run = "java -ea tools/Build.java container-verify"
 run_windows = "set CONTAINER_CONNECTION=podman-machine-default&& java -ea tools/Build.java container-verify"
 
 [tasks.release]
-description = "Verify and publish the next immutable integer release"
+description = "Verify and publish the next vN release plus the latest image"
 raw_args = true
 run = "java -ea tools/Build.java release"
 run_windows = "set CONTAINER_CONNECTION=podman-machine-default&& java -ea tools/Build.java release"

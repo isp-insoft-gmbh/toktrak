@@ -3635,40 +3635,40 @@ public final class Build {
     requireNoArguments(arguments, "container-verify");
     int version = nextVersion(remoteReleaseTags());
     String revision = gitHead();
-    imageBuild(version, revision, "dev");
-    containerVerify(imageReference(version), version, revision, "dev");
+    String verifiedImageId = imageBuild(version, revision, "dev");
+    containerVerify(verifiedImageId, version, revision, "dev");
   }
 
   private static void releaseCommand(List<String> arguments) throws Exception {
+    if (arguments.equals(List.of("--promote-latest"))) {
+      promoteLatest();
+      return;
+    }
     boolean dryRun;
     if (arguments.equals(List.of("--dry-run"))) {
       dryRun = true;
     } else if (arguments.isEmpty()) {
       dryRun = false;
     } else {
-      throw new IllegalArgumentException("usage: mise run release [--dry-run]");
+      throw new IllegalArgumentException("usage: mise run release [--dry-run|--promote-latest]");
     }
 
     ReleaseState release = releasePreflight(dryRun);
     verify();
     jlinkProd();
     String image = imageReference(release.version());
+    String verifiedImageId;
     if (release.recovery()) {
-      inspectImage(image, release.version(), release.revision(), "v" + release.version());
-      String expectedImageId =
-          gitOutput(List.of("tag", "--list", "v" + release.version(), "--format=%(contents)"))
-              .lines()
-              .filter(line -> line.startsWith("Image-ID: "))
-              .map(line -> line.substring("Image-ID: ".length()))
-              .findFirst()
-              .orElseThrow(() -> new IllegalStateException("recovery tag has no image ID"));
-      if (!imageId(image).equals(expectedImageId)) {
+      verifiedImageId = imageId(image);
+      inspectImage(verifiedImageId, release.version(), release.revision(), "v" + release.version());
+      if (!verifiedImageId.equals(releaseTagImageId(release.version()))) {
         throw new IllegalStateException("recovery image differs from the tagged artifact");
       }
     } else {
-      imageBuild(release.version(), release.revision(), "v" + release.version());
+      verifiedImageId = imageBuild(release.version(), release.revision(), "v" + release.version());
     }
-    containerVerify(image, release.version(), release.revision(), "v" + release.version());
+    containerVerify(
+        verifiedImageId, release.version(), release.revision(), "v" + release.version());
     if (dryRun) {
       System.out.println(
           "Release v" + release.version() + " dry run complete; no tag or push performed");
@@ -3685,17 +3685,114 @@ public final class Build {
               "--annotate",
               tag,
               "--message",
-              "TokTrak " + tag + "\n\nImage-ID: " + imageId(image)),
+              "TokTrak " + tag + "\n\nImage-ID: " + verifiedImageId),
           ROOT,
           PROCESS_TIMEOUT);
     }
-    runTool("podman", "push immutable image", List.of("push", image), ROOT, PROCESS_TIMEOUT);
+    runTool(
+        "podman",
+        "push versioned release image",
+        releasePushArguments(verifiedImageId, imageRepository(), tag),
+        ROOT,
+        PROCESS_TIMEOUT);
     runTool(
         "git",
         "push release tag",
         List.of("push", "origin", "refs/tags/" + tag),
         ROOT,
         PROCESS_TIMEOUT);
+    pushLatest(verifiedImageId, release.version());
+  }
+
+  private static String releaseTagImageId(int version) throws Exception {
+    assert version >= 0;
+    return gitOutput(List.of("tag", "--list", "v" + version, "--format=%(contents)"))
+        .lines()
+        .filter(line -> line.startsWith("Image-ID: "))
+        .map(line -> line.substring("Image-ID: ".length()))
+        .findFirst()
+        .orElseThrow(() -> new IllegalStateException("release tag has no image ID"));
+  }
+
+  private static void promoteLatest() throws Exception {
+    requireCleanReleaseCheckout(
+        gitOutput(List.of("branch", "--show-current")),
+        gitOutput(List.of("status", "--porcelain=v1", "--untracked-files=all")));
+    List<Integer> versions = remoteReleaseTags();
+    if (versions.isEmpty()) throw new IllegalStateException("no published release to promote");
+    int version = versions.getLast();
+    String tag = "v" + version;
+    String localTagId = gitOutput(List.of("rev-parse", "--verify", "refs/tags/" + tag));
+    String remoteTagId =
+        firstField(gitOutput(List.of("ls-remote", "origin", "refs/tags/" + tag)), "origin/" + tag);
+    requirePromotionTag(localTagId, remoteTagId);
+    String revision = gitOutput(List.of("rev-parse", "--verify", "refs/tags/" + tag + "^{commit}"));
+    if (!revision.matches("[0-9a-f]{40}|[0-9a-f]{64}")) {
+      throw new IllegalStateException("release tag has invalid revision");
+    }
+
+    String image = imageReference(version);
+    runTool(
+        "podman",
+        "pull published release image",
+        List.of("pull", "--policy", "always", image),
+        ROOT,
+        PROCESS_TIMEOUT);
+    String verifiedImageId = imageId(image);
+    inspectImage(verifiedImageId, version, revision, tag);
+    if (!verifiedImageId.equals(releaseTagImageId(version))) {
+      throw new IllegalStateException("published image differs from release tag");
+    }
+    containerVerify(verifiedImageId, version, revision, tag);
+    pushLatest(verifiedImageId, version);
+  }
+
+  static void requirePromotionTagForTest(String localTagId, String remoteTagId) {
+    requirePromotionTag(localTagId, remoteTagId);
+  }
+
+  private static void requirePromotionTag(String localTagId, String remoteTagId) {
+    assert localTagId != null;
+    assert remoteTagId != null;
+    if (!localTagId.equals(remoteTagId)) {
+      throw new IllegalStateException("last release tag differs from origin");
+    }
+  }
+
+  private static void pushLatest(String verifiedImageId, int version) throws Exception {
+    requireLatestPromotionVersion(version, remoteReleaseTags());
+    runTool(
+        "podman",
+        "promote published release to latest",
+        releasePushArguments(verifiedImageId, imageRepository(), "latest"),
+        ROOT,
+        PROCESS_TIMEOUT);
+  }
+
+  static void requireLatestPromotionVersionForTest(int version, List<Integer> versions) {
+    requireLatestPromotionVersion(version, versions);
+  }
+
+  private static void requireLatestPromotionVersion(int version, List<Integer> versions) {
+    assert version >= 0;
+    assert versions != null;
+    if (versions.isEmpty()) throw new IllegalStateException("no published release to promote");
+    if (versions.getLast() != version) {
+      throw new IllegalStateException("a newer release exists; refusing to move latest");
+    }
+  }
+
+  static List<String> releasePushArgumentsForTest(
+      String verifiedImageId, String repository, String tag) {
+    return releasePushArguments(verifiedImageId, repository, tag);
+  }
+
+  private static List<String> releasePushArguments(
+      String verifiedImageId, String repository, String tag) {
+    assert verifiedImageId != null && verifiedImageId.matches("sha256:[0-9a-f]{64}");
+    assert repository != null;
+    assert tag != null && tag.matches("latest|v(?:0|[1-9][0-9]*)");
+    return List.of("push", verifiedImageId, "docker://" + repository + ":" + tag);
   }
 
   private static void requireNoArguments(List<String> arguments, String command) {
@@ -3705,19 +3802,7 @@ public final class Build {
   }
 
   private static ReleaseState releasePreflight(boolean dryRun) throws Exception {
-    String branch = gitOutput(List.of("branch", "--show-current"));
-    String revision = gitHead();
-    String status = gitOutput(List.of("status", "--porcelain=v1", "--untracked-files=all"));
-    ToolResult remoteBranch =
-        runTool(
-            "git",
-            "inspect remote trunk",
-            List.of("ls-remote", "origin", "refs/heads/trunk"),
-            ROOT,
-            PROCESS_TIMEOUT);
-    String remoteRevision = firstField(remoteBranch.output(), "origin/trunk");
-    requireReleaseTree(branch, status, revision, remoteRevision);
-
+    String revision = synchronizedReleaseRevision();
     int version = nextVersion(remoteReleaseTags());
     requireChangelog(version, Files.readString(CHANGELOG, StandardCharsets.UTF_8));
     String tag = "v" + version;
@@ -3738,6 +3823,21 @@ public final class Build {
     return new ReleaseState(version, revision, recovery);
   }
 
+  private static String synchronizedReleaseRevision() throws Exception {
+    String branch = gitOutput(List.of("branch", "--show-current"));
+    String revision = gitHead();
+    String status = gitOutput(List.of("status", "--porcelain=v1", "--untracked-files=all"));
+    ToolResult remoteBranch =
+        runTool(
+            "git",
+            "inspect remote trunk",
+            List.of("ls-remote", "origin", "refs/heads/trunk"),
+            ROOT,
+            PROCESS_TIMEOUT);
+    requireReleaseTree(branch, status, revision, firstField(remoteBranch.output(), "origin/trunk"));
+    return revision;
+  }
+
   static void requireReleaseTreeForTest(
       String branch, String status, String revision, String remoteRevision) {
     requireReleaseTree(branch, status, revision, remoteRevision);
@@ -3745,15 +3845,19 @@ public final class Build {
 
   private static void requireReleaseTree(
       String branch, String status, String revision, String remoteRevision) {
-    assert branch != null;
-    assert status != null;
     assert revision != null;
     assert remoteRevision != null;
-    if (!branch.equals("trunk")) throw new IllegalStateException("release requires branch trunk");
-    if (!status.isEmpty()) throw new IllegalStateException("release requires a clean working tree");
+    requireCleanReleaseCheckout(branch, status);
     if (!remoteRevision.equals(revision)) {
       throw new IllegalStateException("trunk must be synchronized with origin/trunk");
     }
+  }
+
+  private static void requireCleanReleaseCheckout(String branch, String status) {
+    assert branch != null;
+    assert status != null;
+    if (!branch.equals("trunk")) throw new IllegalStateException("release requires branch trunk");
+    if (!status.isEmpty()) throw new IllegalStateException("release requires a clean working tree");
   }
 
   private static String firstField(String output, String source) {
@@ -3923,7 +4027,7 @@ public final class Build {
     }
   }
 
-  private static void imageBuild(int version, String revision, String displayVersion)
+  private static String imageBuild(int version, String revision, String displayVersion)
       throws Exception {
     assert version >= 0;
     assert revision != null && revision.matches("[0-9a-f]{40}|[0-9a-f]{64}");
@@ -3957,7 +4061,8 @@ public final class Build {
             ROOT.toString()),
         ROOT,
         CONTAINER_BUILD_TIMEOUT);
-    inspectImage(image, version, revision, displayVersion);
+    String verifiedImageId = imageId(image);
+    inspectImage(verifiedImageId, version, revision, displayVersion);
     String runtimeProperties =
         runTool(
                 "podman",
@@ -3967,7 +4072,7 @@ public final class Build {
                     "--rm",
                     "--entrypoint",
                     "/opt/toktrak/bin/java",
-                    image,
+                    verifiedImageId,
                     "-XshowSettings:properties",
                     "-version"),
                 ROOT,
@@ -3982,7 +4087,7 @@ public final class Build {
             "--rm",
             "--entrypoint",
             "/opt/toktrak/bin/java",
-            image,
+            verifiedImageId,
             "-ea",
             "-m",
             "toktrak/toktrak.Main",
@@ -3992,15 +4097,16 @@ public final class Build {
     runTool(
         "podman",
         "verify image jcmd launcher",
-        List.of("run", "--rm", "--entrypoint", "/opt/toktrak/bin/jcmd", image, "-h"),
+        List.of("run", "--rm", "--entrypoint", "/opt/toktrak/bin/jcmd", verifiedImageId, "-h"),
         ROOT,
         PROCESS_TIMEOUT);
     runTool(
         "podman",
         "verify image JFR launcher",
-        List.of("run", "--rm", "--entrypoint", "/opt/toktrak/bin/jfr", image, "help"),
+        List.of("run", "--rm", "--entrypoint", "/opt/toktrak/bin/jfr", verifiedImageId, "help"),
         ROOT,
         PROCESS_TIMEOUT);
+    return verifiedImageId;
   }
 
   private static void inspectImage(

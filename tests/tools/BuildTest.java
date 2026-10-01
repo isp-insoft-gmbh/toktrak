@@ -107,6 +107,7 @@ public final class BuildTest {
     given_refasterPattern_when_checkingPatch_then_detectsChangeWithoutEditingSource();
     given_gitTreeWithUntrackedFile_when_checkingStatus_then_reportsDirty();
     given_releaseTags_when_selectingNextVersion_then_requiresConsecutiveIntegers();
+    given_releasePromotion_when_targetingLatest_then_rejectsStaleTagsAndPreservesImage();
     given_dirtyOrDivergedTree_when_checkingRelease_then_rejectsPreflight();
     given_changelogSections_when_checkingRelease_then_requiresExactNonemptySection();
     given_podmanImageIds_when_canonicalizing_then_acceptsOnlySha256();
@@ -1666,6 +1667,31 @@ public final class BuildTest {
     expectFailure(() -> Build.nextVersionForTest("v00\n"), "invalid release tag: v00");
     expectFailure(
         () -> Build.nextVersionForTest("v2147483648\n"), "release version exceeds integer range");
+  }
+
+  private static void
+      given_releasePromotion_when_targetingLatest_then_rejectsStaleTagsAndPreservesImage() {
+    String tagId = "b".repeat(40);
+    Build.requirePromotionTagForTest(tagId, tagId);
+    expectFailure(
+        () -> Build.requirePromotionTagForTest(tagId, "c".repeat(40)),
+        "last release tag differs from origin");
+    Build.requireLatestPromotionVersionForTest(2, List.of(0, 1, 2));
+    expectFailure(
+        () -> Build.requireLatestPromotionVersionForTest(1, List.of(0, 1, 2)),
+        "a newer release exists");
+    expectFailure(
+        () -> Build.requireLatestPromotionVersionForTest(0, List.of()),
+        "no published release to promote");
+    String imageId = "sha256:" + "d".repeat(64);
+    if (!Build.releasePushArgumentsForTest(imageId, "registry.example.com/team/toktrak", "v2")
+            .equals(List.of("push", imageId, "docker://registry.example.com/team/toktrak:v2"))
+        || !Build.releasePushArgumentsForTest(
+                imageId, "registry.example.com/team/toktrak", "latest")
+            .equals(
+                List.of("push", imageId, "docker://registry.example.com/team/toktrak:latest"))) {
+      throw new AssertionError("release pushes must reuse the verified image ID");
+    }
   }
 
   private static void given_dirtyOrDivergedTree_when_checkingRelease_then_rejectsPreflight() {
