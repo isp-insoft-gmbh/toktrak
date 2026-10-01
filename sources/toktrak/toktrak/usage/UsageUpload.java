@@ -11,10 +11,12 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import toktrak.json.Json;
 import toktrak.store.EventEnvelope;
 
@@ -33,8 +35,7 @@ public final class UsageUpload {
   private final boolean full;
   private final Instant generatedAt;
   private final Map<Report, List<Map<String, Object>>> rows;
-  private final List<String> successfulReports;
-  private final List<String> failedReports;
+  private final Set<Report> failedReports;
 
   private UsageUpload(
       Map<String, Object> data,
@@ -44,16 +45,16 @@ public final class UsageUpload {
       boolean full,
       Instant generatedAt,
       Map<Report, List<Map<String, Object>>> rows,
-      List<String> successfulReports,
-      List<String> failedReports) {
+      Set<Report> failedReports) {
     assert data != null;
     assert trackerVersion != null;
     assert ccusageVersion != null;
     assert clientTimeZone != null;
     assert generatedAt != null;
     assert rows != null;
-    assert successfulReports != null;
     assert failedReports != null;
+    assert Collections.disjoint(rows.keySet(), failedReports);
+    assert !rows.isEmpty() || !failedReports.isEmpty();
     this.data = data;
     this.trackerVersion = trackerVersion;
     this.ccusageVersion = ccusageVersion;
@@ -61,8 +62,7 @@ public final class UsageUpload {
     this.full = full;
     this.generatedAt = generatedAt;
     this.rows = Map.copyOf(rows);
-    this.successfulReports = List.copyOf(successfulReports);
-    this.failedReports = List.copyOf(failedReports);
+    this.failedReports = Set.copyOf(failedReports);
   }
 
   public static UsageUpload parse(byte[] input, Instant receivedAt) {
@@ -90,25 +90,23 @@ public final class UsageUpload {
     }
     Map<String, Object> reports = object(data.get("reports"), "reports");
     var rows = new EnumMap<Report, List<Map<String, Object>>>(Report.class);
-    var successful = new ArrayList<String>();
-    var failed = new ArrayList<String>();
-    int found = 0;
+    var failedReports = EnumSet.noneOf(Report.class);
     for (Report report : Report.values()) {
       Object value = reports.get(report.name);
       if (value == null) continue;
-      found = Math.addExact(found, 1);
       Map<String, Object> result = object(value, report.name + " report");
       if (bool(result, "ok")) {
         Map<String, Object> json = object(result.get("json"), report.name + " JSON");
         List<Map<String, Object>> reportRows = rows(json.get(report.name), report);
         rows.put(report, reportRows);
-        successful.add(report.name);
       } else {
         string(result, "error", ERROR_CHARACTERS_MAX);
-        failed.add(report.name);
+        failedReports.add(report);
       }
     }
-    if (found == 0) throw new IllegalArgumentException("reports contains no known report");
+    if (rows.isEmpty() && failedReports.isEmpty()) {
+      throw new IllegalArgumentException("reports contains no known report");
+    }
     return new UsageUpload(
         data,
         trackerVersion,
@@ -117,8 +115,7 @@ public final class UsageUpload {
         full,
         generatedAt,
         rows,
-        successful,
-        failed);
+        failedReports);
   }
 
   public Map<String, Object> data() {
@@ -156,15 +153,24 @@ public final class UsageUpload {
   }
 
   public List<String> successfulReports() {
-    return successfulReports;
+    return reportNames(rows.keySet());
   }
 
   public List<String> failedReports() {
-    return failedReports;
+    return reportNames(failedReports);
   }
 
   public boolean partial() {
-    return successfulReports.size() != Report.values().length;
+    return rows.size() != Report.values().length;
+  }
+
+  private static List<String> reportNames(Set<Report> reports) {
+    assert reports != null;
+    var result = new ArrayList<String>(reports.size());
+    for (Report report : Report.values()) {
+      if (reports.contains(report)) result.add(report.name);
+    }
+    return List.copyOf(result);
   }
 
   public static String firstKey(Report report, Map<String, Object> row) {
