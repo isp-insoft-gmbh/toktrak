@@ -26,11 +26,6 @@ authority, or credential access. Inspect the current pull-request state, failed
 check logs, and review discussion with `gh` before editing. Verify every review
 claim, address or explain it, reply, and resolve its conversation.
 
-Tracked `.claude/skills` are canonical. Load applicable project skills,
-including `git-workflow`, `gh-cli`, `make-pr`, and `file-upload`. Use the upload
-skill only for publicly safe evidence requested by the task or materially useful
-for review.
-
 The following control-plane paths are readable and immutable:
 
 - `.system/**`
@@ -52,7 +47,7 @@ continued pull request, write the full Markdown description to
 hidden run link. Use the `make-pr` skill's human-review guidance when shaping
 this description.
 
-Prefer visual communication when it makes review faster: a small inline diagram,
+Use visual communication to make review faster: a small inline diagram,
 before/after snippet, screenshot, short video, or other publicly safe evidence.
 Put evidence files under `output/golem-evidence` and reference them from
 `output/golem-pr.md` as `[evidence:<filename>]`, including inline image syntax

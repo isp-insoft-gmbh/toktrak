@@ -18,6 +18,7 @@ import {
   selectedTasks,
   streamed,
   validateDefinitions,
+  validClaudeSubscription,
 } from "./golem.mjs";
 
 const valid = `---
@@ -195,6 +196,24 @@ test("terminates the complete process tree on timeout", async () => {
   }
 });
 
+test("given_claudeAuthentication_when_validated_then_onlySubscriptionCredentialsPass", () => {
+  const local = { loggedIn: true, authMethod: "claude.ai" };
+  assert.equal(validClaudeSubscription({ ...local, subscriptionType: "team" }, ""), true);
+  assert.equal(validClaudeSubscription({ ...local, subscriptionType: "max" }, ""), true);
+  assert.equal(validClaudeSubscription({ ...local, subscriptionType: "pro" }, ""), false);
+  assert.equal(validClaudeSubscription({ ...local, subscriptionType: "team", loggedIn: false }, ""), false);
+  assert.equal(validClaudeSubscription({ loggedIn: true, authMethod: "api_key", subscriptionType: "team" }, ""), false);
+  assert.equal(validClaudeSubscription({ ...local, subscriptionType: "team" }, "setup-token"), false);
+  assert.equal(
+    validClaudeSubscription({ loggedIn: true, authMethod: "oauth_token", apiProvider: "firstParty" }, "setup-token"),
+    true,
+  );
+  assert.equal(
+    validClaudeSubscription({ loggedIn: true, authMethod: "oauth_token", apiProvider: "thirdParty" }, "setup-token"),
+    false,
+  );
+});
+
 test("encrypts, binds, and restores rotating subscription authentication", () => {
   const home = mkdtempSync(join(tmpdir(), "toktrak-golem-auth-"));
   const script = join(process.cwd(), "tools", "golem.mjs");
@@ -258,10 +277,15 @@ test("encrypts, binds, and restores rotating subscription authentication", () =>
 
 test("keeps workflow authentication on the tested golem entrypoint", () => {
   const workflow = readFileSync(join(process.cwd(), ".github", "workflows", "golem.yml"), "utf8");
-  assert.doesNotMatch(workflow, /GolemAuth/);
+  const mise = readFileSync(join(process.cwd(), "mise.toml"), "utf8");
+  assert.doesNotMatch(workflow, /GolemAuth|npm install --global/);
   assert.match(workflow, /node tools\/golem\.mjs auth decrypt/);
   assert.match(workflow, /node tools\/golem\.mjs auth encrypt/);
   assert.match(workflow, /node tools\/golem\.mjs auth seed/);
+  assert.match(workflow, /mise run golem-auth-check (?:bugs|security)/);
+  assert.match(mise, /\[task_templates\.golem-tools\]/);
+  assert.match(mise, /\[tasks\.golem-auth-check\]\nextends = "golem-tools"/);
+  assert.match(mise, /\[tasks\.golem\]\nextends = "golem-tools"/);
 });
 
 test("builds explicit ephemeral harness adapters", () => {

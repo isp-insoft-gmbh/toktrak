@@ -47,9 +47,9 @@ Maintain TokTrak after its initial release through reviewable CI agent runs.
   duplicate.
 - Definition validation and core maintenance orchestration are repository-owned
   and locally runnable.
-- `mise run check` performs structural validation, `mise run golem-check`
-  performs authenticated validation of every task, and
-  `mise run golem <task-id>` performs the full local lifecycle.
+- `mise run check` performs offline structural validation,
+  `mise run golem-auth-check` probes one authenticated task per configured
+  harness, and `mise run golem <task-id>` performs the full local lifecycle.
 - Reseeding is available only through explicit manual workflow dispatch.
 - CI remains thin glue for triggers, runner setup, credentials, and secret
   handling.

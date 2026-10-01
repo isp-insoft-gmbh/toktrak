@@ -335,6 +335,12 @@ const cleanHarnessEnvironment = () => {
 
 const invocation = (command, args) => {
   if (process.platform !== "win32" || command !== "pi") return { command, args };
+  const binary = spawnSync("where.exe", ["pi.exe"], {
+    encoding: "utf8",
+    maxBuffer: COMMAND_OUTPUT_BYTES_MAX,
+    windowsHide: true,
+  });
+  if (binary.status === 0) return { command: binary.stdout.split(/\r?\n/).find(Boolean), args };
   const lookup = spawnSync("where.exe", ["pi.cmd"], {
     encoding: "utf8",
     maxBuffer: COMMAND_OUTPUT_BYTES_MAX,
@@ -464,6 +470,13 @@ export const harnessArguments = (task, validation = false) => {
   ];
 };
 
+export const validClaudeSubscription = (status, setupToken) =>
+  setupToken
+    ? status.loggedIn && status.authMethod === "oauth_token" && status.apiProvider === "firstParty"
+    : status.loggedIn &&
+      status.authMethod === "claude.ai" &&
+      (status.subscriptionType === "team" || status.subscriptionType === "max");
+
 const requireSubscription = (harness) => {
   if (harness === "claude") {
     const status = JSON.parse(
@@ -472,12 +485,8 @@ const requireSubscription = (harness) => {
       }),
     );
     const setupToken = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim();
-    const validSetupTokenStatus =
-      setupToken && status.loggedIn && status.authMethod === "oauth_token" && status.apiProvider === "firstParty";
-    const validLocalStatus =
-      !setupToken && status.loggedIn && status.authMethod === "claude.ai" && status.subscriptionType === "max";
-    if (!validSetupTokenStatus && !validLocalStatus) {
-      fail("Claude Code authentication must be an active Claude Max subscription");
+    if (!validClaudeSubscription(status, setupToken)) {
+      fail("Claude Code authentication must use a Claude subscription, not a metered API key");
     }
   }
   if (harness === "codex") {
@@ -508,14 +517,13 @@ export const authCheckTargets = (tasks) => {
 };
 
 const hasHarnessExecutable = (harness) => {
-  const command = process.platform === "win32" && harness === "pi" ? "pi.cmd" : harness;
   const result =
     process.platform === "win32"
-      ? spawnSync("where.exe", [command], {
+      ? spawnSync("where.exe", [harness], {
           encoding: "utf8",
           windowsHide: true,
         })
-      : spawnSync("sh", ["-c", `command -v ${command}`], { encoding: "utf8" });
+      : spawnSync("sh", ["-c", `command -v ${harness}`], { encoding: "utf8" });
   return result.status === 0;
 };
 
