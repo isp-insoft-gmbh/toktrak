@@ -99,6 +99,7 @@ public final class BuildTest {
     given_completedProcess_when_waitingForExit_then_returnsExitCode();
     given_completedProcess_when_waitingWithoutTimeout_then_returnsExitCode();
     given_argumentsContainingSpaces_when_buildingCommand_then_preservesArguments();
+    given_golemTask_when_buildingInvocation_then_preservesArgumentsAndRejectsUnknownTask();
     given_markdownPath_when_selectingJavaFormatSources_then_ignoresIt();
     given_manyFormatterSources_when_batchingSources_then_preservesSourceCount();
     given_commandAboveLengthLimit_when_buildingCommand_then_rejectsInput();
@@ -1498,6 +1499,27 @@ public final class BuildTest {
     List<String> command = Build.commandForTest("tool", List.of("path with spaces/Source.java"));
     if (!command.equals(List.of("tool", "path with spaces/Source.java"))) {
       throw new AssertionError("unexpected command: " + command);
+    }
+  }
+
+  private static void
+      given_golemTask_when_buildingInvocation_then_preservesArgumentsAndRejectsUnknownTask() {
+    String script = Path.of("tools/golem.mjs").toAbsolutePath().normalize().toString();
+    if (!Build.golemInvocation("golem", List.of("path with spaces"))
+        .equals(List.of("node", script, "run", "path with spaces"))) {
+      throw new AssertionError("golem task arguments were not preserved");
+    }
+    if (!Build.golemInvocation("golem-auth-check", List.of())
+        .equals(List.of("node", script, "auth-check"))) {
+      throw new AssertionError("golem authentication arguments were not preserved");
+    }
+    try {
+      Build.golemInvocation("unknown", List.of());
+      throw new AssertionError("expected rejection of unknown golem task");
+    } catch (IllegalArgumentException ex) {
+      if (!ex.getMessage().equals("unknown golem task: unknown")) {
+        throw new AssertionError("unexpected rejection: " + ex.getMessage(), ex);
+      }
     }
   }
 

@@ -325,7 +325,7 @@ public final class Build {
       if (args.length == 0) {
         throw new IllegalStateException(
             "command required: clean, fmt, check, test, pit, refactor, ci, verify, ide, dev, prod,"
-                + " coverage, perf, image, container-verify, or release");
+                + " coverage, perf, image, container-verify, release, golem, or golem-auth-check");
       }
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
@@ -336,6 +336,12 @@ public final class Build {
       }
       if (args[0].equals("pit") && commandArguments.equals(List.of("--help"))) {
         pitCommand(commandArguments);
+        return;
+      }
+      if (args[0].equals("golem") || args[0].equals("golem-auth-check")) {
+        runProcessUntilExit(
+            new ProcessBuilder(golemInvocation(args[0], commandArguments))
+                .directory(ROOT.toFile()));
         return;
       }
       Files.createDirectories(OUTPUT);
@@ -2530,6 +2536,20 @@ public final class Build {
   private static void runGolemDefinitionCheck() throws Exception {
     runProcess(
         new ProcessBuilder("node", GOLEM_SCRIPT.toString(), "check").directory(ROOT.toFile()));
+  }
+
+  static List<String> golemInvocation(String name, List<String> arguments) {
+    assert name != null;
+    assert arguments != null;
+    String operation =
+        switch (name) {
+          case "golem" -> "run";
+          case "golem-auth-check" -> "auth-check";
+          default -> throw new IllegalArgumentException("unknown golem task: " + name);
+        };
+    var parameters = new ArrayList<>(List.of(GOLEM_SCRIPT.toString(), operation));
+    parameters.addAll(arguments);
+    return command("node", parameters);
   }
 
   private static void runGolemTests() throws Exception {

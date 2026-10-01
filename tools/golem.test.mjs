@@ -315,6 +315,14 @@ test("keeps workflow authentication on the tested golem entrypoint", () => {
   assert.match(mise, /\[task_templates\.golem-tools\]/);
   assert.match(mise, /\[tasks\.golem-auth-check\]\nextends = "golem-tools"/);
   assert.match(mise, /\[tasks\.golem\]\nextends = "golem-tools"/);
+  assert.match(mise, /\[tasks\.golem-auth-check\][^\[]*run = "java -ea tools\/Build\.java golem-auth-check"/);
+  assert.match(mise, /\[tasks\.golem\][^\[]*run = "java -ea tools\/Build\.java golem"/);
+  assert.match(mise, /\[tasks\.dev\][^\[]*env = \{ TOKTRAK_DEV_AUTH = "true" \}/);
+  assert.match(
+    mise,
+    /\[tasks\.dev\][^\[]*run = "java -ea tools\/Build\.java dev -- --corpus tests\/corpus\/dev\.jsonl/,
+  );
+  assert.doesNotMatch(mise, /mise watch|watchexec|dev-server/);
 });
 
 test("builds explicit ephemeral harness adapters", () => {

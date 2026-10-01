@@ -87,10 +87,10 @@ dev: "Development mode" {
 
   corpus: "tests/corpus/dev.jsonl\nanonymized seed data" {shape: stored_data}
   auth: "TOKTRAK_DEV_AUTH=true\nlocal auth only" {shape: diamond}
-  watch: "mise watch\nrestart dev server" {shape: queue}
+  server: "mise run dev\nrun until stopped" {shape: queue}
 
-  corpus -> watch: "seed"
-  auth -> watch: "dev auth"
+  corpus -> server: "seed"
+  auth -> server: "dev auth"
 }
 
 golems: |md

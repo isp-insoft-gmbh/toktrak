@@ -10,7 +10,6 @@ java = "temurin"
 node = "latest"
 oxlint = "latest"
 rumdl = "latest"
-watchexec = "latest"
 
 [tools.hyperfine]
 version = "latest"
@@ -45,9 +44,10 @@ run = "java -ea tools/Build.java ci"
 
 # Local authoring.
 [tasks.dev]
-description = "Run seeded TokTrak and restart when development files change"
+description = "Run seeded TokTrak until stopped; restart manually after edits"
 usage = 'flag "--fail-writes" help="Start with degraded writes"'
-run = "mise watch --restart --watch sources --watch tools --watch tests/corpus/dev.jsonl --watch mise.toml -- dev-server{% if usage.fail_writes %} --fail-writes{% endif %}"
+env = { TOKTRAK_DEV_AUTH = "true" }
+run = "java -ea tools/Build.java dev -- --corpus tests/corpus/dev.jsonl{% if usage.fail_writes %} --fail-writes{% endif %}"
 
 [tasks.fmt]
 description = "Format Markdown and Java sources, optionally limiting Java paths"
@@ -95,13 +95,13 @@ tools = { "aqua:earendil-works/pi" = "latest", "aqua:anthropics/claude-code" = "
 extends = "golem-tools"
 description = "Probe live harness authentication; separate from repository checks"
 raw_args = true
-run = "node tools/golem.mjs auth-check"
+run = "java -ea tools/Build.java golem-auth-check"
 
 [tasks.golem]
 extends = "golem-tools"
 description = "Run one complete local golem lifecycle"
 raw_args = true
-run = "node tools/golem.mjs run"
+run = "java -ea tools/Build.java golem"
 
 # Production packaging and release.
 [tasks.runtime-build]
@@ -122,9 +122,3 @@ description = "Verify and publish the next immutable integer release"
 raw_args = true
 run = "java -ea tools/Build.java release"
 run_windows = "set CONTAINER_CONNECTION=podman-machine-default&& java -ea tools/Build.java release"
-
-# Internal support for the dev watcher.
-[tasks.dev-server]
-hide = true
-env = { TOKTRAK_DEV_AUTH = "true" }
-run = "java -ea tools/Build.java dev -- --corpus tests/corpus/dev.jsonl"

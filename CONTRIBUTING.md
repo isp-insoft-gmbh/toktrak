@@ -7,9 +7,8 @@
 - Windows, Apple Silicon macOS, or Linux.
 
 Run `mise install`; mise installs the versions committed in `mise.lock` for
-Java, Node.js, hyperfine, formatters, and watchers. Temurin 27 no longer ships
-macOS Intel binaries. No Maven, Gradle, npm install, or JavaScript build is
-used.
+Java, Node.js, hyperfine, and formatters. Temurin 27 no longer ships macOS Intel
+binaries. No Maven, Gradle, npm install, or JavaScript build is used.
 
 Rootless Podman is required only for image, container, and release work. Start a
 Podman machine first on Windows or macOS. `mise run release` selects the
@@ -33,8 +32,9 @@ mise run check
 mise run dev
 ```
 
-Development uses local dev authentication and the anonymized corpus. Stop the
-dev server before running build tasks; `mise run fmt` remains available.
+Development uses local dev authentication and the anonymized corpus. Restart
+`mise run dev` manually after edits. Stop the dev server before running build
+tasks; `mise run fmt` remains available.
 
 ## Repository
 
