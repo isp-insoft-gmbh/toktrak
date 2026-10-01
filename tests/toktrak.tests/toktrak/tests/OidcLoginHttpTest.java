@@ -25,6 +25,11 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -34,6 +39,83 @@ import toktrak.auth.OidcClient;
 
 final class OidcLoginHttpTest {
   @TempDir Path directory;
+
+  @Test
+  void
+      given_concurrentUnauthenticatedLogins_when_providerResponsesArePending_then_boundsOidcEgress()
+          throws Exception {
+    var providerRequests = new AtomicInteger();
+    var fourRequestsStarted = new CountDownLatch(4);
+    var releaseProvider = new CountDownLatch(1);
+    HttpServer provider =
+        HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 16);
+    String issuer = "http://127.0.0.1:" + provider.getAddress().getPort();
+    provider.createContext(
+        "/.well-known/openid-configuration",
+        exchange -> {
+          providerRequests.incrementAndGet();
+          fourRequestsStarted.countDown();
+          try {
+            if (!releaseProvider.await(5, TimeUnit.SECONDS)) {
+              exchange.sendResponseHeaders(503, -1);
+              exchange.close();
+              return;
+            }
+          } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            exchange.close();
+            return;
+          }
+          json(
+              exchange,
+              toktrak.json.Json.write(
+                  Map.of(
+                      "issuer", issuer,
+                      "authorization_endpoint", issuer + "/authorize",
+                      "token_endpoint", issuer + "/token",
+                      "jwks_uri", issuer + "/jwks")));
+        });
+    try (var providerExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+      provider.setExecutor(providerExecutor);
+      provider.start();
+      try (var app = App.start(new String[] {}, productionEnvironment(directory, issuer))) {
+        URI login = URI.create("http://127.0.0.1:" + app.port() + "/login");
+        var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+        List<CompletableFuture<HttpResponse<String>>> responses =
+            java.util.stream.IntStream.range(0, 5)
+                .mapToObj(
+                    _ ->
+                        client.sendAsync(
+                            HttpRequest.newBuilder(login).GET().build(),
+                            HttpResponse.BodyHandlers.ofString()))
+                .toList();
+        try {
+          assertTrue(fourRequestsStarted.await(3, TimeUnit.SECONDS));
+          CompletableFuture<?>[] statuses =
+              responses.stream()
+                  .map(response -> response.thenApply(HttpResponse::statusCode))
+                  .toArray(CompletableFuture<?>[]::new);
+          assertEquals(
+              401,
+              CompletableFuture.anyOf(statuses).get(1, TimeUnit.SECONDS),
+              "a provider request above the concurrency limit must be rejected promptly");
+          assertEquals(4, providerRequests.get());
+        } finally {
+          releaseProvider.countDown();
+        }
+        assertEquals(
+            List.of(302, 302, 302, 302, 401),
+            responses.stream()
+                .map(CompletableFuture::join)
+                .map(HttpResponse::statusCode)
+                .sorted()
+                .toList());
+      } finally {
+        releaseProvider.countDown();
+        provider.stop(0);
+      }
+    }
+  }
 
   @Test
   void given_productionApp_when_completingOidcLogin_then_issuesSessionAndClearsTransaction()
