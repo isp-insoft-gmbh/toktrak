@@ -13,6 +13,8 @@ and rollback policy.
 - Node.js for the shown secret-generation command.
 - Credentials for the configured OCI image repository.
 - A reverse proxy with public TLS.
+- Outbound HTTPS to `api.frankfurter.dev` for EUR exchange-rate refresh; USD
+  dashboards continue without it.
 - A durable volume writable by mapped container root and covered by the
   operator's backup policy.
 
