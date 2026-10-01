@@ -1,6 +1,6 @@
 ---
 harness: pi
-model: openai-codex/gpt-6-astra
+model: openai-codex/gpt-6.1-sol
 thinking: high
 weekday: sunday
 ---
