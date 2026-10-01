@@ -117,10 +117,17 @@ test("given_pullRequest_when_ciRuns_then_requiredCheckEnforcesSelectedOrSkippedR
   assert.ok(ci.includes('echo "## CI validation"'));
 });
 
-test("given_prReports_when_checkingStorage_then_uploadsOnlyOutsidePullRequests", () => {
+test("given_pullRequest_when_checkingReports_then_uploadsOnlyFailedMutationXml", () => {
   for (const name of ["ci", "perf", "pit"]) {
     assert.match(workflow(name), /if: always\(\) && github.event_name != 'pull_request' && hashFiles/u);
   }
+  const pit = workflow("pit");
+  assert.match(
+    pit,
+    /name: Upload failed mutation XML\n        if: failure\(\) && github.event_name == 'pull_request'/u,
+  );
+  assert.match(pit, /name: mutation-failure-xml\n          path: output\/\.mutations\.stage-\*\/mutations\.xml/u);
+  assert.match(pit, /include-hidden-files: true\n          if-no-files-found: warn/u);
 });
 
 test("given_pullRequest_when_pitRuns_then_recomputesMutationsWithoutSharedHistory", () => {
