@@ -3068,6 +3068,24 @@ public final class Build {
                     candidate.startsWith(TRACKER_TEST_SOURCES)
                         && candidate.getFileName().toString().endsWith(".test.mjs"),
                 "tracker test source"));
+      } else if (Files.isDirectory(path)) {
+        List<Path> tests =
+            selectedFiles(
+                List.of(requested),
+                List.of(),
+                candidate ->
+                    GOLEM_TEST_SOURCES.contains(candidate)
+                        || (candidate.startsWith(TRACKER_TEST_SOURCES)
+                            && candidate.getFileName().toString().endsWith(".test.mjs"))
+                        || (candidate.startsWith(ROOT.resolve("tests"))
+                            && candidate.getFileName().toString().endsWith("Test.java")),
+                "test source",
+                true);
+        if (tests.isEmpty()) throw new IllegalArgumentException("no tests found: " + requested);
+        for (Path test : tests) {
+          if (test.getFileName().toString().endsWith("Test.java")) otherPaths = true;
+          else sources.add(test);
+        }
       } else {
         otherPaths = true;
       }

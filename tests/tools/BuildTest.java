@@ -567,6 +567,14 @@ public final class BuildTest {
             Path.of("tests/tracker/scheduler.win32.test.mjs").toAbsolutePath())) {
       throw new AssertionError("tracker suite selection is incomplete: " + trackerSuite);
     }
+    List<Path> tools = Build.javascriptTestPathsForTest(List.of("tools"));
+    if (!tools.equals(
+        List.of(
+            Path.of("tools/golem.test.mjs").toAbsolutePath(),
+            Path.of("tools/update-dprint.test.mjs").toAbsolutePath(),
+            Path.of("tools/workflows.test.mjs").toAbsolutePath()))) {
+      throw new AssertionError("tool directory omitted JavaScript tests: " + tools);
+    }
     if (!Build.javascriptTestPathsForTest(
             List.of("tests/tracker/usage.test.mjs", "./tests/tracker/usage.test.mjs"))
         .equals(List.of(tracker))) {
@@ -578,13 +586,20 @@ public final class BuildTest {
     for (List<String> invalid :
         List.of(
             List.of("tests/tools", "tools/golem.test.mjs"),
-            List.of("tests/tools", "tests/tracker"))) {
+            List.of("tests/tools", "tests/tracker"),
+            List.of("tests"))) {
       try {
         Build.javascriptTestPathsForTest(invalid);
         throw new AssertionError("accepted mixed Java and JavaScript test paths: " + invalid);
       } catch (IllegalArgumentException expectedFailure) {
         if (!expectedFailure.getMessage().contains("cannot be mixed")) throw expectedFailure;
       }
+    }
+    try {
+      Build.javascriptTestPathsForTest(List.of(".github/workflows"));
+      throw new AssertionError("accepted directory without tests");
+    } catch (IllegalArgumentException expectedFailure) {
+      if (!expectedFailure.getMessage().contains("no tests found")) throw expectedFailure;
     }
     expectFailure(
         () -> Build.javascriptTestPathsForTest(List.of("tests/tracker/missing.test.mjs")),
