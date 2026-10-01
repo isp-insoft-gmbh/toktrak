@@ -19,7 +19,6 @@
   state. Do not delete, disable, or change its restore/save behavior without an
   approved migration and reseed plan.
 - This is a private repository. GitHub-hosted runners consume organization
-  budget. Do not change runner providers or Blacksmith labels without explicit
-  approval.
+  budget. Do not change runner providers without explicit approval.
 - Preserve trust boundaries: untrusted pull-request code gets read-only
   credentials and cannot consume privileged secrets.

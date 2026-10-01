@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   select:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       has-tasks: ${{ steps.selection.outputs.has-tasks }}
@@ -83,7 +83,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix: ${{ fromJSON(needs.select.outputs.tasks) }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - if: matrix.task != ''
@@ -159,6 +159,7 @@ jobs:
           GOLEM_AUTH_CACHE_KEY: ${{ secrets.GOLEM_AUTH_CACHE_KEY }}
         run: node tools/golem.mjs auth encrypt "${{ matrix.harness }}" "output/golem-auth/${{ matrix.harness }}.bin"
       - name: Save rotated authentication
+        id: save-auth
         if: always() && steps.encrypt.outcome == 'success'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -169,11 +170,16 @@ jobs:
         env:
           GH_VERSION: ${{ steps.tools.outputs.gh-version }}
           RESULT: ${{ steps.lifecycle.outcome }}
+          AUTH_SAVED: ${{ steps.save-auth.outcome }}
         run: |
           {
             echo "## Golem ${{ matrix.task }}"
             echo
-            echo "- Result: \`$RESULT\`"
+            echo "- Publication lifecycle: \`$RESULT\`"
+            echo "- PR CI: independent; inspect the PR checks before manual merge."
+            if [[ "${{ matrix.harness }}" == pi || "${{ matrix.harness }}" == codex ]]; then
+              echo "- Rotating auth saved: \`$AUTH_SAVED\`"
+            fi
             echo "- Harness: \`${{ matrix.harness }}\`"
             echo "- Model: \`${{ matrix.model }}\`"
             echo "- Thinking: \`${{ matrix.thinking }}\`"
@@ -184,7 +190,7 @@ jobs:
   reseed:
     needs: select
     if: github.event_name == 'workflow_dispatch' && startsWith(inputs.operation, 'reseed-')
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       HARNESS: ${{ inputs.operation == 'reseed-pi' && 'pi' || 'codex' }}

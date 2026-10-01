@@ -65,9 +65,14 @@ DB server.
 
 Run `mise run check`, `mise run test`, `mise run verify`, then `mise run ci` for
 progressively stronger guarantees. Use `mise run test --only <paths...>` for
-focused iteration without the full ladder. Tracker tests run within `test`,
-`verify`, and `ci`; the required CI result also waits for native integration on
-Linux, macOS, and Windows.
+focused iteration without the full ladder. Every pull request, including
+Renovate and Golem updates, runs core CI. Changed paths select native tracker
+integration on Linux, macOS, and Windows, production container verification,
+performance benchmarks, and fresh PIT mutation tests when relevant. Unknown
+paths or shared toolchain changes select every check. The required `ci` result
+reports each selection and rejects failed or unexpectedly skipped work.
+Successful PRs keep results in logs and job summaries without report artifacts.
+Performance reports are observational; they do not enforce a slowdown threshold.
 
 ![TokTrak build and contributor workflow](.system/overview-build.svg)
 
@@ -114,8 +119,9 @@ mise run golem bugs
 A run uses the exact branch `golem/<task-id>`. It resumes one matching open pull
 request or removes a stale dedicated branch before fresh work. No useful change
 creates no remote state. Useful work is committed, checked for protected paths,
-published with guarded branch updates, labeled, and accepted only after the
-final `CI / ci` succeeds. Harness sessions are always ephemeral.
+published with guarded branch updates, and labeled. CI runs independently;
+Golems inspect failures and review comments when they next run, while merging
+remains manual. Harness sessions are always ephemeral.
 
 Run from the clean, current default branch. On failure, inspect the printed
 error, the ignored `output/golems/<task-id>` worktree, its dedicated remote
@@ -139,8 +145,9 @@ follows the tracked `.agents/skills` bridge.
 
 `.github/workflows/golem.yml` dispatches due tasks daily at `09:17 UTC` and
 serializes every scheduled, manual, and reseed run. It installs the selected
-pinned harness on Blacksmith, validates runner `gh >= 2.70.0`, and delegates the
-full lifecycle to `tools/golem.mjs`. Each task job stops after 45 minutes.
+pinned harness on GitHub-hosted Ubuntu, validates runner `gh >= 2.70.0`, and
+delegates the full lifecycle to `tools/golem.mjs`. Each task job stops after 45
+minutes.
 
 Install a repository-scoped GitHub App with write access to contents and pull
 requests, read access to actions, checks, commit statuses, and issues, and no

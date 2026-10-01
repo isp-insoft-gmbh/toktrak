@@ -14,6 +14,7 @@ on:
       - tests/corpus/**
       - tools/**
       - vendored/**
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -25,10 +26,10 @@ concurrency:
 
 jobs:
   perf:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      PERF_RUNNER_LABEL: blacksmith-4vcpu-ubuntu-2404
+      PERF_RUNNER_LABEL: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
@@ -39,7 +40,7 @@ jobs:
       - run: mise run perf
       - name: Upload performance report
         id: performance-artifact
-        if: always() && hashFiles('output/perf/**') != ''
+        if: always() && github.event_name != 'pull_request' && hashFiles('output/perf/**') != ''
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -47,7 +48,7 @@ jobs:
           path: output/perf
           if-no-files-found: error
           overwrite: true
-          retention-days: 14
+          retention-days: 3
       - name: Report unavailable performance artifact
         if: always() && steps.performance-artifact.outcome == 'failure'
         run: |

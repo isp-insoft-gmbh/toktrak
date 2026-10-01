@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import {
   authCheckTargets,
+  changedPaths,
+  compactPullRequestContext,
   evidenceBody,
   harnessArguments,
   labelColor,
@@ -132,12 +134,12 @@ test("selects one authentication target per harness", () => {
   assert.deepEqual([...authCheckTargets(tasks).keys()], ["bugs", "qa", "security"]);
 });
 
-test("preserves preflight, harness, and publication command order", async () => {
+test("given_existingPr_when_repairing_then_preservesContextBeforeWorktreeAndPublishesWithoutWaiting", async () => {
   const commands = [];
   const result = await runLifecycle(
     "bugs",
     async (id) => {
-      commands.push("git fetch", "gh pr list", "git worktree add");
+      commands.push("git fetch", "gh pr list", "gh pr view prior head", "git worktree add");
       return { id };
     },
     async (run) => {
@@ -145,7 +147,7 @@ test("preserves preflight, harness, and publication command order", async () => 
       return run;
     },
     async (run) => {
-      commands.push("git push", "gh pr create", "gh pr checks");
+      commands.push("git push", "gh pr view published head");
       return run.id;
     },
   );
@@ -153,12 +155,39 @@ test("preserves preflight, harness, and publication command order", async () => 
   assert.deepEqual(commands, [
     "git fetch",
     "gh pr list",
+    "gh pr view prior head",
     "git worktree add",
     "pi --print",
     "git push",
-    "gh pr create",
-    "gh pr checks",
+    "gh pr view published head",
   ]);
+  const source = readFileSync(join(process.cwd(), "tools", "golem.mjs"), "utf8");
+  const prepare = source.slice(source.indexOf("const prepareRun ="), source.indexOf("const executeRun ="));
+  assert.ok(prepare.indexOf("pullRequestContext(pullRequest") < prepare.indexOf("prepareWorktree(task"));
+  assert.doesNotMatch(source, /waitForChecks|CHECK_TIMEOUT_MILLIS/u);
+});
+
+test("given_priorFailedChecks_when_resumingPr_then_providesBoundedLinksWithoutFullReviewText", () => {
+  const head = "a".repeat(40);
+  const url = "https://github.com/isp-insoft-gmbh/toktrak/pull/12";
+  const detailsUrl = "https://github.com/isp-insoft-gmbh/toktrak/actions/runs/123/job/456";
+  const context = compactPullRequestContext(12, {
+    headRefOid: head,
+    url,
+    comments: [{ body: "untrusted large review text" }],
+    statusCheckRollup: [
+      { conclusion: "FAILURE", detailsUrl },
+      { conclusion: "SUCCESS", detailsUrl: "https://github.com/isp-insoft-gmbh/toktrak/actions/runs/789" },
+    ],
+  });
+  assert.match(context, /Previous head: a{40}/u);
+  assert.ok(context.includes(detailsUrl));
+  assert.doesNotMatch(context, /untrusted large review text|\/runs\/789/u);
+  assert.ok(Buffer.byteLength(context) < 1_024);
+  assert.throws(
+    () => compactPullRequestContext(12, { url, headRefOid: "invalid", statusCheckRollup: [] }),
+    /invalid context/u,
+  );
 });
 
 test("terminates the complete process tree on timeout", async () => {
@@ -341,13 +370,39 @@ test("detects every protected control-plane prefix", () => {
   const paths = [
     ".system/RULES.md",
     ".github/golems/bugs.md",
+    ".github/workflows/ci.yml",
     ".claude/skills/a/SKILL.md",
     ".agents/skills/a/SKILL.md",
     ".codex/config.toml",
     ".pi/settings.json",
     "sources/toktrak/App.java",
   ];
-  assert.deepEqual(protectedChanges(paths), paths.slice(0, 6));
+  assert.deepEqual(protectedChanges(paths), paths.slice(0, 7));
+});
+
+test("given_renamedWorkflow_when_guardingGolemBranch_then_detectsProtectedDeletion", () => {
+  const directory = mkdtempSync(join(process.cwd(), "output", "golem-protected-"));
+  const git = (...args) =>
+    spawnSync("git", args, { cwd: directory, encoding: "utf8", timeout: 30_000, windowsHide: true });
+  const checked = (...args) => {
+    const result = git(...args);
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  try {
+    checked("init", "-q");
+    mkdirSync(join(directory, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(directory, ".github", "workflows", "ci.yml"), "name: CI\n");
+    checked("add", ".");
+    checked("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "base");
+    checked("update-ref", "refs/remotes/origin/trunk", checked("rev-parse", "HEAD"));
+    checked("mv", ".github/workflows/ci.yml", "ci.yml");
+    checked("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "rename");
+    assert.deepEqual(changedPaths(directory, "trunk"), [".github/workflows/ci.yml", "ci.yml"]);
+    assert.deepEqual(protectedChanges(changedPaths(directory, "trunk")), [".github/workflows/ci.yml"]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("replaces hidden pull-request run link without metadata", () => {

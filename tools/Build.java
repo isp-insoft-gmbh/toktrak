@@ -128,6 +128,7 @@ public final class Build {
       List.of(
           ROOT.resolve("tools/golem.test.mjs"),
           ROOT.resolve("tools/update-dprint.test.mjs"),
+          ROOT.resolve("tools/workflows.test.mjs"),
           ROOT.resolve(".claude/skills/file-upload/scripts/upload.test.mjs"));
   private static final Path ERROR_PRONE_CONFIG = ROOT.resolve("sources/error-prone.cfg");
   private static final Path PMD_CONFIG = ROOT.resolve("sources/pmd.xml");
@@ -3342,7 +3343,7 @@ public final class Build {
         "## JaCoCo coverage\n\n| Counter | Covered | Percentage |\n| --- | ---: | ---: |\n"
             + coverageTableRow("Instructions", instructionsCovered, instructionsMissed)
             + coverageTableRow("Branches", branchesCovered, branchesMissed)
-            + "\nDownload the `coverage-report` artifact and open `report/index.html`.\n");
+            + "\nReproduce locally with `mise run coverage`.\n");
   }
 
   private static Map<String, Integer> csvColumns(String header) {

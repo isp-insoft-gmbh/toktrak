@@ -15,8 +15,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tracker: ${{ steps.changed.outputs.tracker }}
+      prod: ${{ steps.changed.outputs.prod }}
+      perf: ${{ steps.changed.outputs.perf }}
+      pit: ${{ steps.changed.outputs.pit }}
+      changed: ${{ steps.changed.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          version: 2026.9.18
+          install_args: node
+          cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
+      - name: Classify changed files
+        id: changed
+        run: node tools/ci-scope.mjs
+      - name: Summarize validation plan
+        env:
+          CHANGED: ${{ steps.changed.outputs.changed }}
+          TRACKER: ${{ steps.changed.outputs.tracker }}
+          PROD: ${{ steps.changed.outputs.prod }}
+          PERF: ${{ steps.changed.outputs.perf }}
+          PIT: ${{ steps.changed.outputs.pit }}
+        run: |
+          {
+            echo "## PR validation plan"
+            echo "Changed files: $CHANGED. Core always runs."
+            echo "- Tracker: \`$TRACKER\`"
+            echo "- Production container: \`$PROD\`"
+            echo "- Performance: \`$PERF\`"
+            echo "- PIT mutations: \`$PIT\`"
+            echo "Watch the CI jobs for live progress; the final \`ci\` job reports every result."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   core:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -24,10 +65,11 @@ jobs:
         with:
           version: 2026.9.18
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
-      - run: mise run ci
+      - id: validation
+        run: mise run ci
       - name: Upload coverage report
         id: coverage-artifact
-        if: always() && hashFiles('output/coverage/**') != ''
+        if: always() && github.event_name != 'pull_request' && hashFiles('output/coverage/**') != ''
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -35,7 +77,10 @@ jobs:
           path: output/coverage
           if-no-files-found: error
           overwrite: true
-          retention-days: 7
+          retention-days: 3
+      - name: Link coverage artifact
+        if: always() && steps.coverage-artifact.outcome == 'success'
+        run: echo "Download the \`coverage-report\` artifact from this run and open \`report/index.html\`." >> "$GITHUB_STEP_SUMMARY"
       - name: Report unavailable coverage artifact
         if: always() && steps.coverage-artifact.outcome == 'failure'
         run: |
@@ -44,18 +89,93 @@ jobs:
           echo "> Coverage report upload failed. Validation results above remain authoritative." >> "$GITHUB_STEP_SUMMARY"
 
   tracker:
+    needs: scope
+    if: always() && (github.event_name != 'pull_request' || needs.scope.outputs.tracker == 'true')
     uses: ./.github/workflows/tracker.yml
 
+  prod:
+    needs: scope
+    if: needs.scope.outputs.prod == 'true'
+    uses: ./.github/workflows/prod.yml
+
+  perf:
+    needs: scope
+    if: needs.scope.outputs.perf == 'true'
+    uses: ./.github/workflows/perf.yml
+
+  pit:
+    needs: scope
+    if: needs.scope.outputs.pit == 'true'
+    uses: ./.github/workflows/pit.yml
+
   ci:
-    needs: [core, tracker]
+    needs: [scope, core, tracker, prod, perf, pit]
     if: always()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
-      - name: Require core and cross-platform tracker tests
+      - name: Summarize and enforce selected checks
         env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CHANGED: ${{ needs.scope.outputs.changed }}
+          TRACKER_SELECTED: ${{ needs.scope.outputs.tracker }}
+          PROD_SELECTED: ${{ needs.scope.outputs.prod }}
+          PERF_SELECTED: ${{ needs.scope.outputs.perf }}
+          PIT_SELECTED: ${{ needs.scope.outputs.pit }}
           CORE_RESULT: ${{ needs.core.result }}
           TRACKER_RESULT: ${{ needs.tracker.result }}
+          PROD_RESULT: ${{ needs.prod.result }}
+          PERF_RESULT: ${{ needs.perf.result }}
+          PIT_RESULT: ${{ needs.pit.result }}
         run: |
-          test "$CORE_RESULT" = success
-          test "$TRACKER_RESULT" = success
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            scope_expected=success
+            tracker_expected=$([[ "$TRACKER_SELECTED" == true ]] && echo success || echo skipped)
+            prod_expected=$([[ "$PROD_SELECTED" == true ]] && echo success || echo skipped)
+            perf_expected=$([[ "$PERF_SELECTED" == true ]] && echo success || echo skipped)
+            pit_expected=$([[ "$PIT_SELECTED" == true ]] && echo success || echo skipped)
+            reason="not selected by changed files"
+          else
+            scope_expected=skipped
+            tracker_expected=success
+            prod_expected=skipped
+            perf_expected=skipped
+            pit_expected=skipped
+            reason="only pull requests run this check"
+          fi
+          {
+            echo "## CI validation"
+            echo
+            if [[ "$SCOPE_RESULT" == success ]]; then
+              echo "Changed files: $CHANGED."
+            fi
+            echo "- Scope: \`$SCOPE_RESULT\`"
+            echo "- Core: \`$CORE_RESULT\`"
+            for name in tracker prod perf pit; do
+              result_var="${name^^}_RESULT"
+              expected_var="${name}_expected"
+              result="${!result_var}"
+              expected="${!expected_var}"
+              if [[ "$expected" == skipped ]]; then
+                echo "- $name: \`$result\` ($reason)"
+              else
+                echo "- $name: \`$result\` (selected)"
+              fi
+            done
+            echo
+            echo "[Inspect jobs and logs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          failed=0
+          check() {
+            if [[ "$2" != "$3" ]]; then
+              echo "::error::$1: expected $3, got $2"
+              failed=1
+            fi
+          }
+          check scope "$SCOPE_RESULT" "$scope_expected"
+          check core "$CORE_RESULT" success
+          check tracker "$TRACKER_RESULT" "$tracker_expected"
+          check prod "$PROD_RESULT" "$prod_expected"
+          check perf "$PERF_RESULT" "$perf_expected"
+          check pit "$PIT_RESULT" "$pit_expected"
+          exit "$failed"
