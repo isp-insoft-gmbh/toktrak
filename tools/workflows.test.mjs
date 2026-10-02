@@ -99,6 +99,20 @@ test("given_pullRequest_when_measuringPerformance_then_comparesOnSameRunnerWithG
   assert.match(perf, /if: github\.event_name != 'pull_request'\n        run: mise run perf/u);
 });
 
+test("given_golemDispatch_when_running_then_javaOwnsLifecycleAndAuthRotation", () => {
+  const golem = workflow("golem");
+  assert.match(golem, /java -ea tools\/golems\/Golems\.java select --event schedule/u);
+  assert.match(golem, /java -ea tools\/golems\/Golems\.java run --golem/u);
+  assert.match(golem, /java -ea tools\/golems\/Auth\.java decrypt/u);
+  assert.match(golem, /java -ea tools\/golems\/Auth\.java encrypt/u);
+  assert.match(golem, /java -ea tools\/golems\/Auth\.java seed/u);
+  assert.match(golem, /matrix:\n        include: \$\{\{ fromJSON\(needs\.select\.outputs\.tasks\) \}\}/u);
+  assert.doesNotMatch(golem, /node tools\/golem\.mjs|matrix\.task|matrix\.thinking/u);
+  assert.match(golem, /persist-credentials: false/u);
+  assert.match(golem, /CUTOVER: \$\{\{ vars\.GOLEM_JAVA_CUTOVER \}\}/u);
+  assert.match(golem, /"\$CUTOVER" != "enabled" && "\$TASK" != "canary"/u);
+});
+
 test("given_releaseIntentTag_when_publishing_then_ciOwnsContainerAndSerializesPromotion", () => {
   const release = workflow("release");
   const prod = workflow("prod");
@@ -164,7 +178,10 @@ test("given_linuxWorkflows_when_choosingRunners_then_usesGithubHostedUbuntu", ()
     const source = readFileSync(join(workflowDirectory, file), "utf8");
     const runners = [...source.matchAll(/^\s+runs-on: ([^\n#]+)$/gmu)].map((match) => match[1].trim());
     assert.ok(runners.length > 0, file);
-    if (file === "tracker.yml") {
+    if (file === "golem.yml") {
+      assert.deepEqual(runners, ["ubuntu-26.04", "${{ matrix.os }}", "ubuntu-26.04"]);
+      assert.match(source, /matrix:\n        include: \$\{\{ fromJSON\(needs\.select\.outputs\.tasks\) \}\}/u);
+    } else if (file === "tracker.yml") {
       assert.deepEqual(runners, ["${{ matrix.runner }}"]);
       const matrixRunners = [...source.matchAll(/^\s+runner: (\S+)$/gmu)].map((match) => match[1]);
       assert.ok(

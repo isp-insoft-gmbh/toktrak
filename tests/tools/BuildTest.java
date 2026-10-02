@@ -1524,14 +1524,26 @@ public final class BuildTest {
 
   private static void
       given_golemTask_when_buildingInvocation_then_preservesArgumentsAndRejectsUnknownTask() {
-    String script = Path.of("tools/golem.mjs").toAbsolutePath().normalize().toString();
-    if (!Build.golemInvocation("golem", List.of("path with spaces"))
-        .equals(List.of("node", script, "run", "path with spaces"))) {
+    String script = Path.of("tools/golems/Golems.java").toAbsolutePath().normalize().toString();
+    String java =
+        Path.of(
+                System.getProperty("java.home"),
+                "bin",
+                System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java")
+            .toString();
+    if (!Build.golemInvocation("golem", List.of("path with spaces", "--local"))
+        .equals(List.of(java, "-ea", script, "run", "--golem", "path with spaces", "--local"))) {
       throw new AssertionError("golem task arguments were not preserved");
     }
-    if (!Build.golemInvocation("golem-auth-check", List.of())
-        .equals(List.of("node", script, "auth-check"))) {
+    if (!Build.golemInvocation("golem-auth-check", List.of("bugs"))
+        .equals(List.of(java, "-ea", script, "auth-check", "--golem", "bugs"))) {
       throw new AssertionError("golem authentication arguments were not preserved");
+    }
+    try {
+      Build.golemInvocation("golem", List.of());
+      throw new AssertionError("expected rejection of missing golem name");
+    } catch (IllegalArgumentException expected) {
+      if (!expected.getMessage().contains("required")) throw expected;
     }
     try {
       Build.golemInvocation("unknown", List.of());
