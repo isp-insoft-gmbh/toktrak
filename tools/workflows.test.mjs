@@ -39,6 +39,8 @@ test("given_changedPaths_when_classifyingPr_then_runsOnlyRelevantChecks", () => 
     perf: true,
     pit: true,
   });
+  assert.equal(relevantChecks(["tools/release-notes.mjs"]).prod, true);
+  assert.equal(relevantChecks([".github/workflows/release.yml"]).prod, true);
   assert.deepEqual(relevantChecks(["unknown-binary.dat"]), relevantChecks([".github/workflows/ci.yml"]));
   assert.deepEqual(relevantChecks([]), relevantChecks(["mise.lock"]));
 });
@@ -87,6 +89,25 @@ test("given_pullRequest_when_ciRuns_then_requiredCheckEnforcesSelectedOrSkippedR
     assert.ok(ci.includes(`check ${job} "$${job.toUpperCase()}_RESULT" "$${job}_expected"`));
     assert.match(workflow(job), /^  workflow_call:$/mu);
   }
+});
+
+test("given_releaseIntentTag_when_publishing_then_ciOwnsContainerAndSerializesPromotion", () => {
+  const release = workflow("release");
+  const prod = workflow("prod");
+  assert.match(release, /tags: \["v\[0-9\]\*"\]/u);
+  assert.match(release, /group: release-publisher\n  cancel-in-progress: false\n  queue: max/u);
+  assert.match(release, /persist-credentials: false/u);
+  assert.match(release, /run: mise run ci/u);
+  assert.match(release, /workflow_dispatch:\n/u);
+  assert.match(release, /registry-preflight:\n    if: github\.event_name == 'workflow_dispatch'/u);
+  assert.match(release, /release:\n    if: github\.event_name == 'push'/u);
+  assert.match(release, /secrets\.ISP_INSOFT_REGISTRY_CI_USER/u);
+  assert.match(release, /secrets\.ISP_INSOFT_REGISTRY_CI_PW/u);
+  assert.match(release, /node tools\/release-notes\.mjs release/u);
+  assert.match(release, /node tools\/container-ci\.mjs release/u);
+  assert.match(release, /TOKTRAK_IMAGE_REPOSITORY: \$\{\{ vars\.TOKTRAK_IMAGE_REPOSITORY \}\}/u);
+  assert.match(prod, /node tools\/container-ci\.mjs verify dev/u);
+  assert.doesNotMatch(prod, /TOKTRAK_REGISTRY_PASSWORD/u);
 });
 
 test("given_pullRequest_when_checkingReports_then_uploadsOnlyFailedMutationXml", () => {

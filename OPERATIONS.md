@@ -9,7 +9,8 @@ and rollback policy.
 
 ## Requirements
 
-- Rootless Podman on Linux, macOS, or Windows.
+- An OCI-compatible runtime on the deployment host; the example below uses
+  rootless Podman.
 - Node.js for the shown secret-generation command.
 - Credentials for the configured OCI image repository.
 - A reverse proxy with public TLS.
@@ -23,17 +24,17 @@ user unprivileged on the host.
 
 ## Image repository
 
-Configure the release checkout locally:
-
-```toml
-# mise.local.toml
-[env]
-TOKTRAK_IMAGE_REPOSITORY = "registry.example.com/team/toktrak"
-```
-
-This ignored file selects where image and release tasks tag and push images. The
-registry must allow `:latest` to move while retaining versioned `:vN` images for
-rollback.
+Set the GitHub Actions variable `TOKTRAK_IMAGE_REPOSITORY` to the private OCI
+repository. Set the GitHub Actions secrets `ISP_INSOFT_REGISTRY_CI_USER` and
+`ISP_INSOFT_REGISTRY_CI_PW` to registry credentials scoped to that repository.
+The CI runner must reach the private registry; this is not assumed for
+GitHub-hosted runners. The `ubuntu-26.04` runner provides Podman, but its
+package version is not pinned by Mise; validate runner behavior before trusting
+release publication. Keep `:vN` immutable and permit `:latest` to move for
+nightly deployments and rollback. Protect Git `v*` tags against update/deletion
+and restrict their creation to authorized releasers. Protect release workflow
+changes on `trunk`; the tagged commit supplies CI workflow code and must be
+trusted.
 
 ## Configuration
 
@@ -130,38 +131,26 @@ podman cp toktrak:/data/toktrak.jfr .
 
 ## Release
 
-Versions are consecutive integers with matching Git and image tags: `v0`, `v1`,
-and so on. Add the exact next `## vN` section to `CHANGELOG.md`, then use a
-clean `trunk` synchronized with `origin/trunk`:
+Versions are consecutive integers `v0`, `v1`, and so on. From a clean `trunk`
+synchronized with `origin/trunk`, `mise run release` opens a Git editor with a
+prefilled annotated-tag message, then pushes that tag as the sole manual release
+intent. The tag message may contain an optional high-level human highlight; CI
+generates the rest of the changelog from merged PRs and unmatched commits. The
+tracked `CHANGELOG.md` is a frozen historical baseline through `v2`, not a draft
+to edit before release.
 
-```sh
-mise run release --dry-run
-mise run release
-```
+The tag-triggered workflow checks the exact tagged commit, generates the
+changelog, builds and verifies the image with rootless Podman, publishes
+immutable `$TOKTRAK_IMAGE_REPOSITORY:vN`, then promotes the same image to
+mutable `:latest`. Production verification on `trunk` builds and checks a
+development image but never publishes. An intent tag can exist even if CI fails;
+a tag is not proof of a published image.
 
-The dry run performs local verification, runtime/image builds, and a rootless
-restart/persistence check without tags or remote writes.
-
-A release publishes `$TOKTRAK_IMAGE_REPOSITORY:vN` and its Git tag, then pushes
-the same verified image as the mutable `$TOKTRAK_IMAGE_REPOSITORY:latest`.
-
-Only an explicit `mise run release` publishes; deployment may poll `:latest`
-nightly without causing a new release.
-
-Run only one release or promotion at a time across all checkouts and hosts.
-
-If the versioned-image push fails, retain the local candidate tag and image, fix
-registry authentication or networking, then rerun `mise run release`.
-
-If a Git-tag push reports failure, check whether the matching tag reached
-origin; retry `mise run release` only when it did not.
-
-If the tag exists but `:latest` was not published, run
-`mise run release --promote-latest` from a clean `trunk` checkout with the local
-annotated release tag.
-
-Promotion works even after trunk advances: it pulls the latest published `vN`,
-checks the tag and image identity, verifies the container, then pushes `:latest`
-without rebuilding or creating another version.
-
-Promotion refuses an older release if a newer Git tag exists.
+If tag push reports failure, inspect the remote tag before retrying the same
+`mise run release`; never move or delete a published intent tag. If CI fails,
+repair the runner/registry issue and rerun the existing tag workflow rather than
+minting another version. A retry verifies and reuses an existing versioned image
+without rebuilding or overwriting it; mismatched image metadata requires
+investigation before proceeding. Only one publisher may run at a time, and a
+stale run must never move `:latest` backwards. Nightly deployment may poll
+`:latest` independently of the release-intent step.

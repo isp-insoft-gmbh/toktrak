@@ -10,19 +10,10 @@ Run `mise install`; mise installs the versions committed in `mise.lock` for
 Java, Node.js, hyperfine, and formatters. Temurin 27 no longer ships macOS Intel
 binaries. No Maven, Gradle, npm install, or JavaScript build is used.
 
-Rootless Podman is required only for image, container, and release work. Start a
-Podman machine first on Windows or macOS. `mise run release` selects the
-rootless `podman-machine-default` connection automatically on Windows.
-
-Image and release tasks read the repository from ignored local config:
-
-```toml
-# mise.local.toml
-[env]
-TOKTRAK_IMAGE_REPOSITORY = "registry.example.com/team/toktrak"
-```
-
-Never commit `mise.local.toml`. CI uses `localhost/toktrak` and never pushes it.
+Local checks and `mise run release` require no container runtime or registry
+credentials. CI alone builds, verifies, and publishes OCI images using rootless
+Podman. `mise run release` reviews an optional annotated-tag message and pushes
+the next tag; the CI release workflow then handles publication.
 
 ## Setup
 
@@ -109,24 +100,16 @@ changes JStachio standalone-tag whitespace and rendered HTML snapshots.
 
 Additional gates:
 
-| Change                  | Run                                               |
-| ----------------------- | ------------------------------------------------- |
-| Unit tests              | `mise run pit --history -- [production paths...]` |
-| Coverage-sensitive code | `mise run coverage`                               |
-| Tracker scheduler       | `mise run tracker-test`                           |
-| Golem authentication    | `mise run golem-auth-check`                       |
-| Runtime or packaging    | `mise run runtime-build`                          |
-| Performance evidence    | `mise run perf`                                   |
-| Container image build   | `mise run container-build`                        |
-| Container behavior      | `mise run container-verify`                       |
-| Before pushing          | `mise run ci`                                     |
-
-On Windows, run container verification through the rootless connection:
-
-```powershell
-$env:CONTAINER_CONNECTION="podman-machine-default"
-mise run container-verify
-```
+| Change                   | Run                                               |
+| ------------------------ | ------------------------------------------------- |
+| Unit tests               | `mise run pit --history -- [production paths...]` |
+| Coverage-sensitive code  | `mise run coverage`                               |
+| Tracker scheduler        | `mise run tracker-test`                           |
+| Golem authentication     | `mise run golem-auth-check`                       |
+| Runtime or packaging     | `mise run runtime-build`                          |
+| Performance evidence     | `mise run perf`                                   |
+| Container build/behavior | GitHub Actions production verification            |
+| Before pushing           | `mise run ci`                                     |
 
 Every test name follows
 `given_<camelCaseContext>_when_<camelCaseBehavior>_then_<camelCaseExpectation>`.

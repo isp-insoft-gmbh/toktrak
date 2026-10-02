@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release-publisher
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  registry-preflight:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    env:
+      TOKTRAK_IMAGE_REPOSITORY: ${{ vars.TOKTRAK_IMAGE_REPOSITORY }}
+      TOKTRAK_REGISTRY_USERNAME: ${{ secrets.ISP_INSOFT_REGISTRY_CI_USER }}
+      TOKTRAK_REGISTRY_PASSWORD: ${{ secrets.ISP_INSOFT_REGISTRY_CI_PW }}
+    steps:
+      - name: Verify private registry credentials before tagging
+        run: |
+          test "$TOKTRAK_IMAGE_REPOSITORY" = registry.isp-insoft.de/toktrak
+          test -n "$TOKTRAK_REGISTRY_USERNAME"
+          test -n "$TOKTRAK_REGISTRY_PASSWORD"
+          printf '%s' "$TOKTRAK_REGISTRY_PASSWORD" | podman login registry.isp-insoft.de --username "$TOKTRAK_REGISTRY_USERNAME" --password-stdin
+          podman logout registry.isp-insoft.de
+  release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    env:
+      TOKTRAK_IMAGE_REPOSITORY: ${{ vars.TOKTRAK_IMAGE_REPOSITORY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.ref }}
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5
+        with:
+          version: 2026.10.0
+          cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
+      - name: Require an annotated tag on trunk
+        run: |
+          test "$(git cat-file -t "$GITHUB_REF")" = tag
+          test "$(git rev-parse "$GITHUB_REF^{commit}")" = "$(git rev-parse HEAD)"
+          git merge-base --is-ancestor HEAD origin/trunk
+      - name: Validate release candidate
+        run: mise run ci
+      - name: Generate release notes
+        env:
+          TAG: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tools/release-notes.mjs release "$TAG" output/release/CHANGELOG.md
+      - name: Verify and publish image
+        env:
+          TAG: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOKTRAK_REGISTRY_USERNAME: ${{ secrets.ISP_INSOFT_REGISTRY_CI_USER }}
+          TOKTRAK_REGISTRY_PASSWORD: ${{ secrets.ISP_INSOFT_REGISTRY_CI_PW }}
+        run: node tools/container-ci.mjs release "$TAG"

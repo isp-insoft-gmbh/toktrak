@@ -9,10 +9,6 @@ import java.io.ByteArrayInputStream;
 import java.io.Console;
 import java.io.IOException;
 import java.lang.module.ModuleFinder;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
@@ -24,9 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -41,7 +35,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -93,8 +86,7 @@ public final class Build {
   private static final Path RUNTIMES = OUTPUT.resolve("runtimes");
   private static final Path IDE = OUTPUT.resolve("ide");
   private static final Path CONTAINERFILE = ROOT.resolve("Containerfile");
-  private static final Path CHANGELOG = ROOT.resolve("CHANGELOG.md");
-  private static final Path CONTAINER_VERIFY = OUTPUT.resolve("container-verify");
+  private static final Path CHANGELOG = OUTPUT.resolve("release/CHANGELOG.md");
   private static final Path ECLIPSE_IDE = IDE.resolve("eclipse");
   private static final Path INTELLIJ_METADATA = IDE.resolve("intellij");
   private static final Path INTELLIJ_IDEA = ROOT.resolve(".idea");
@@ -127,6 +119,9 @@ public final class Build {
   private static final List<Path> GOLEM_TEST_SOURCES =
       List.of(
           ROOT.resolve("tools/golem.test.mjs"),
+          ROOT.resolve("tools/java-runtime-version.test.mjs"),
+          ROOT.resolve("tools/release-notes.test.mjs"),
+          ROOT.resolve("tools/release-publication.test.mjs"),
           ROOT.resolve("tools/update-dprint.test.mjs"),
           ROOT.resolve("tools/workflows.test.mjs"),
           ROOT.resolve(".claude/skills/file-upload/scripts/upload.test.mjs"));
@@ -186,8 +181,6 @@ public final class Build {
   private static final int TOOL_OUTPUT_BYTES_MAX = 1024 * 1024;
   private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(10);
   private static final Duration PROCESS_TIMEOUT_MAX = Duration.ofMinutes(20);
-  private static final Duration CONTAINER_BUILD_TIMEOUT = PROCESS_TIMEOUT_MAX;
-  private static final Duration CONTAINER_START_TIMEOUT = Duration.ofMinutes(1);
   private static final Duration UNIT_TEST_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration PROCESS_KILL_TIMEOUT = Duration.ofSeconds(5);
   private static final int PIT_THREADS = 4;
@@ -213,24 +206,15 @@ public final class Build {
           "check",
           "ci",
           "clean",
-          "container-verify",
           "coverage",
           "dev",
           "ide",
-          "image",
           "pit",
           "prod",
           "refactor",
           "release",
           "test",
           "verify");
-  private static final String IMAGE_REPOSITORY_ENV = "TOKTRAK_IMAGE_REPOSITORY";
-  private static final String IMAGE_VERSION_LABEL = "org.opencontainers.image.version";
-  private static final String IMAGE_REVISION_LABEL = "org.opencontainers.image.revision";
-  private static final int CONTAINERFILE_BYTES_MAX = 64 * 1024;
-  private static final Pattern CONTAINER_BUILDER_IMAGE =
-      Pattern.compile(
-          "\\AFROM\\s+\\S+:([1-9][0-9]{0,2})-jdk@sha256:[0-9a-f]{64}\\s+AS\\s+build(?:\\R|\\z)");
   private static final Set<String> BUILD_OWNED_PIT_OPTIONS =
       Set.of(
           "--classPath",
@@ -367,8 +351,6 @@ public final class Build {
           case "prod" -> jlinkProd();
           case "coverage" -> coverage();
           case "perf" -> perfCommand(commandArguments);
-          case "image" -> imageCommand(commandArguments);
-          case "container-verify" -> containerVerifyCommand(commandArguments);
           case "release" -> releaseCommand(commandArguments);
           default -> throw new IllegalStateException("unknown command: " + args[0]);
         }
@@ -2842,6 +2824,16 @@ public final class Build {
   }
 
   private static void compile() throws Exception {
+    if (System.getenv("TOKTRAK_RELEASE_CHANGELOG") == null) {
+      runTool(
+          "node",
+          "generate development changelog",
+          List.of("tools/release-notes.mjs", "dev", CHANGELOG.toString()),
+          ROOT,
+          PROCESS_TIMEOUT);
+    } else {
+      requireFile(CHANGELOG);
+    }
     deps();
     compileRefaster();
     AssetBundle assetBundle = assetBundle(ASSET_SOURCES);
@@ -3643,202 +3635,61 @@ public final class Build {
     }
   }
 
-  private static void imageCommand(List<String> arguments) throws Exception {
-    requireNoArguments(arguments, "image");
-    int version = nextVersion(remoteReleaseTags());
-    imageBuild(version, gitHead(), "dev");
-  }
-
-  private static void containerVerifyCommand(List<String> arguments) throws Exception {
-    requireNoArguments(arguments, "container-verify");
-    int version = nextVersion(remoteReleaseTags());
-    String revision = gitHead();
-    String verifiedImageId = imageBuild(version, revision, "dev");
-    containerVerify(verifiedImageId, version, revision, "dev");
-  }
-
   private static void releaseCommand(List<String> arguments) throws Exception {
-    if (arguments.equals(List.of("--promote-latest"))) {
-      promoteLatest();
-      return;
-    }
-    boolean dryRun;
-    if (arguments.equals(List.of("--dry-run"))) {
-      dryRun = true;
-    } else if (arguments.isEmpty()) {
-      dryRun = false;
-    } else {
-      throw new IllegalArgumentException("usage: mise run release [--dry-run|--promote-latest]");
-    }
-
-    ReleaseState release = releasePreflight(dryRun);
-    verify();
-    jlinkProd();
-    String image = imageReference(release.version());
-    String verifiedImageId;
-    if (release.recovery()) {
-      verifiedImageId = imageId(image);
-      inspectImage(verifiedImageId, release.version(), release.revision(), "v" + release.version());
-      if (!verifiedImageId.equals(releaseTagImageId(release.version()))) {
-        throw new IllegalStateException("recovery image differs from the tagged artifact");
-      }
-    } else {
-      verifiedImageId = imageBuild(release.version(), release.revision(), "v" + release.version());
-    }
-    containerVerify(
-        verifiedImageId, release.version(), release.revision(), "v" + release.version());
-    if (dryRun) {
-      System.out.println(
-          "Release v" + release.version() + " dry run complete; no tag or push performed");
-      return;
-    }
-
-    String tag = "v" + release.version();
-    if (!release.recovery()) {
-      runTool(
-          "git",
-          "create release tag",
-          List.of(
-              "tag",
-              "--annotate",
-              tag,
-              "--message",
-              "TokTrak " + tag + "\n\nImage-ID: " + verifiedImageId),
-          ROOT,
-          PROCESS_TIMEOUT);
-    }
-    runTool(
-        "podman",
-        "push versioned release image",
-        releasePushArguments(verifiedImageId, imageRepository(), tag),
-        ROOT,
-        PROCESS_TIMEOUT);
-    runTool(
-        "git",
-        "push release tag",
-        List.of("push", "origin", "refs/tags/" + tag),
-        ROOT,
-        PROCESS_TIMEOUT);
-    pushLatest(verifiedImageId, release.version());
-  }
-
-  private static String releaseTagImageId(int version) throws Exception {
-    assert version >= 0;
-    return gitOutput(List.of("tag", "--list", "v" + version, "--format=%(contents)"))
-        .lines()
-        .filter(line -> line.startsWith("Image-ID: "))
-        .map(line -> line.substring("Image-ID: ".length()))
-        .findFirst()
-        .orElseThrow(() -> new IllegalStateException("release tag has no image ID"));
-  }
-
-  private static void promoteLatest() throws Exception {
-    requireCleanReleaseCheckout(
-        gitOutput(List.of("branch", "--show-current")),
-        gitOutput(List.of("status", "--porcelain=v1", "--untracked-files=all")));
-    List<Integer> versions = remoteReleaseTags();
-    if (versions.isEmpty()) throw new IllegalStateException("no published release to promote");
-    int version = versions.getLast();
-    String tag = "v" + version;
-    String localTagId = gitOutput(List.of("rev-parse", "--verify", "refs/tags/" + tag));
-    String remoteTagId =
-        firstField(gitOutput(List.of("ls-remote", "origin", "refs/tags/" + tag)), "origin/" + tag);
-    requirePromotionTag(localTagId, remoteTagId);
-    String revision = gitOutput(List.of("rev-parse", "--verify", "refs/tags/" + tag + "^{commit}"));
-    if (!revision.matches("[0-9a-f]{40}|[0-9a-f]{64}")) {
-      throw new IllegalStateException("release tag has invalid revision");
-    }
-
-    String image = imageReference(version);
-    runTool(
-        "podman",
-        "pull published release image",
-        List.of("pull", "--policy", "always", image),
-        ROOT,
-        PROCESS_TIMEOUT);
-    String verifiedImageId = imageId(image);
-    inspectImage(verifiedImageId, version, revision, tag);
-    if (!verifiedImageId.equals(releaseTagImageId(version))) {
-      throw new IllegalStateException("published image differs from release tag");
-    }
-    containerVerify(verifiedImageId, version, revision, tag);
-    pushLatest(verifiedImageId, version);
-  }
-
-  static void requirePromotionTagForTest(String localTagId, String remoteTagId) {
-    requirePromotionTag(localTagId, remoteTagId);
-  }
-
-  private static void requirePromotionTag(String localTagId, String remoteTagId) {
-    assert localTagId != null;
-    assert remoteTagId != null;
-    if (!localTagId.equals(remoteTagId)) {
-      throw new IllegalStateException("last release tag differs from origin");
-    }
-  }
-
-  private static void pushLatest(String verifiedImageId, int version) throws Exception {
-    requireLatestPromotionVersion(version, remoteReleaseTags());
-    runTool(
-        "podman",
-        "promote published release to latest",
-        releasePushArguments(verifiedImageId, imageRepository(), "latest"),
-        ROOT,
-        PROCESS_TIMEOUT);
-  }
-
-  static void requireLatestPromotionVersionForTest(int version, List<Integer> versions) {
-    requireLatestPromotionVersion(version, versions);
-  }
-
-  private static void requireLatestPromotionVersion(int version, List<Integer> versions) {
-    assert version >= 0;
-    assert versions != null;
-    if (versions.isEmpty()) throw new IllegalStateException("no published release to promote");
-    if (versions.getLast() != version) {
-      throw new IllegalStateException("a newer release exists; refusing to move latest");
-    }
-  }
-
-  static List<String> releasePushArgumentsForTest(
-      String verifiedImageId, String repository, String tag) {
-    return releasePushArguments(verifiedImageId, repository, tag);
-  }
-
-  private static List<String> releasePushArguments(
-      String verifiedImageId, String repository, String tag) {
-    assert verifiedImageId != null && verifiedImageId.matches("sha256:[0-9a-f]{64}");
-    assert repository != null;
-    assert tag != null && tag.matches("latest|v(?:0|[1-9][0-9]*)");
-    return List.of("push", verifiedImageId, "docker://" + repository + ":" + tag);
-  }
-
-  private static void requireNoArguments(List<String> arguments, String command) {
-    assert arguments != null;
-    assert command != null && !command.isBlank();
-    if (!arguments.isEmpty()) throw new IllegalArgumentException(command + " takes no arguments");
-  }
-
-  private static ReleaseState releasePreflight(boolean dryRun) throws Exception {
+    requireNoArguments(arguments, "release");
     String revision = synchronizedReleaseRevision();
-    int version = nextVersion(remoteReleaseTags());
-    requireChangelog(version, Files.readString(CHANGELOG, StandardCharsets.UTF_8));
+    List<Integer> versions = remoteReleaseTags();
+    int version = nextVersion(versions);
     String tag = "v" + version;
-    ToolResult localTag =
+    ToolResult existing =
         runToolAllowFailure(
             "git",
             "inspect candidate release tag",
             List.of("rev-parse", "--verify", "--quiet", "refs/tags/" + tag + "^{commit}"),
             ROOT,
             PROCESS_TIMEOUT);
-    boolean recovery = localTag.exitCode() == 0;
-    if (recovery && (dryRun || !localTag.output().strip().equals(revision))) {
-      throw new IllegalStateException("release tag " + tag + " must be absent");
+    if (existing.exitCode() == 0) {
+      if (!existing.output().strip().equals(revision)
+          || !gitOutput(List.of("cat-file", "-t", "refs/tags/" + tag)).equals("tag")) {
+        throw new IllegalStateException("existing release intent tag differs from trunk");
+      }
+    } else if (existing.exitCode() == 1) {
+      printInvocation("git", "review and create release intent");
+      runProcess(
+          new ProcessBuilder(
+                  command(
+                      "git",
+                      List.of(
+                          "tag",
+                          "--annotate",
+                          "--edit",
+                          "--message",
+                          "TokTrak " + tag + "\n\n",
+                          tag,
+                          revision)))
+              .directory(ROOT.toFile()),
+          PROCESS_TIMEOUT_MAX,
+          true);
+    } else {
+      throw new IllegalStateException("cannot inspect candidate release tag " + tag);
     }
-    if (localTag.exitCode() != 0 && localTag.exitCode() != 1) {
-      throw new IllegalStateException("cannot inspect release tag " + tag);
+    if (!synchronizedReleaseRevision().equals(revision) || !remoteReleaseTags().equals(versions)) {
+      throw new IllegalStateException(
+          "release source changed during tag review; tag was not pushed");
     }
-    return new ReleaseState(version, revision, recovery);
+    runTool(
+        "git",
+        "push release intent",
+        List.of("push", "origin", "refs/tags/" + tag),
+        ROOT,
+        PROCESS_TIMEOUT);
+    System.out.println("Release " + tag + " requested; CI will verify and publish the image");
+  }
+
+  private static void requireNoArguments(List<String> arguments, String command) {
+    assert arguments != null;
+    assert command != null && !command.isBlank();
+    if (!arguments.isEmpty()) throw new IllegalArgumentException(command + " takes no arguments");
   }
 
   private static String synchronizedReleaseRevision() throws Exception {
@@ -3954,480 +3805,6 @@ public final class Build {
   private static int nextVersion(List<Integer> versions) {
     assert versions != null;
     return versions.isEmpty() ? 0 : Math.addExact(versions.getLast(), 1);
-  }
-
-  static void requireChangelogForTest(int version, String changelog) {
-    requireChangelog(version, changelog);
-  }
-
-  private static void requireChangelog(int version, String changelog) {
-    assert version >= 0;
-    assert changelog != null;
-    String heading = "## v" + version;
-    List<String> lines = changelog.lines().toList();
-    List<Integer> matches =
-        java.util.stream.IntStream.range(0, lines.size())
-            .filter(index -> lines.get(index).equals(heading))
-            .boxed()
-            .toList();
-    if (matches.size() != 1) {
-      throw new IllegalStateException("CHANGELOG.md requires exactly one " + heading + " section");
-    }
-    int start = Math.addExact(matches.getFirst(), 1);
-    int end = start;
-    while (end < lines.size() && !lines.get(end).startsWith("## ")) end = Math.addExact(end, 1);
-    if (lines.subList(start, end).stream().allMatch(String::isBlank)) {
-      throw new IllegalStateException(heading + " section is empty");
-    }
-  }
-
-  static void requireContainerJavaFeatureForTest(String containerfile, int expectedFeature) {
-    requireContainerJavaFeature(containerfile, expectedFeature);
-  }
-
-  private static void requireContainerJavaFeature(String containerfile, int expectedFeature) {
-    assert containerfile != null;
-    assert expectedFeature > 0;
-    var matcher = CONTAINER_BUILDER_IMAGE.matcher(containerfile);
-    if (!matcher.find()) {
-      throw new IllegalStateException(
-          "Containerfile builder must use a feature-tagged, digest-pinned JDK image");
-    }
-    int actualFeature = Integer.parseInt(matcher.group(1));
-    if (actualFeature != expectedFeature) {
-      throw new IllegalStateException(
-          "Containerfile builder uses Java "
-              + actualFeature
-              + " but the build uses Java "
-              + expectedFeature);
-    }
-  }
-
-  static void requireJavaRuntimeParityForTest(Runtime.Version expected, String properties) {
-    requireJavaRuntimeParity(expected, properties);
-  }
-
-  private static void requireJavaRuntimeParity(Runtime.Version expected, String properties) {
-    assert expected != null;
-    assert properties != null;
-    Runtime.Version actual = javaRuntimeVersion(properties);
-    if (expected.feature() != actual.feature()
-        || expected.interim() != actual.interim()
-        || expected.update() != actual.update()
-        || expected.patch() != actual.patch()
-        || !expected.pre().equals(actual.pre())
-        || !expected.build().equals(actual.build())) {
-      throw new IllegalStateException(
-          "linked Java runtime " + actual + " differs from build Java runtime " + expected);
-    }
-  }
-
-  private static Runtime.Version javaRuntimeVersion(String properties) {
-    String prefix = "java.runtime.version = ";
-    String value = null;
-    Iterator<String> lines = properties.lines().iterator();
-    while (lines.hasNext()) {
-      String stripped = lines.next().strip();
-      if (!stripped.startsWith(prefix)) continue;
-      if (value != null) {
-        throw new IllegalStateException("linked Java runtime version is duplicated");
-      }
-      value = stripped.substring(prefix.length());
-    }
-    if (value == null || value.isBlank()) {
-      throw new IllegalStateException("linked Java runtime version is missing");
-    }
-    try {
-      return Runtime.Version.parse(value);
-    } catch (IllegalArgumentException exception) {
-      throw new IllegalStateException(
-          "linked Java runtime version is invalid: " + value, exception);
-    }
-  }
-
-  private static String imageBuild(int version, String revision, String displayVersion)
-      throws Exception {
-    assert version >= 0;
-    assert revision != null && revision.matches("[0-9a-f]{40}|[0-9a-f]{64}");
-    assert displayVersion != null && displayVersion.matches("dev|v(?:0|[1-9][0-9]*)");
-    requireFile(CONTAINERFILE);
-    if (Files.size(CONTAINERFILE) > CONTAINERFILE_BYTES_MAX) {
-      throw new IllegalStateException(
-          "Containerfile exceeds " + CONTAINERFILE_BYTES_MAX + " bytes");
-    }
-    requireContainerJavaFeature(
-        Files.readString(CONTAINERFILE, StandardCharsets.UTF_8), Runtime.version().feature());
-    String image = imageReference(version);
-    runTool(
-        "podman",
-        "build TokTrak image",
-        List.of(
-            "build",
-            "--no-cache",
-            "--timestamp",
-            "0",
-            "--file",
-            CONTAINERFILE.toString(),
-            "--tag",
-            image,
-            "--build-arg",
-            "VERSION=" + version,
-            "--build-arg",
-            "REVISION=" + revision,
-            "--build-arg",
-            "DISPLAY_VERSION=" + displayVersion,
-            ROOT.toString()),
-        ROOT,
-        CONTAINER_BUILD_TIMEOUT);
-    String verifiedImageId = imageId(image);
-    inspectImage(verifiedImageId, version, revision, displayVersion);
-    String runtimeProperties =
-        runTool(
-                "podman",
-                "verify linked Java runtime",
-                List.of(
-                    "run",
-                    "--rm",
-                    "--entrypoint",
-                    "/opt/toktrak/bin/java",
-                    verifiedImageId,
-                    "-XshowSettings:properties",
-                    "-version"),
-                ROOT,
-                PROCESS_TIMEOUT)
-            .output();
-    requireJavaRuntimeParity(Runtime.version(), runtimeProperties);
-    runTool(
-        "podman",
-        "verify image assets",
-        List.of(
-            "run",
-            "--rm",
-            "--entrypoint",
-            "/opt/toktrak/bin/java",
-            verifiedImageId,
-            "-ea",
-            "-m",
-            "toktrak/toktrak.Main",
-            "--check-assets"),
-        ROOT,
-        PROCESS_TIMEOUT);
-    runTool(
-        "podman",
-        "verify image jcmd launcher",
-        List.of("run", "--rm", "--entrypoint", "/opt/toktrak/bin/jcmd", verifiedImageId, "-h"),
-        ROOT,
-        PROCESS_TIMEOUT);
-    runTool(
-        "podman",
-        "verify image JFR launcher",
-        List.of("run", "--rm", "--entrypoint", "/opt/toktrak/bin/jfr", verifiedImageId, "help"),
-        ROOT,
-        PROCESS_TIMEOUT);
-    return verifiedImageId;
-  }
-
-  private static void inspectImage(
-      String image, int version, String revision, String displayVersion) throws Exception {
-    String format =
-        "{{.Os}}|{{.Config.User}}|{{.Config.ExposedPorts}}|{{.Config.Volumes}}|{{.Config.Labels}}|{{.Config.Env}}";
-    String output =
-        runTool(
-                "podman",
-                "inspect TokTrak image",
-                List.of("image", "inspect", "--format", format, image),
-                ROOT,
-                PROCESS_TIMEOUT)
-            .output()
-            .strip();
-    String[] fields = output.split("\\|", -1);
-    if (fields.length != 6
-        || !fields[0].equals("linux")
-        || !fields[1].equals("0")
-        || !fields[2].contains("8080/tcp")
-        || !fields[3].contains("/data")
-        || !fields[4].contains(IMAGE_VERSION_LABEL + ":" + version)
-        || !fields[4].contains(IMAGE_REVISION_LABEL + ":" + revision)
-        || !fields[5].contains("TOKTRAK_VERSION=" + displayVersion)
-        || !fields[5].contains("TOKTRAK_REVISION=" + revision)) {
-      throw new IllegalStateException("TokTrak image metadata is invalid");
-    }
-  }
-
-  private static String imageId(String image) throws Exception {
-    String id =
-        runTool(
-                "podman",
-                "inspect immutable image ID",
-                List.of("image", "inspect", "--format", "{{.Id}}", image),
-                ROOT,
-                PROCESS_TIMEOUT)
-            .output()
-            .strip();
-    return canonicalImageId(id);
-  }
-
-  static String canonicalImageIdForTest(String id) {
-    return canonicalImageId(id);
-  }
-
-  private static String canonicalImageId(String id) {
-    assert id != null;
-    if (id.matches("[0-9a-f]{64}")) return "sha256:" + id;
-    if (id.matches("sha256:[0-9a-f]{64}")) return id;
-    throw new IllegalStateException("Podman returned invalid image ID");
-  }
-
-  static String imageRepositoryForTest(String value) {
-    return requireImageRepository(value);
-  }
-
-  private static String imageRepository() {
-    return requireImageRepository(System.getenv(IMAGE_REPOSITORY_ENV));
-  }
-
-  private static String requireImageRepository(String value) {
-    if (value == null || value.isBlank()) {
-      throw new IllegalStateException(
-          IMAGE_REPOSITORY_ENV + " is required; define it in mise.local.toml");
-    }
-    if (value.length() > 512) {
-      throw new IllegalStateException(IMAGE_REPOSITORY_ENV + " exceeds 512 characters");
-    }
-    String[] segments = value.split("/", -1);
-    if (segments.length < 2
-        || !segments[0].matches("[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?")) {
-      throw new IllegalStateException(IMAGE_REPOSITORY_ENV + " is not a canonical OCI repository");
-    }
-    int colon = segments[0].lastIndexOf(':');
-    if (colon >= 0 && Integer.parseInt(segments[0].substring(colon + 1)) > 65_535) {
-      throw new IllegalStateException(IMAGE_REPOSITORY_ENV + " has an invalid registry port");
-    }
-    for (int index = 1; index < segments.length; index++) {
-      if (!segments[index].matches("[a-z0-9]+(?:[._-][a-z0-9]+)*")) {
-        throw new IllegalStateException(
-            IMAGE_REPOSITORY_ENV + " is not a canonical OCI repository");
-      }
-    }
-    return value;
-  }
-
-  private static String imageReference(int version) {
-    assert version >= 0;
-    return imageRepository() + ":v" + version;
-  }
-
-  private static void containerVerify(
-      String image, int version, String revision, String displayVersion) throws Exception {
-    inspectImage(image, version, revision, displayVersion);
-    String rootless =
-        runTool(
-                "podman",
-                "verify rootless Podman",
-                List.of("info", "--format", "{{.Host.Security.Rootless}}"),
-                ROOT,
-                PROCESS_TIMEOUT)
-            .output()
-            .strip();
-    if (!rootless.equals("true")) {
-      throw new IllegalStateException("container verification requires rootless Podman");
-    }
-
-    String suffix = UUID.randomUUID().toString().replace("-", "");
-    String container = "toktrak-verify-" + suffix;
-    String volume = "toktrak-verify-" + suffix;
-    Path environment = writeContainerEnvironment();
-    Exception failure = null;
-    try {
-      runTool(
-          "podman",
-          "create verification volume",
-          List.of("volume", "create", volume),
-          ROOT,
-          PROCESS_TIMEOUT);
-      int firstPort = startVerificationContainer(image, container, volume, environment);
-      awaitHealthy(firstPort);
-      runTool(
-          "podman",
-          "write persistence marker",
-          List.of(
-              "exec",
-              container,
-              "/bin/sh",
-              "-c",
-              "printf toktrak-container-verify > /data/.container-verify"),
-          ROOT,
-          PROCESS_TIMEOUT);
-      stopVerificationContainer(container);
-      int secondPort = startVerificationContainer(image, container, volume, environment);
-      awaitHealthy(secondPort);
-      String marker =
-          runTool(
-                  "podman",
-                  "read persistence marker",
-                  List.of("exec", container, "cat", "/data/.container-verify"),
-                  ROOT,
-                  PROCESS_TIMEOUT)
-              .output();
-      if (!marker.equals("toktrak-container-verify")) {
-        throw new IllegalStateException("container volume did not preserve data across restart");
-      }
-    } catch (Exception exception) {
-      failure = exception;
-    }
-    failure = cleanupVerificationContainer(container, failure);
-    failure = cleanupVerificationVolume(volume, failure);
-    try {
-      Files.deleteIfExists(environment);
-      Files.deleteIfExists(CONTAINER_VERIFY);
-    } catch (IOException exception) {
-      if (failure == null) failure = exception;
-      else failure.addSuppressed(exception);
-    }
-    if (failure != null) throw failure;
-  }
-
-  private static Exception cleanupVerificationContainer(String container, Exception failure) {
-    try {
-      ToolResult result =
-          runToolAllowFailure(
-              "podman",
-              "remove verification container",
-              List.of("rm", "--force", container),
-              ROOT,
-              PROCESS_TIMEOUT);
-      if (result.exitCode() != 0) {
-        throw new IllegalStateException("cannot remove verification container");
-      }
-    } catch (Exception exception) {
-      if (failure == null) return exception;
-      failure.addSuppressed(exception);
-    }
-    return failure;
-  }
-
-  private static Exception cleanupVerificationVolume(String volume, Exception failure) {
-    try {
-      ToolResult result =
-          runToolAllowFailure(
-              "podman",
-              "remove verification volume",
-              List.of("volume", "rm", "--force", volume),
-              ROOT,
-              PROCESS_TIMEOUT);
-      if (result.exitCode() != 0) {
-        throw new IllegalStateException("cannot remove verification volume");
-      }
-    } catch (Exception exception) {
-      if (failure == null) return exception;
-      failure.addSuppressed(exception);
-    }
-    return failure;
-  }
-
-  private static Path writeContainerEnvironment() throws IOException {
-    byte[] secret = new byte[32];
-    new SecureRandom().nextBytes(secret);
-    String encoded = Base64.getEncoder().encodeToString(secret);
-    deleteTree(CONTAINER_VERIFY);
-    Files.createDirectories(CONTAINER_VERIFY);
-    Path file = Files.createTempFile(CONTAINER_VERIFY, "environment-", ".env");
-    Files.writeString(
-        file,
-        "TOKTRAK_BASE_URL=https://toktrak.test\n"
-            + "TOKTRAK_PORT=8080\n"
-            + "TOKTRAK_DATA_DIR=/data\n"
-            + "TOKTRAK_OIDC_DISCOVERY_URL=https://accounts.example/.well-known/openid-configuration\n"
-            + "TOKTRAK_OIDC_CLIENT_ID=container-verify\n"
-            + "TOKTRAK_OIDC_CLIENT_SECRET=container-verify\n"
-            + "TOKTRAK_ALLOWED_DOMAIN=example.com\n"
-            + "TOKTRAK_SESSION_SECRET="
-            + encoded
-            + "\nTOKTRAK_TOKEN_PEPPER="
-            + encoded
-            + "\n",
-        StandardCharsets.UTF_8,
-        StandardOpenOption.TRUNCATE_EXISTING);
-    if (Files.getFileStore(file).supportsFileAttributeView("posix")) {
-      Files.setPosixFilePermissions(file, Set.of(PosixFilePermission.OWNER_READ));
-    }
-    return file;
-  }
-
-  private static int startVerificationContainer(
-      String image, String container, String volume, Path environment) throws Exception {
-    runTool(
-        "podman",
-        "start verification container",
-        List.of(
-            "run",
-            "--detach",
-            "--name",
-            container,
-            "--env-file",
-            environment.toString(),
-            "--volume",
-            volume + ":/data",
-            "--publish",
-            "127.0.0.1::8080",
-            image),
-        ROOT,
-        PROCESS_TIMEOUT);
-    String mapping =
-        runTool(
-                "podman",
-                "inspect published port",
-                List.of("port", container, "8080/tcp"),
-                ROOT,
-                PROCESS_TIMEOUT)
-            .output()
-            .strip();
-    int colon = mapping.lastIndexOf(':');
-    if (colon < 0) throw new IllegalStateException("Podman returned invalid published port");
-    try {
-      int port = Integer.parseInt(mapping.substring(colon + 1));
-      if (port < 1 || port > 65_535) throw new NumberFormatException();
-      return port;
-    } catch (NumberFormatException exception) {
-      throw new IllegalStateException("Podman returned invalid published port", exception);
-    }
-  }
-
-  private static void stopVerificationContainer(String container) throws Exception {
-    runTool(
-        "podman", "stop verification container", List.of("stop", container), ROOT, PROCESS_TIMEOUT);
-    runTool(
-        "podman", "remove verification container", List.of("rm", container), ROOT, PROCESS_TIMEOUT);
-  }
-
-  private static void awaitHealthy(int port) throws Exception {
-    var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
-    URI uri = URI.create("http://127.0.0.1:" + port + "/health");
-    long deadline = System.nanoTime() + CONTAINER_START_TIMEOUT.toNanos();
-    Exception lastFailure = null;
-    while (System.nanoTime() < deadline) {
-      try {
-        var request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(2)).GET().build();
-        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() == 200 && response.body().equals("{\"status\":\"ok\"}")) return;
-      } catch (IOException exception) {
-        lastFailure = exception;
-      }
-      try {
-        Thread.sleep(Duration.ofMillis(250));
-      } catch (InterruptedException exception) {
-        Thread.currentThread().interrupt();
-        throw exception;
-      }
-    }
-    throw new IllegalStateException("container health check timed out", lastFailure);
-  }
-
-  private record ReleaseState(int version, String revision, boolean recovery) {
-    private ReleaseState {
-      assert version >= 0;
-      assert revision != null && revision.matches("[0-9a-f]{40}|[0-9a-f]{64}");
-    }
   }
 
   private static void jlinkProd() throws Exception {
@@ -4988,10 +4365,6 @@ public final class Build {
               .start();
     } catch (IOException exception) {
       String tool = toolName(executable);
-      if (tool.equalsIgnoreCase("podman") || tool.equalsIgnoreCase("podman.exe")) {
-        throw new IllegalStateException(
-            "Podman is required; install it and start a rootless machine", exception);
-      }
       throw new IllegalStateException("cannot start required tool: " + tool, exception);
     }
 

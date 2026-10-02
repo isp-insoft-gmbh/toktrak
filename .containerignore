@@ -1,5 +1,8 @@
 **
 !CHANGELOG.md
+!output/
+!output/release/
+!output/release/CHANGELOG.md
 !sources/
 !sources/**
 !tests/
