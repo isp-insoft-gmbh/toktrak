@@ -30,8 +30,8 @@ macOS, and `systemd --user` on Linux.
 
 The server is a minimal modern Java 26+ JPMS application using JDK facilities
 and server-rendered Datastar HTML. It is packaged as a self-contained linked
-runtime and Podman container. Production deploys to the private company
-registry.
+runtime and OCI container built, verified, and published only by CI. Production
+deploys from the private company registry.
 
 Runtime configuration comes from environment variables. Persistent data lives
 under `TOKTRAK_DATA_DIR`. Production secrets never belong in source control.

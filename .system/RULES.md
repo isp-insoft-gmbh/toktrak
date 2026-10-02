@@ -90,7 +90,13 @@
 - Keep production secrets in environment configuration, never source control.
 - Back up the mounted `TOKTRAK_DATA_DIR`; deployment owns backup, TLS, and
   compression.
-- Prefer rootless Podman.
+- Keep local build, test, and `mise run release` independent of container
+  runtimes.
+- Build, verify, and publish container images only in CI using rootless Podman.
 - Keep version numbers monotonically increasing integers starting at `0`.
-- Update `CHANGELOG.md` before the explicit human release command
-  `mise run release`.
+- `mise run release` is the sole manual release intent: review an optional
+  high-level annotated-tag message, then push the tag.
+- Generate release history from that message, merged PRs, and unmatched commits;
+  never require manual edits to `CHANGELOG.md`.
+- CI must verify the tagged commit and preserve immutable versioned images
+  before promoting the verified artifact to `:latest`.
