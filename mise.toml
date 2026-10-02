@@ -89,7 +89,7 @@ description = "Run tracker and scheduler tests through Build.java (also in test,
 run = "java -ea tools/Build.java test --only tests/tracker"
 
 [task_templates.golem-tools]
-tools = { "aqua:earendil-works/pi" = "latest", "aqua:anthropics/claude-code" = "latest", "aqua:openai/codex" = "latest" }
+tools = { "aqua:earendil-works/pi" = "latest", "aqua:anthropics/claude-code" = "latest", "aqua:openai/codex" = "latest", "aqua:cli/cli" = "latest" }
 
 [tasks.golem-auth-check]
 extends = "golem-tools"

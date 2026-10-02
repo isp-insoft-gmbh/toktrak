@@ -292,13 +292,14 @@ test("encrypts, binds, and restores rotating subscription authentication", () =>
   }
 });
 
-test("keeps workflow authentication on the tested golem entrypoint", () => {
+test("given_rotatingAuthentication_when_workflowRuns_then_javaOwnsSeedEncryptDecrypt", () => {
   const workflow = readFileSync(join(process.cwd(), ".github", "workflows", "golem.yml"), "utf8");
   const mise = readFileSync(join(process.cwd(), "mise.toml"), "utf8");
   assert.doesNotMatch(workflow, /GolemAuth|npm install --global/);
-  assert.match(workflow, /node tools\/golem\.mjs auth decrypt/);
-  assert.match(workflow, /node tools\/golem\.mjs auth encrypt/);
-  assert.match(workflow, /node tools\/golem\.mjs auth seed/);
+  assert.match(workflow, /java -ea tools\/golems\/Auth\.java decrypt/);
+  assert.match(workflow, /java -ea tools\/golems\/Auth\.java encrypt/);
+  assert.match(workflow, /java -ea tools\/golems\/Auth\.java seed/);
+  assert.doesNotMatch(workflow, /node tools\/golem\.mjs/);
   assert.match(workflow, /mise run golem-auth-check (?:bugs|security)/);
   assert.match(mise, /\[task_templates\.golem-tools\]/);
   assert.match(mise, /\[tasks\.golem-auth-check\]\nextends = "golem-tools"/);

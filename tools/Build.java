@@ -115,6 +115,8 @@ public final class Build {
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
   private static final Path GOLEM_SCRIPT = ROOT.resolve("tools/golem.mjs");
+  private static final Path JAVA_GOLEM = ROOT.resolve("tools/golems/Golems.java");
+  private static final Path JAVA_GOLEM_CHECK = ROOT.resolve("tools/golems/SelfCheck.java");
   private static final Path TRACKER_TEST_SOURCES = ROOT.resolve("tests/tracker");
   private static final List<Path> GOLEM_TEST_SOURCES =
       List.of(
@@ -2519,6 +2521,10 @@ public final class Build {
   private static void runGolemDefinitionCheck() throws Exception {
     runProcess(
         new ProcessBuilder("node", GOLEM_SCRIPT.toString(), "check").directory(ROOT.toFile()));
+    runProcess(
+        new ProcessBuilder(
+                javaExecutable(), "-ea", JAVA_GOLEM.toString(), "select", "--event", "schedule")
+            .directory(ROOT.toFile()));
   }
 
   static List<String> golemInvocation(String name, List<String> arguments) {
@@ -2530,13 +2536,27 @@ public final class Build {
           case "golem-auth-check" -> "auth-check";
           default -> throw new IllegalArgumentException("unknown golem task: " + name);
         };
-    var parameters = new ArrayList<>(List.of(GOLEM_SCRIPT.toString(), operation));
-    parameters.addAll(arguments);
-    return command("node", parameters);
+    if (arguments.isEmpty()) throw new IllegalArgumentException("golem task name is required");
+    var parameters =
+        new ArrayList<>(
+            List.of("-ea", JAVA_GOLEM.toString(), operation, "--golem", arguments.getFirst()));
+    parameters.addAll(arguments.subList(1, arguments.size()));
+    return command(javaExecutable(), parameters);
   }
 
   private static void runGolemTests() throws Exception {
     runGolemTests(GOLEM_TEST_SOURCES);
+    Path temporary = ROOT.resolve("output/golem-selfcheck-tmp");
+    Files.createDirectories(temporary);
+    ProcessBuilder check =
+        new ProcessBuilder(
+                javaExecutable(),
+                "-Djava.io.tmpdir=" + temporary,
+                "-ea",
+                JAVA_GOLEM_CHECK.toString())
+            .directory(ROOT.toFile());
+    check.environment().put("RUNNER_TEMP", temporary.toString());
+    runProcess(check);
   }
 
   private static void runGolemTests(List<Path> sources) throws Exception {

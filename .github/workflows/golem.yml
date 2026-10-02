@@ -48,21 +48,30 @@ jobs:
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5
         with:
           version: 2026.10.0
-          install_args: node
+          install_args: java
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - id: selection
         env:
           OPERATION: ${{ inputs.operation || 'run' }}
           TASK: ${{ inputs.task }}
+          CUTOVER: ${{ vars.GOLEM_JAVA_CUTOVER }}
         run: |
           if [[ "$OPERATION" != "run" ]]; then
-            tasks='{"include":[{"task":"","harness":"none","model":"none","thinking":"none","weekday":"none"}]}'
+            tasks='[]'
+          elif [[ "$CUTOVER" != "enabled" && "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]]; then
+            echo 'Java Golem schedule paused until the manual canary is reviewed.'
+            tasks='[]'
+          elif [[ "$CUTOVER" != "enabled" && "$TASK" != "canary" ]]; then
+            echo 'Only the canary may run before GOLEM_JAVA_CUTOVER is enabled.' >&2
+            exit 1
           elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            tasks="$(node tools/golem.mjs select "$TASK")"
+            java -ea tools/golems/Golems.java select --event workflow_dispatch --golem "$TASK" | tee /tmp/golem-select.txt
+            tasks="$(tail -n 1 /tmp/golem-select.txt)"
           else
-            tasks="$(node tools/golem.mjs select)"
+            java -ea tools/golems/Golems.java select --event schedule | tee /tmp/golem-select.txt
+            tasks="$(tail -n 1 /tmp/golem-select.txt)"
           fi
-          if [[ "$tasks" == *'"task":""'* ]]; then
+          if [[ "$tasks" == '[]' ]]; then
             echo "has-tasks=false" >> "$GITHUB_OUTPUT"
           else
             echo "has-tasks=true" >> "$GITHUB_OUTPUT"
@@ -82,31 +91,32 @@ jobs:
     strategy:
       fail-fast: false
       max-parallel: 1
-      matrix: ${{ fromJSON(needs.select.outputs.tasks) }}
-    runs-on: ubuntu-26.04
-    timeout-minutes: 45
+      matrix:
+        include: ${{ fromJSON(needs.select.outputs.tasks) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     steps:
-      - if: matrix.task != ''
+      - if: matrix.golem != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.repository.default_branch }}
-      - if: matrix.task != ''
+      - if: matrix.golem != ''
         uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5
         with:
           version: 2026.10.0
           install_args: --include-task-tools
           cache_key: mise-v2-task-tools-{{platform}}-{{version}}-{{file_hash}}
       - name: Validate runner tools
-        if: matrix.task != ''
+        if: matrix.golem != ''
         id: tools
         run: |
           gh_version="$(gh --version | head -n 1 | awk '{print $3}')"
           [[ "$(printf '%s\n' 2.70.0 "$gh_version" | sort -V | head -n 1)" == "2.70.0" ]]
           echo "gh-version=$gh_version" >> "$GITHUB_OUTPUT"
       - name: Mint repository GitHub App token
-        if: matrix.task != ''
+        if: matrix.golem != ''
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
@@ -119,7 +129,7 @@ jobs:
           permission-pull-requests: write
           permission-statuses: read
       - name: Configure bot Git identity
-        if: matrix.task != ''
+        if: matrix.golem != ''
         env:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -141,9 +151,9 @@ jobs:
         if: matrix.harness == 'pi' || matrix.harness == 'codex'
         env:
           GOLEM_AUTH_CACHE_KEY: ${{ secrets.GOLEM_AUTH_CACHE_KEY }}
-        run: node tools/golem.mjs auth decrypt "${{ matrix.harness }}" "output/golem-auth/${{ matrix.harness }}.bin"
+        run: java -ea tools/golems/Auth.java decrypt "${{ matrix.harness }}" "output/golem-auth/${{ matrix.harness }}.bin"
       - name: Run local golem lifecycle
-        if: matrix.task != ''
+        if: matrix.golem != ''
         id: lifecycle
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ matrix.harness == 'claude' && secrets.GOLEM_CLAUDE_OAUTH_TOKEN || '' }}
@@ -151,13 +161,13 @@ jobs:
           GATEBRIDGE_R2_ENDPOINT: ${{ secrets.GATEBRIDGE_R2_ENDPOINT }}
           GATEBRIDGE_R2_SECRET_ACCESS_KEY: ${{ secrets.GATEBRIDGE_R2_SECRET_ACCESS_KEY }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: mise run golem "${{ matrix.task }}"
+        run: java -ea tools/golems/Golems.java run --golem "${{ matrix.golem }}"
       - name: Encrypt rotated authentication
         if: always() && (matrix.harness == 'pi' || matrix.harness == 'codex')
         id: encrypt
         env:
           GOLEM_AUTH_CACHE_KEY: ${{ secrets.GOLEM_AUTH_CACHE_KEY }}
-        run: node tools/golem.mjs auth encrypt "${{ matrix.harness }}" "output/golem-auth/${{ matrix.harness }}.bin"
+        run: java -ea tools/golems/Auth.java encrypt "${{ matrix.harness }}" "output/golem-auth/${{ matrix.harness }}.bin"
       - name: Save rotated authentication
         id: save-auth
         if: always() && steps.encrypt.outcome == 'success'
@@ -166,14 +176,14 @@ jobs:
           path: output/golem-auth/${{ matrix.harness }}.bin
           key: golem-auth-v1-${{ matrix.harness }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Summarize golem result
-        if: always() && matrix.task != ''
+        if: always() && matrix.golem != ''
         env:
           GH_VERSION: ${{ steps.tools.outputs.gh-version }}
           RESULT: ${{ steps.lifecycle.outcome }}
           AUTH_SAVED: ${{ steps.save-auth.outcome }}
         run: |
           {
-            echo "## Golem ${{ matrix.task }}"
+            echo "## Golem ${{ matrix.golem }}"
             echo
             echo "- Publication lifecycle: \`$RESULT\`"
             echo "- PR CI: independent; inspect the PR checks before manual merge."
@@ -182,7 +192,7 @@ jobs:
             fi
             echo "- Harness: \`${{ matrix.harness }}\`"
             echo "- Model: \`${{ matrix.model }}\`"
-            echo "- Thinking: \`${{ matrix.thinking }}\`"
+            echo "- Effort: \`${{ matrix.effort }}\`"
             echo "- gh: \`$GH_VERSION\`"
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -204,7 +214,7 @@ jobs:
       - name: Restore fresh seed
         env:
           GOLEM_AUTH_SEED: ${{ inputs.operation == 'reseed-pi' && secrets.GOLEM_PI_AUTH_SEED || secrets.GOLEM_CODEX_AUTH_SEED }}
-        run: node tools/golem.mjs auth seed "$HARNESS"
+        run: java -ea tools/golems/Auth.java seed "$HARNESS"
       - name: Verify fresh subscription authentication
         run: |
           if [[ "$HARNESS" == "pi" ]]; then
@@ -215,7 +225,7 @@ jobs:
       - name: Encrypt fresh authentication baseline
         env:
           GOLEM_AUTH_CACHE_KEY: ${{ secrets.GOLEM_AUTH_CACHE_KEY }}
-        run: node tools/golem.mjs auth encrypt "$HARNESS" "output/golem-auth/$HARNESS.bin"
+        run: java -ea tools/golems/Auth.java encrypt "$HARNESS" "output/golem-auth/$HARNESS.bin"
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: output/golem-auth/${{ env.HARNESS }}.bin
