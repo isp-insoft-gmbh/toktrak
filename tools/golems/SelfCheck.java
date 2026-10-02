@@ -794,6 +794,16 @@ public final class SelfCheck {
         "a run without a result counts nothing",
         silent.turns() == 0 && silent.costUsd() == 0 && silent.inputTokens() == 0);
     check("a run without a result keeps its error", silent.narrative().contains("it broke"));
+
+    var plain = Agent.interpretPlain(new Proc.Result(0, "finished", "", Proc.Stop.NONE));
+    check("text harness response succeeds", plain.succeeded());
+    check("text harness preserves response", plain.narrative().equals("finished"));
+    check(
+        "silent text harness cannot claim success",
+        !Agent.interpretPlain(new Proc.Result(0, "", "", Proc.Stop.NONE)).succeeded());
+    check(
+        "text harness exit failure stays blocked",
+        !Agent.interpretPlain(new Proc.Result(1, "finished", "", Proc.Stop.NONE)).succeeded());
   }
 
   // -------------------------------------------------------------- report
@@ -807,6 +817,19 @@ public final class SelfCheck {
     check("tokens below a thousand", Report.tokens(999, 12, 0).startsWith("999 in"));
     check("tokens compacted", Report.tokens(41200, 8100, 180000).contains("41.2k in"));
     check("cache omitted when absent", !Report.tokens(10, 10, 0).contains("cache"));
+
+    var measured =
+        new Agent.Result(0, Proc.Stop.NONE, "success", false, 3, 0.25, 11, 22, 33, 0, "", "");
+    var claudeUsage =
+        new Report("claude", new Outcome.Changed()).usage(Golem.Harness.CLAUDE, measured);
+    check("Claude reports measured turns", claudeUsage.markdown().contains("| turns | 3 |"));
+    check("Claude reports measured cost", claudeUsage.markdown().contains("$0.25"));
+    var piUsage = new Report("pi", new Outcome.Changed()).usage(Golem.Harness.PI, measured);
+    check("Pi does not claim measured turns", !piUsage.markdown().contains("| turns |"));
+    check("Pi states usage unavailable", piUsage.markdown().contains("not reported by harness"));
+    var codexUsage =
+        new Report("codex", new Outcome.Changed()).usage(Golem.Harness.CODEX, measured);
+    check("Codex does not claim measured cost", !codexUsage.markdown().contains("| cost |"));
 
     var changed = new Report("deps", new Outcome.Changed()).fact("cost", "$0.31");
     check(

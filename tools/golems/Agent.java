@@ -5,14 +5,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/// Launches Claude Code and reads back what it did.
+/// Launches the configured coding harness and reads back what it did.
 ///
 /// The agent is given the repository toolchain and its own credential, and nothing about
 /// publication. It writes files, commits, and text; the orchestrator decides what leaves the
 /// machine.
 ///
-/// No result envelope is required from the agent. The CLI's own result object already distinguishes
-/// success, an exhausted turn limit, and a failed run, which is everything the outcome table needs.
+/// Claude returns a structured result. Pi and Codex return text without structured usage counters;
+/// a blank response cannot establish successful agent activity.
 final class Agent {
   /// Settings that make a run the same run everywhere.
   ///
@@ -172,21 +172,7 @@ final class Agent {
     var process =
         Proc.run(command, workspace, environment(golem, run, workspace), golem.timeout(), prompt);
     var result =
-        golem.harness() == Golem.Harness.CLAUDE
-            ? interpret(process, run)
-            : new Result(
-                process.exit(),
-                process.stopped(),
-                process.ok() ? SUCCESS : NO_RESULT,
-                !process.ok(),
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                process.out(),
-                process.out());
+        golem.harness() == Golem.Harness.CLAUDE ? interpret(process, run) : interpretPlain(process);
 
     assert result.stopped() == process.stopped() : "the stop reason is carried through";
     return result;
@@ -383,6 +369,28 @@ final class Agent {
 
     assert environment.containsKey("GIT_AUTHOR_NAME") : "commits must be attributable to the golem";
     return Map.copyOf(environment);
+  }
+
+  /// A text-only harness must return a readable response before it can claim success.
+  ///
+  /// These CLIs do not supply Claude's structured usage counters. An empty response cannot prove
+  /// that an agent actually ran, even when the process itself exited successfully.
+  static Result interpretPlain(Proc.Result process) {
+    if (!process.ok() || process.out().isBlank())
+      return Result.none(process, "agent returned no successful response", process.out());
+    return new Result(
+        process.exit(),
+        process.stopped(),
+        SUCCESS,
+        false,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        process.out(),
+        process.out());
   }
 
   /// Reads the CLI result object, tolerating a run that produced none.

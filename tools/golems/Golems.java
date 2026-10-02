@@ -409,11 +409,7 @@ public final class Golems {
             .fact(
                 "commits",
                 commits.isEmpty() ? "none" : commits.size() + ": " + String.join("; ", commits))
-            .fact("turns", Integer.toString(agent.turns()))
-            .fact(
-                "tokens",
-                Report.tokens(agent.inputTokens(), agent.outputTokens(), agent.cacheTokens()))
-            .fact("cost", String.format(Locale.ROOT, "$%.2f (estimate)", agent.costUsd()))
+            .usage(golem.harness(), agent)
             .narrative(agent.narrative());
 
     try {
