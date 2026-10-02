@@ -95,7 +95,7 @@ revoke it and create another.
 ## Maintain with golems
 
 Local golems run one bounded maintenance task through Pi, Claude Code, or Codex
-CLI. Task definitions live in `.github/golems`; `_golem.md` supplies shared
+CLI. Task definitions live in `.golems/`; `_golems.md` supplies shared
 instructions. Each task explicitly declares its harness, model, thinking level,
 and weekday. `mise run check` validates their strict structure offline.
 
