@@ -832,9 +832,25 @@ public final class SelfCheck {
         new Report("claude", new Outcome.Changed()).usage(Golem.Harness.CLAUDE, measured);
     check("Claude reports measured turns", claudeUsage.markdown().contains("| turns | 3 |"));
     check("Claude reports measured cost", claudeUsage.markdown().contains("$0.25"));
+    check(
+        "Claude console reports measured usage",
+        Golems.agentSummary(Golem.Harness.CLAUDE, measured).contains("3 turns, $0.25"));
+    var failed = Agent.Result.none(new Proc.Result(1, "", "", Proc.Stop.NONE), "", "");
+    check(
+        "failed Claude run reports no usage",
+        new Report("qa", new Outcome.Blocked("agent failed"))
+            .usage(Golem.Harness.CLAUDE, failed)
+            .markdown()
+            .contains("not reported by harness"));
+    check(
+        "failed Claude console reports no usage",
+        Golems.agentSummary(Golem.Harness.CLAUDE, failed).endsWith("usage not reported"));
     var piUsage = new Report("pi", new Outcome.Changed()).usage(Golem.Harness.PI, measured);
     check("Pi does not claim measured turns", !piUsage.markdown().contains("| turns |"));
     check("Pi states usage unavailable", piUsage.markdown().contains("not reported by harness"));
+    check(
+        "Pi console omits fake counters",
+        Golems.agentSummary(Golem.Harness.PI, measured).endsWith("usage not reported"));
     var codexUsage =
         new Report("codex", new Outcome.Changed()).usage(Golem.Harness.CODEX, measured);
     check("Codex does not claim measured cost", !codexUsage.markdown().contains("| cost |"));
