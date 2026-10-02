@@ -161,7 +161,8 @@ jobs:
           GATEBRIDGE_R2_ENDPOINT: ${{ secrets.GATEBRIDGE_R2_ENDPOINT }}
           GATEBRIDGE_R2_SECRET_ACCESS_KEY: ${{ secrets.GATEBRIDGE_R2_SECRET_ACCESS_KEY }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: java -ea tools/golems/Golems.java run --golem "${{ matrix.golem }}"
+        # mise run activates task-scoped Pi, Codex, and Claude binaries for the child JVM.
+        run: mise run golem "${{ matrix.golem }}"
       - name: Encrypt rotated authentication
         if: always() && (matrix.harness == 'pi' || matrix.harness == 'codex')
         id: encrypt
