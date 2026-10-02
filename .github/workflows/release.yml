@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ["v[0-9]*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,7 +15,24 @@ concurrency:
   queue: max
 
 jobs:
+  registry-preflight:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    env:
+      TOKTRAK_IMAGE_REPOSITORY: ${{ vars.TOKTRAK_IMAGE_REPOSITORY }}
+      TOKTRAK_REGISTRY_USERNAME: ${{ secrets.ISP_INSOFT_REGISTRY_CI_USER }}
+      TOKTRAK_REGISTRY_PASSWORD: ${{ secrets.ISP_INSOFT_REGISTRY_CI_PW }}
+    steps:
+      - name: Verify private registry credentials before tagging
+        run: |
+          test "$TOKTRAK_IMAGE_REPOSITORY" = registry.isp-insoft.de/toktrak
+          test -n "$TOKTRAK_REGISTRY_USERNAME"
+          test -n "$TOKTRAK_REGISTRY_PASSWORD"
+          printf '%s' "$TOKTRAK_REGISTRY_PASSWORD" | podman login registry.isp-insoft.de --username "$TOKTRAK_REGISTRY_USERNAME" --password-stdin
+          podman logout registry.isp-insoft.de
   release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     env:
@@ -45,6 +63,6 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TOKTRAK_REGISTRY_USERNAME: ${{ secrets.TOKTRAK_REGISTRY_USERNAME }}
-          TOKTRAK_REGISTRY_PASSWORD: ${{ secrets.TOKTRAK_REGISTRY_PASSWORD }}
+          TOKTRAK_REGISTRY_USERNAME: ${{ secrets.ISP_INSOFT_REGISTRY_CI_USER }}
+          TOKTRAK_REGISTRY_PASSWORD: ${{ secrets.ISP_INSOFT_REGISTRY_CI_PW }}
         run: node tools/container-ci.mjs release "$TAG"

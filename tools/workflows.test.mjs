@@ -98,6 +98,11 @@ test("given_releaseIntentTag_when_publishing_then_ciOwnsContainerAndSerializesPr
   assert.match(release, /group: release-publisher\n  cancel-in-progress: false\n  queue: max/u);
   assert.match(release, /persist-credentials: false/u);
   assert.match(release, /run: mise run ci/u);
+  assert.match(release, /workflow_dispatch:\n/u);
+  assert.match(release, /registry-preflight:\n    if: github\.event_name == 'workflow_dispatch'/u);
+  assert.match(release, /release:\n    if: github\.event_name == 'push'/u);
+  assert.match(release, /secrets\.ISP_INSOFT_REGISTRY_CI_USER/u);
+  assert.match(release, /secrets\.ISP_INSOFT_REGISTRY_CI_PW/u);
   assert.match(release, /node tools\/release-notes\.mjs release/u);
   assert.match(release, /node tools\/container-ci\.mjs release/u);
   assert.match(release, /TOKTRAK_IMAGE_REPOSITORY: \$\{\{ vars\.TOKTRAK_IMAGE_REPOSITORY \}\}/u);

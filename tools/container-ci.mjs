@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { javaRuntimeVersion } from "./java-runtime-version.mjs";
+import { publishRelease } from "./release-publication.mjs";
 
 const arguments_ = process.argv.slice(2);
 const [operation, displayVersion] = arguments_;
@@ -43,34 +44,65 @@ const suffix = randomUUID().replaceAll("-", "");
 const image = `localhost/toktrak-ci:${suffix}`;
 const container = `toktrak-verify-${suffix}`;
 const volume = `toktrak-verify-${suffix}`;
+const publication = operation === "release" ? publicationConfig(displayVersion) : undefined;
 const environmentDirectory = mkdtempSync(join(tmpdir(), "toktrak-container-ci-"));
 const environment = join(environmentDirectory, "environment");
 let failure;
 let imageBuilt = false;
+let registryLoggedIn = false;
 let containerCreated = false;
 let volumeCreated = false;
 try {
-  command("podman", [
-    "build",
-    "--no-cache",
-    "--timestamp",
-    "0",
-    "--file",
-    "Containerfile",
-    "--tag",
-    image,
-    "--build-arg",
-    `VERSION=${version}`,
-    "--build-arg",
-    `REVISION=${revision}`,
-    "--build-arg",
-    `DISPLAY_VERSION=${displayVersion}`,
-    "--build-arg",
-    `CHANGELOG_SHA256=${changelogSha256}`,
-    ".",
-  ]);
-  imageBuilt = true;
-  const imageId = canonicalImageId(command("podman", ["image", "inspect", "--format", "{{.Id}}", image]).trim());
+  let existingImageId;
+  if (publication) {
+    command("podman", ["login", publication.host, "--username", publication.username, "--password-stdin"], {
+      input: publication.password,
+    });
+    registryLoggedIn = true;
+    const existing = commandResult("podman", [
+      "pull",
+      "--policy",
+      "always",
+      `${publication.repository}:${displayVersion}`,
+    ]);
+    if (existing.status === 0) {
+      existingImageId = canonicalImageId(
+        command("podman", [
+          "image",
+          "inspect",
+          "--format",
+          "{{.Id}}",
+          `${publication.repository}:${displayVersion}`,
+        ]).trim(),
+      );
+    } else if (!/manifest unknown|name unknown|manifest[^\n]*not found|manifest[^\n]*404/iu.test(existing.stderr)) {
+      throw new Error("cannot determine whether versioned image already exists");
+    }
+  }
+  if (!existingImageId) {
+    command("podman", [
+      "build",
+      "--no-cache",
+      "--timestamp",
+      "0",
+      "--file",
+      "Containerfile",
+      "--tag",
+      image,
+      "--build-arg",
+      `VERSION=${version}`,
+      "--build-arg",
+      `REVISION=${revision}`,
+      "--build-arg",
+      `DISPLAY_VERSION=${displayVersion}`,
+      "--build-arg",
+      `CHANGELOG_SHA256=${changelogSha256}`,
+      ".",
+    ]);
+    imageBuilt = true;
+  }
+  const imageId =
+    existingImageId ?? canonicalImageId(command("podman", ["image", "inspect", "--format", "{{.Id}}", image]).trim());
   inspectImage(imageId, version, revision, displayVersion);
   const linkedRuntime = commandResult("podman", [
     "run",
@@ -112,7 +144,7 @@ try {
     throw new Error("container volume did not preserve data across restart");
   }
 
-  if (operation === "release") await publish(imageId, displayVersion);
+  if (publication) await publish(imageId, displayVersion, publication, Boolean(existingImageId));
 } catch (error) {
   failure = error;
 } finally {
@@ -120,6 +152,7 @@ try {
     [containerCreated, ["rm", "--force", container]],
     [volumeCreated, ["volume", "rm", "--force", volume]],
     [imageBuilt, ["image", "rm", "--force", image]],
+    [registryLoggedIn, ["logout", publication?.host]],
   ]) {
     if (!exists) continue;
     try {
@@ -217,7 +250,7 @@ async function awaitHealthy(port) {
   throw new Error("container did not become healthy within 60 seconds");
 }
 
-async function publish(imageId, tag) {
+function publicationConfig(tag) {
   const repository = process.env.TOKTRAK_IMAGE_REPOSITORY;
   const username = process.env.TOKTRAK_REGISTRY_USERNAME;
   const password = process.env.TOKTRAK_REGISTRY_PASSWORD;
@@ -230,47 +263,31 @@ async function publish(imageId, tag) {
     throw new Error("TOKTRAK_IMAGE_REPOSITORY must name a canonical OCI repository");
   if (!username || !password || !token || !/^[a-z0-9-]+\/[a-z0-9-]+$/iu.test(githubRepository ?? ""))
     throw new Error("registry credentials and GitHub release credentials are required");
-  const host = repository.split("/")[0];
   const notes = readFileSync("output/release/CHANGELOG.md", "utf8");
   const currentNotes = notes.split(/^## v[0-9]+$/mu)[1]?.trim();
   if (!notes.startsWith(`# Changelog\n\n## ${tag}\n`) || !currentNotes || Buffer.byteLength(notes) > 65_536)
     throw new Error("generated release notes do not match the requested release");
-  command("podman", ["login", host, "--username", username, "--password-stdin"], { input: password });
-  try {
-    const releaseRecord = await ensureDraft(tag, currentNotes, token, githubRepository, revision);
-    const existing = commandResult("podman", ["pull", "--policy", "always", `${repository}:${tag}`]);
-    let publishedImageId = imageId;
-    if (existing.status === 0) {
-      const existingId = canonicalImageId(
-        command("podman", ["image", "inspect", "--format", "{{.Id}}", `${repository}:${tag}`]).trim(),
+  return { repository, host: repository.split("/")[0], username, password, token, githubRepository, currentNotes };
+}
+
+async function publish(imageId, tag, { repository, token, githubRepository, currentNotes }, existing) {
+  await publishRelease({
+    existing,
+    version,
+    ensureDraft: (allowCreate) => ensureDraft(tag, currentNotes, token, githubRepository, revision, allowCreate),
+    pushVersioned: () => command("podman", ["push", imageId, `docker://${repository}:${tag}`]),
+    latestTag: () => latestReleaseVersion(token, githubRepository),
+    publishDraft: (record) => publishDraft(record, tag, currentNotes, token, githubRepository),
+    pushLatest: () => command("podman", ["push", imageId, `docker://${repository}:latest`]),
+    verifyLatest: () => {
+      command("podman", ["pull", "--policy", "always", `${repository}:latest`]);
+      const latestImageId = canonicalImageId(
+        command("podman", ["image", "inspect", "--format", "{{.Id}}", `${repository}:latest`]).trim(),
       );
-      if (existingId !== imageId) {
-        inspectImage(existingId, version, revision, tag);
-        command("podman", [
-          "run",
-          "--rm",
-          "--entrypoint",
-          "/opt/toktrak/bin/java",
-          existingId,
-          "-ea",
-          "-m",
-          "toktrak/toktrak.Main",
-          "--check-assets",
-        ]);
-        publishedImageId = existingId;
-      }
-    } else if (/manifest unknown|name unknown|manifest[^\n]*not found|manifest[^\n]*404/iu.test(existing.stderr)) {
-      command("podman", ["push", imageId, `docker://${repository}:${tag}`]);
-    } else {
-      throw new Error("cannot determine whether versioned image already exists");
-    }
-    await publishDraft(releaseRecord, token, githubRepository);
-    if (Number(release[1]) !== (await latestReleaseVersion(token, githubRepository)))
-      throw new Error("a newer release tag exists; refusing to move latest backwards");
-    command("podman", ["push", publishedImageId, `docker://${repository}:latest`]);
-  } finally {
-    command("podman", ["logout", host]);
-  }
+      if (latestImageId !== imageId) throw new Error("registry latest does not contain the verified versioned image");
+    },
+    markLatest: (record) => markLatest(record, tag, currentNotes, token, githubRepository),
+  });
 }
 
 async function latestReleaseVersion(token, githubRepository) {
@@ -289,7 +306,7 @@ async function latestReleaseVersion(token, githubRepository) {
   return Math.max(...versions);
 }
 
-async function ensureDraft(tag, notes, token, githubRepository, commit) {
+async function ensureDraft(tag, notes, token, githubRepository, commit, allowCreate) {
   const url = `https://api.github.com/repos/${githubRepository}/releases`;
   const headers = { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` };
   const existing = await fetch(`${url}/tags/${tag}`, { headers, signal: AbortSignal.timeout(15_000) });
@@ -308,6 +325,7 @@ async function ensureDraft(tag, notes, token, githubRepository, commit) {
     requireReleaseNotes(draft, tag, notes);
     return { id: draft.id, draft: true };
   }
+  if (!allowCreate) throw new Error("versioned image exists without frozen GitHub Release notes");
   const created = await fetch(url, {
     method: "POST",
     headers: { ...headers, "Content-Type": "application/json" },
@@ -326,8 +344,27 @@ function requireReleaseNotes(candidate, tag, notes) {
     throw new Error("GitHub Release differs from requested release");
 }
 
-async function publishDraft(record, token, githubRepository) {
+async function publishDraft(record, tag, notes, token, githubRepository) {
   if (!record.draft) return;
+  const published = await updateRelease(record, tag, notes, token, githubRepository, {
+    draft: false,
+    make_latest: "false",
+  });
+  if (published.draft) throw new Error("GitHub Release remained a draft after publication");
+}
+
+async function markLatest(record, tag, notes, token, githubRepository) {
+  const published = await updateRelease(record, tag, notes, token, githubRepository, { make_latest: "true" });
+  if (published.draft) throw new Error("GitHub latest Release is still a draft");
+  const response = await fetch(`https://api.github.com/repos/${githubRepository}/releases/latest`, {
+    headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok || (await response.json()).id !== record.id)
+    throw new Error("GitHub latest Release does not match the verified versioned image");
+}
+
+async function updateRelease(record, tag, notes, token, githubRepository, changes) {
   const response = await fetch(`https://api.github.com/repos/${githubRepository}/releases/${record.id}`, {
     method: "PATCH",
     headers: {
@@ -336,7 +373,10 @@ async function publishDraft(record, token, githubRepository) {
       "Content-Type": "application/json",
     },
     signal: AbortSignal.timeout(15_000),
-    body: JSON.stringify({ draft: false }),
+    body: JSON.stringify(changes),
   });
-  if (!response.ok) throw new Error(`GitHub Release publication failed: ${response.status}`);
+  if (!response.ok) throw new Error(`GitHub Release update failed: ${response.status}`);
+  const result = await response.json();
+  requireReleaseNotes(result, tag, notes);
+  return result;
 }

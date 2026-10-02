@@ -25,8 +25,8 @@ user unprivileged on the host.
 ## Image repository
 
 Set the GitHub Actions variable `TOKTRAK_IMAGE_REPOSITORY` to the private OCI
-repository. Set the GitHub Actions secrets `TOKTRAK_REGISTRY_USERNAME` and
-`TOKTRAK_REGISTRY_PASSWORD` to registry credentials scoped to that repository.
+repository. Set the GitHub Actions secrets `ISP_INSOFT_REGISTRY_CI_USER` and
+`ISP_INSOFT_REGISTRY_CI_PW` to registry credentials scoped to that repository.
 The CI runner must reach the private registry; this is not assumed for
 GitHub-hosted runners. The `ubuntu-26.04` runner provides Podman, but its
 package version is not pinned by Mise; validate runner behavior before trusting
@@ -149,8 +149,8 @@ a tag is not proof of a published image.
 If tag push reports failure, inspect the remote tag before retrying the same
 `mise run release`; never move or delete a published intent tag. If CI fails,
 repair the runner/registry issue and rerun the existing tag workflow rather than
-minting another version. If the versioned image already exists, CI refuses to
-overwrite a different image; investigate partial publication before proceeding.
-Only one publisher may run at a time, and a stale run must never move `:latest`
-backwards. Nightly deployment may poll `:latest` independently of the
-release-intent step.
+minting another version. A retry verifies and reuses an existing versioned image
+without rebuilding or overwriting it; mismatched image metadata requires
+investigation before proceeding. Only one publisher may run at a time, and a
+stale run must never move `:latest` backwards. Nightly deployment may poll
+`:latest` independently of the release-intent step.

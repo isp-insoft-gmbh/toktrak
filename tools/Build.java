@@ -121,6 +121,7 @@ public final class Build {
           ROOT.resolve("tools/golem.test.mjs"),
           ROOT.resolve("tools/java-runtime-version.test.mjs"),
           ROOT.resolve("tools/release-notes.test.mjs"),
+          ROOT.resolve("tools/release-publication.test.mjs"),
           ROOT.resolve("tools/update-dprint.test.mjs"),
           ROOT.resolve("tools/workflows.test.mjs"),
           ROOT.resolve(".claude/skills/file-upload/scripts/upload.test.mjs"));

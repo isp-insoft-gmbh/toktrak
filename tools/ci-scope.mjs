@@ -31,7 +31,9 @@ export function relevantChecks(paths) {
       path === "tools/java-runtime-version.mjs" ||
       path === "tools/java-runtime-version.test.mjs" ||
       path === "tools/release-notes.mjs" ||
-      path === "tools/release-notes.test.mjs"
+      path === "tools/release-notes.test.mjs" ||
+      path === "tools/release-publication.mjs" ||
+      path === "tools/release-publication.test.mjs"
     ) {
       selected.prod = true;
     } else if (
