@@ -1,5 +1,14 @@
 # Changelog
 
+## v3
+
+- Show per-agent dashboard usage instead of assigning totals to one source.
+- Keep team token totals accurate when many uploads are aggregated.
+- Repair existing macOS schedules and upload once daily at 09:00.
+- Limit concurrent identity-provider requests during sign-in.
+- Publish a verified `:latest` image alongside each immutable `:vN` release.
+- Recover `:latest` from a verified release tag after partial publication.
+
 ## v2
 
 - Keep scheduled tracker uploads working when native schedulers omit Node.js
