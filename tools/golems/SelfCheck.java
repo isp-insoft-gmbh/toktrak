@@ -676,8 +676,9 @@ public final class SelfCheck {
         "settings travel with the command",
         localCommand.stream().anyMatch(part -> part.contains("\"env\":{")));
     check(
-        "mcp disabled",
-        localCommand.contains("--strict-mcp-config") && localCommand.contains("{}"));
+        "mcp disabled with valid empty config",
+        localCommand.contains("--strict-mcp-config")
+            && localCommand.contains("{\"mcpServers\":{}}"));
     check("local host asks for nothing", localCommand.contains("dontAsk"));
     check("local host is not bypassed", !localCommand.contains("--dangerously-skip-permissions"));
 
@@ -787,13 +788,20 @@ public final class SelfCheck {
         "oversized JSON rejected", throwsRuntime(() -> Json.parse(" ".repeat(Json.BYTES_MAX + 1))));
 
     var silent =
-        Agent.interpret(new Proc.Result(1, "nothing useful", "it broke", Proc.Stop.NONE), local);
+        Agent.interpret(
+            new Proc.Result(1, "nothing useful", "private-token-value", Proc.Stop.NONE), local);
     check(
         "a run without a result is readable", "none".equals(silent.subtype()) && silent.isError());
     check(
         "a run without a result counts nothing",
         silent.turns() == 0 && silent.costUsd() == 0 && silent.inputTokens() == 0);
-    check("a run without a result keeps its error", silent.narrative().contains("it broke"));
+    check("stderr withheld from narrative", silent.narrative().contains("stderr withheld"));
+    check(
+        "stderr withheld from public report",
+        !new Report("qa", new Outcome.Blocked("agent failed"))
+            .narrative(silent.narrative())
+            .markdown()
+            .contains("private-token-value"));
 
     var plain = Agent.interpretPlain(new Proc.Result(0, "finished", "", Proc.Stop.NONE));
     check("text harness response succeeds", plain.succeeded());

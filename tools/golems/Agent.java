@@ -257,7 +257,7 @@ final class Agent {
     command.add(settings(run));
     command.add("--strict-mcp-config");
     command.add("--mcp-config");
-    command.add("{}");
+    command.add("{\"mcpServers\":{}}");
     command.add("--debug-file");
     command.add(run.directory().resolve(DEBUG_FILE).toString());
     golem
@@ -400,7 +400,7 @@ final class Agent {
   static Result interpret(Proc.Result process, Run run) {
     var raw = resultLine(process.out());
     if (raw.isEmpty()) {
-      return Result.none(process, process.err().strip(), process.out());
+      return Result.none(process, "agent returned no result (stderr withheld)", process.out());
     }
 
     Text.write(run.directory().resolve(RESULT_FILE), raw);
