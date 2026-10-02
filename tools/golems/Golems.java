@@ -262,15 +262,7 @@ public final class Golems {
     group("agent");
     line("model", golem.model() + " / " + golem.effort());
     var agent = Agent.run(golem, workspace, run);
-    line(
-        "result",
-        String.format(
-            Locale.ROOT,
-            "exit %d, subtype %s, %d turns, $%.2f",
-            agent.exit(),
-            agent.subtype(),
-            agent.turns(),
-            agent.costUsd()));
+    line("result", agentSummary(golem.harness(), agent));
     endGroup();
 
     group("verify");
@@ -284,6 +276,14 @@ public final class Golems {
 
     var progress = new Progress(candidate, prepared, agent, work);
     return finish(golem, run, progress, decide(agent, guards), started);
+  }
+
+  /// A result without structured usage must not invent zero turns or zero cost in the console.
+  static String agentSummary(Golem.Harness harness, Agent.Result agent) {
+    assert harness != null && agent != null : "summarizing needs a harness and result";
+    var status = "exit " + agent.exit() + ", subtype " + agent.subtype();
+    if (!agent.hasUsage(harness)) return status + ", usage not reported";
+    return status + String.format(Locale.ROOT, ", %d turns, $%.2f", agent.turns(), agent.costUsd());
   }
 
   /// What a run produced once it got past preflight.

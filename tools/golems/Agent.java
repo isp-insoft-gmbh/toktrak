@@ -117,6 +117,10 @@ final class Agent {
       return exit == 0 && stopped == Proc.Stop.NONE && SUCCESS.equals(subtype);
     }
 
+    boolean hasUsage(Golem.Harness harness) {
+      return harness == Golem.Harness.CLAUDE && !NO_RESULT.equals(subtype);
+    }
+
     /// A run that produced no readable result.
     ///
     /// Every counter is zero because nothing was counted, not because nothing happened. What it
