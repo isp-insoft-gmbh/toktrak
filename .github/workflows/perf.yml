@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   perf:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     env:
       PERF_RUNNER_LABEL: ubuntu-24.04

@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   prod:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     env:
       TOKTRAK_IMAGE_REPOSITORY: localhost/toktrak
