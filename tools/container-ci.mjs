@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { javaRuntimeVersion } from "./java-runtime-version.mjs";
 
 const arguments_ = process.argv.slice(2);
 const [operation, displayVersion] = arguments_;
@@ -32,7 +33,7 @@ const builder = /^FROM \S+:([1-9][0-9]{0,2})-jdk@sha256:[0-9a-f]{64} AS build$/m
 if (Buffer.byteLength(containerfile) > 64 * 1024 || !builder)
   throw new Error("Containerfile builder must use a feature-tagged, digest-pinned JDK image");
 const hostJava = commandResult("java", ["-XshowSettings:properties", "-version"]);
-if (hostJava.status !== 0 || Number(javaRuntimeVersion(hostJava.stderr).split(".")[0]) !== Number(builder[1]))
+if (hostJava.status !== 0 || Number.parseInt(javaRuntimeVersion(hostJava.stderr), 10) !== Number(builder[1]))
   throw new Error("Containerfile builder Java feature differs from CI build Java");
 if (command("podman", ["info", "--format", "{{.Host.Security.Rootless}}"]).trim() !== "true") {
   throw new Error("container verification requires rootless Podman");
@@ -150,12 +151,6 @@ function command(file, args, options = {}) {
   const result = commandResult(file, args, options);
   if (result.status !== 0) throw new Error(`${file} ${args[0]} failed with exit code ${result.status}`);
   return result.stdout;
-}
-
-function javaRuntimeVersion(properties) {
-  const matches = [...properties.matchAll(/^\s*java\.runtime\.version = (\S+)\s*$/gmu)];
-  if (matches.length !== 1) throw new Error("Java runtime version is missing or ambiguous");
-  return matches[0][1].replace(/-LTS$/u, "");
 }
 
 function canonicalImageId(value) {

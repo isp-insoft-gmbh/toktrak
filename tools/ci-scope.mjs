@@ -28,6 +28,8 @@ export function relevantChecks(paths) {
       path === ".github/workflows/prod.yml" ||
       path === ".github/workflows/release.yml" ||
       path === "tools/container-ci.mjs" ||
+      path === "tools/java-runtime-version.mjs" ||
+      path === "tools/java-runtime-version.test.mjs" ||
       path === "tools/release-notes.mjs" ||
       path === "tools/release-notes.test.mjs"
     ) {

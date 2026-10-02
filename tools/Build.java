@@ -119,6 +119,7 @@ public final class Build {
   private static final List<Path> GOLEM_TEST_SOURCES =
       List.of(
           ROOT.resolve("tools/golem.test.mjs"),
+          ROOT.resolve("tools/java-runtime-version.test.mjs"),
           ROOT.resolve("tools/release-notes.test.mjs"),
           ROOT.resolve("tools/update-dprint.test.mjs"),
           ROOT.resolve("tools/workflows.test.mjs"),
