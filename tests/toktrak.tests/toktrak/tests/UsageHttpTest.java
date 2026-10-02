@@ -258,6 +258,49 @@ final class UsageHttpTest {
     }
   }
 
+  @Test
+  void given_trackerUploadWithExtremeExponent_when_uploading_then_keepsAnalyticsAvailable()
+      throws Exception {
+    try (var app = start()) {
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      String cookie = login(client, base);
+      String token = createTrackerToken(client, base, cookie);
+
+      HttpResponse<String> uploaded =
+          send(
+              client,
+              base.resolve("/api/usage"),
+              "POST",
+              "application/json",
+              null,
+              usage("2026-07-14T23:00:00Z", "1E+2147483647", true),
+              token);
+      assertEquals(400, uploaded.statusCode(), uploaded.body());
+      assertTrue(uploaded.body().contains("\"code\":\"invalid_usage\""), uploaded.body());
+      assertTrue(app.projection().usageRows(toktrak.usage.UsageUpload.Report.DAILY).isEmpty());
+      assertFalse(Files.readString(directory.resolve("events.ndjson")).contains("usage-uploaded"));
+
+      HttpResponse<String> analytics =
+          send(client, base.resolve("/api/analytics"), "GET", null, cookie, null);
+      assertEquals(200, analytics.statusCode(), analytics.body());
+      assertEquals(200, send(client, base.resolve("/"), "GET", null, cookie, null).statusCode());
+      assertEquals(
+          200, send(client, base.resolve("/health"), "GET", null, null, null).statusCode());
+      assertEquals(
+          200,
+          send(
+                  client,
+                  base.resolve("/api/usage"),
+                  "POST",
+                  "application/json",
+                  null,
+                  usage("2026-07-14T23:00:00Z", "1", true),
+                  token)
+              .statusCode());
+    }
+  }
+
   private App start() {
     return App.start(
         new String[] {"--clock", CLOCK},

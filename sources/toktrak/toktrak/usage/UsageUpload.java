@@ -8,7 +8,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -27,6 +29,8 @@ public final class UsageUpload {
   private static final int ERROR_CHARACTERS_MAX = 2_048;
   private static final int KEY_CHARACTERS_MAX = 2_048;
   private static final int REPORT_ROWS_MAX = 20_000;
+  private static final int UPLOAD_DECIMAL_DIGITS_MAX = 256;
+  private static final int UPLOAD_CONTAINERS_MAX = 100_000;
 
   private final Map<String, Object> data;
   private final String trackerVersion;
@@ -67,7 +71,36 @@ public final class UsageUpload {
 
   public static UsageUpload parse(byte[] input, Instant receivedAt) {
     Objects.requireNonNull(input, "input");
-    return parse(Json.read(input, Map.class), receivedAt);
+    UsageUpload upload = parse(Json.read(input, Map.class), receivedAt);
+    requireUploadDecimalBounds(upload.data);
+    return upload;
+  }
+
+  // Admission only: replay must continue to accept the original persisted number format.
+  private static void requireUploadDecimalBounds(Map<String, Object> data) {
+    assert data != null;
+    var pending = new ArrayDeque<Collection<?>>();
+    pending.addLast(data.values());
+    int containers = 0;
+    while (!pending.isEmpty() && containers < UPLOAD_CONTAINERS_MAX) {
+      containers = Math.addExact(containers, 1);
+      for (Object value : pending.removeFirst()) {
+        if (value instanceof Map<?, ?> map) {
+          pending.addLast(map.values());
+        } else if (value instanceof Collection<?> collection) {
+          pending.addLast(collection);
+        } else if (value instanceof BigDecimal decimal
+            && (decimal.scale() > UPLOAD_DECIMAL_DIGITS_MAX
+                || (long) decimal.precision() - decimal.scale() > UPLOAD_DECIMAL_DIGITS_MAX)) {
+          throw new IllegalArgumentException(
+              "usage decimal exceeds "
+                  + UPLOAD_DECIMAL_DIGITS_MAX
+                  + " integer or fractional digits");
+        }
+      }
+    }
+    // parse(Map, Instant) has already validated the graph's size, depth, and lack of cycles.
+    assert pending.isEmpty();
   }
 
   public static UsageUpload parse(Map<?, ?> input, Instant receivedAt) {
