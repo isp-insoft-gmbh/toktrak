@@ -3,8 +3,15 @@ package toktrak.tests;
 import static org.junit.jupiter.api.Assertions.*;
 import static toktrak.store.EventTypes.*;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import toktrak.projection.Projection;
 import toktrak.store.EventEnvelope;
@@ -264,5 +271,263 @@ final class ProjectionTest {
     projection.apply(raw);
     projection.apply(snap);
     assertEquals(1, projection.eventCount());
+  }
+
+  @Test
+  void given_waiterAtCurrentRevision_when_projectionCommits_then_wakesWithNewRevision()
+      throws Exception {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    var projection = Projection.empty();
+    projection.apply(EventEnvelope.create("first", at, "system", Map.of()));
+    var observed = new AtomicLong(-1);
+    Thread waiter =
+        Thread.ofPlatform()
+            .start(
+                () -> {
+                  try {
+                    observed.set(projection.awaitRevision(1, Duration.ofSeconds(30)));
+                  } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                  }
+                });
+    assertTrue(awaitTimedWaiting(waiter), "waiter must block on the projection monitor");
+    assertEquals(-1, observed.get());
+
+    projection.apply(EventEnvelope.create("second", at, "system", Map.of()));
+    waiter.join(Duration.ofSeconds(2).toMillis());
+
+    assertFalse(waiter.isAlive(), "commit must wake the waiter");
+    assertEquals(2, observed.get());
+  }
+
+  @Test
+  void given_waiterAtCurrentRevision_when_timeoutElapses_then_returnsUnchangedRevision()
+      throws Exception {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    var projection = Projection.empty();
+    projection.apply(EventEnvelope.create("first", at, "system", Map.of()));
+    var timeout = Duration.ofMillis(50);
+
+    long started = System.nanoTime();
+    long revision = projection.awaitRevision(1, timeout);
+    long elapsedNanos = System.nanoTime() - started;
+
+    assertEquals(1, revision);
+    assertTrue(elapsedNanos >= timeout.toNanos(), "wait must honour the full timeout");
+    assertEquals(1, projection.awaitRevision(0, timeout));
+    assertEquals(0, Projection.empty().awaitRevision(0, Duration.ofMillis(1)));
+  }
+
+  @Test
+  void given_revisionWaitArguments_when_outsideDocumentedBounds_then_rejectsThem() {
+    var projection = Projection.empty();
+    assertThrows(
+        IllegalArgumentException.class, () -> projection.awaitRevision(-1, Duration.ofSeconds(1)));
+    assertThrows(IllegalArgumentException.class, () -> projection.awaitRevision(0, Duration.ZERO));
+    assertThrows(
+        IllegalArgumentException.class, () -> projection.awaitRevision(0, Duration.ofMillis(-1)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> projection.awaitRevision(0, Duration.ofSeconds(30).plusNanos(1)));
+  }
+
+  @Test
+  void given_usersAndTokens_when_snapshottingAndReplaying_then_restoresSortedState() {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    var projection = Projection.empty();
+    for (int index = 6; index >= 1; index--) {
+      projection.apply(
+          EventEnvelope.create(IDENTITY_USER_AUTHENTICATED, at, "actor", user("subject-" + index)));
+    }
+    var owner = new Projection.UserKey("https://issuer.example", "subject-3");
+    for (int index = 6; index >= 1; index--) {
+      projection.apply(
+          EventEnvelope.create(
+              IDENTITY_TRACKER_TOKEN_CREATED,
+              at.plusSeconds(index),
+              "actor",
+              token("subject-3", new UUID(0, index), (byte) index)));
+    }
+    projection.apply(
+        EventEnvelope.create(
+            IDENTITY_USER_DEACTIVATED,
+            at,
+            "actor",
+            Map.of("issuer", "https://issuer.example", "subject", "subject-2")));
+    var inactive = new Projection.UserKey("https://issuer.example", "subject-2");
+    assertTrue(projection.user(inactive).isPresent());
+    assertTrue(projection.activeUser(inactive).isEmpty());
+
+    var subjects = projection.users().stream().map(user -> user.key().subject()).toList();
+    assertEquals(
+        List.of("subject-1", "subject-2", "subject-3", "subject-4", "subject-5", "subject-6"),
+        subjects);
+    var tokenIds =
+        projection.trackerTokens(owner).stream().map(Projection.TrackerToken::id).toList();
+    assertEquals(
+        List.of(
+            new UUID(0, 1),
+            new UUID(0, 2),
+            new UUID(0, 3),
+            new UUID(0, 4),
+            new UUID(0, 5),
+            new UUID(0, 6)),
+        tokenIds);
+
+    Map<String, Object> snapshot = projection.snapshotData();
+    assertEquals(13, snapshot.get("eventCount"));
+    @SuppressWarnings("unchecked")
+    var snapshotUsers = (List<Map<String, Object>>) snapshot.get("users");
+    assertEquals(subjects, snapshotUsers.stream().map(user -> user.get("subject")).toList());
+    assertEquals(false, snapshotUsers.get(1).get("active"));
+    @SuppressWarnings("unchecked")
+    var snapshotTokens = (List<Map<String, Object>>) snapshot.get("trackerTokens");
+    assertEquals(
+        tokenIds.stream().map(UUID::toString).toList(),
+        snapshotTokens.stream().map(token -> token.get("tokenId")).toList());
+
+    var restored = Projection.empty();
+    restored.apply(EventEnvelope.create(PROJECTION_SNAPSHOT, at, "system", snapshot));
+    assertEquals(13, restored.eventCount());
+    assertEquals(projection.users(), restored.users());
+    assertEquals(projection.trackerTokens(owner), restored.trackerTokens(owner));
+    assertTrue(restored.activeUser(inactive).isEmpty());
+    assertEquals(snapshot, restored.snapshotData());
+  }
+
+  @Test
+  void given_snapshotWithNonNumericVersion_when_applying_then_ignoresSnapshot() {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    var projection = Projection.empty();
+    projection.apply(EventEnvelope.create("dev-test", at, "system", Map.of()));
+    projection.apply(
+        EventEnvelope.create(
+            PROJECTION_SNAPSHOT,
+            at,
+            "system",
+            Map.of("projectionVersion", Integer.toString(Projection.VERSION), "eventCount", 100)));
+    assertEquals(1, projection.eventCount());
+    assertEquals(2, projection.revision());
+  }
+
+  @Test
+  void given_userLimit_when_snapshottingAndAuthenticating_then_acceptsExactlyTenThousandUsers() {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    var users = new ArrayList<Map<String, Object>>();
+    for (int index = 0; index < 10_000; index++) {
+      users.add(snapshotUser("subject-" + index, at));
+    }
+    var projection = Projection.empty();
+    projection.apply(EventEnvelope.create(PROJECTION_SNAPSHOT, at, "system", snapshot(users)));
+    assertEquals(10_000, projection.users().size());
+
+    projection.apply(
+        EventEnvelope.create(IDENTITY_USER_AUTHENTICATED, at, "actor", user("subject-0")));
+    assertEquals(10_000, projection.users().size());
+    var overflow =
+        EventEnvelope.create(IDENTITY_USER_AUTHENTICATED, at, "actor", user("subject-10000"));
+    var exception = assertThrows(IllegalStateException.class, () -> projection.apply(overflow));
+    assertEquals("users exceed 10000", exception.getMessage());
+
+    users.add(snapshotUser("subject-10000", at));
+    var oversized = EventEnvelope.create(PROJECTION_SNAPSHOT, at, "system", snapshot(users));
+    var rejected =
+        assertThrows(IllegalStateException.class, () -> Projection.empty().apply(oversized));
+    assertEquals("projection snapshot exceeds collection limits", rejected.getMessage());
+  }
+
+  @Test
+  void given_stringFieldsAtCharacterLimits_when_applying_then_acceptsExactLimitOnly() {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    var projection = Projection.empty();
+    projection.apply(
+        EventEnvelope.create(IDENTITY_USER_AUTHENTICATED, at, "actor", user("subject-1")));
+    var exact = new HashMap<>(token("subject-1", new UUID(0, 1), (byte) 1));
+    exact.put("label", "l".repeat(128));
+    projection.apply(EventEnvelope.create(IDENTITY_TRACKER_TOKEN_CREATED, at, "actor", exact));
+    assertEquals(128, projection.trackerToken(new UUID(0, 1)).orElseThrow().label().length());
+
+    var over = new HashMap<>(token("subject-1", new UUID(0, 2), (byte) 2));
+    over.put("label", "l".repeat(129));
+    var event = EventEnvelope.create(IDENTITY_TRACKER_TOKEN_CREATED, at, "actor", over);
+    var exception = assertThrows(IllegalStateException.class, () -> projection.apply(event));
+    assertEquals("invalid label", exception.getMessage());
+  }
+
+  @Test
+  void given_fxRateAtTenEurPerUsd_when_applying_then_acceptsExactUpperBound() {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    var projection = Projection.empty();
+    projection.apply(
+        EventEnvelope.create(
+            FX_RATE_UPDATED, at, "system", Map.of("date", "2026-07-10", "eurPerUsd", "10")));
+    assertEquals(
+        0, projection.fxRate().orElseThrow().eurPerUsd().compareTo(java.math.BigDecimal.TEN));
+
+    var over =
+        EventEnvelope.create(
+            FX_RATE_UPDATED, at, "system", Map.of("date", "2026-07-10", "eurPerUsd", "10.01"));
+    var exception = assertThrows(IllegalStateException.class, () -> projection.apply(over));
+    assertEquals("FX rate is invalid", exception.getMessage());
+    assertEquals(
+        0, projection.fxRate().orElseThrow().eurPerUsd().compareTo(java.math.BigDecimal.TEN));
+  }
+
+  private static boolean awaitTimedWaiting(Thread thread) throws InterruptedException {
+    for (int attempt = 0; attempt < 2_000; attempt++) {
+      if (thread.getState() == Thread.State.TIMED_WAITING) return true;
+      if (!thread.isAlive()) return false;
+      Thread.sleep(1);
+    }
+    return false;
+  }
+
+  private static Map<String, Object> user(String subject) {
+    return Map.of(
+        "issuer",
+        "https://issuer.example",
+        "subject",
+        subject,
+        "email",
+        subject + "@example.com",
+        "displayName",
+        "User " + subject,
+        "color",
+        "#a8dadc");
+  }
+
+  private static Map<String, Object> snapshotUser(String subject, Instant at) {
+    var data = new HashMap<>(user(subject));
+    data.put("active", true);
+    data.put("authenticatedAt", at.toString());
+    return Map.copyOf(data);
+  }
+
+  private static Map<String, Object> token(String subject, UUID id, byte seed) {
+    var digest = new byte[32];
+    digest[0] = seed;
+    return Map.of(
+        "issuer",
+        "https://issuer.example",
+        "subject",
+        subject,
+        "tokenId",
+        id.toString(),
+        "label",
+        "Laptop",
+        "digest",
+        Base64.getUrlEncoder().withoutPadding().encodeToString(digest));
+  }
+
+  private static Map<String, Object> snapshot(List<Map<String, Object>> users) {
+    return Map.of(
+        "projectionVersion",
+        Projection.VERSION,
+        "eventCount",
+        1,
+        "users",
+        List.copyOf(users),
+        "trackerTokens",
+        List.of());
   }
 }
