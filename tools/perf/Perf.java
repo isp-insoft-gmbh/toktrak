@@ -61,8 +61,11 @@ public final class Perf {
       return;
     }
     List<Benchmark> selected = selectBenchmarks(benchmarks(), List.of(args));
-    Path runDirectory = OUTPUT.resolve(RUN_DIRECTORY_FORMAT.format(Instant.now()));
-    Files.createDirectories(runDirectory);
+    Path runDirectory =
+        OUTPUT.resolve(
+            RUN_DIRECTORY_FORMAT.format(Instant.now()) + "-" + ProcessHandle.current().pid());
+    Files.createDirectories(OUTPUT);
+    Files.createDirectory(runDirectory);
     Host host = host();
     Files.writeString(runDirectory.resolve("host.json"), host.json(), StandardCharsets.UTF_8);
     List<Result> results = new ArrayList<>();

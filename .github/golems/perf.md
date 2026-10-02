@@ -34,8 +34,12 @@ host class.
 
 New benchmarks start observational. A workflow may fail on broken perf tooling,
 missing artifacts, invalid benchmark definitions, or benchmark command failure.
-A workflow must not fail solely because performance got slower until stable
-same-host history and explicit thresholds exist.
+PR CI also fails on a confirmed ≥2× slowdown in a comparable workload measured
+on the same runner against the merge commit's first parent. Changed or new
+benchmarks remain observational until comparable; update source and fixture
+identity checks in `tools/perf/compare.mjs` when adding benchmarks. Trunk runs
+remain observational. Do not introduce narrower slowdown thresholds without
+stable evidence.
 
 Compare only the same `hostKey`: runner label, OS image, CPU model, and core
 count. Record full environment separately: Java, Node, benchmark tool versions,
