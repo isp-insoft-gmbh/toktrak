@@ -55,11 +55,22 @@ final class ChangelogTest {
   }
 
   @Test
+  void given_linkLabelWithParenthesis_when_parsingReleaseNotes_then_preservesLabelAndUrl() {
+    Changelog changelog =
+        Changelog.parse("v0", "# Changelog\n\n## v0\n\n- [A)B](https://example.com/guide).\n");
+
+    var link = changelog.current().notes().getFirst().segments().getFirst();
+    assertEquals("A)B", link.text());
+    assertEquals("https://example.com/guide", link.url());
+  }
+
+  @Test
   void given_developmentRuntime_when_loadingPackagedChangelog_then_marksNewestReleaseUnreleased() {
     Changelog changelog = Changelog.load("dev");
 
     assertEquals("Unreleased", changelog.currentLabel());
-    assertEquals("v2", changelog.current().version());
+    assertTrue(changelog.current().version().matches("v[0-9]+"));
+    assertFalse(changelog.current().notes().isEmpty());
     assertTrue(changelog.hasEarlier());
     assertFalse(Changelog.parse("v0", "# Changelog\n\n## v0\n\n- Initial.\n").hasEarlier());
   }

@@ -171,7 +171,6 @@ test("given_fakeCcusageAndServer_when_runningFullAndDaily_then_retriesUploadsPar
   assert.doesNotMatch(daily, /DeprecationWarning/u);
   assert.match(full, /starting full mode on /u);
   assert.match(full, /collecting full usage snapshot/u);
-  assert.match(full, /reading daily usage with ccusage@20\.0\.17/u);
   assert.match(full, /daily usage ready \(1 rows\)/u);
   assert.match(full, /3\/3 usage reports ready/u);
   assert.match(full, /reading codex daily detail/u);
@@ -188,6 +187,10 @@ test("given_fakeCcusageAndServer_when_runningFullAndDaily_then_retriesUploadsPar
   assert.equal(usageRequests, 3);
   assert.equal(updateRequests, 2);
   assert.equal(uploads.length, 2);
+  const ccusageVersion = JSON.parse(uploads[0]).ccusageVersion;
+  assert.match(ccusageVersion, /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u);
+  assert.equal(JSON.parse(uploads[1]).ccusageVersion, ccusageVersion);
+  assert.ok(full.includes(`reading daily usage with ccusage@${ccusageVersion}`));
   assert.ok(uploads[0].includes('"full":true'));
   assert.ok(uploads[0].includes('"session":{"ok":true'));
   assert.ok(
@@ -207,7 +210,7 @@ test("given_fakeCcusageAndServer_when_runningFullAndDaily_then_retriesUploadsPar
   assert.equal(commands.length, 10);
   assert.ok(commands.slice(0, 5).every((value) => !value.includes("--since")));
   assert.ok(commands.slice(5).every((value) => value.includes("--since")));
-  assert.ok(commands.every((value) => value.includes("ccusage@20.0.17")));
+  assert.ok(commands.every((value) => value.split(/\s+/u)[1] === `ccusage@${ccusageVersion}`));
   assert.deepEqual(await lines(piLog), [...Array(5).fill(environmentPiSessions), ...Array(5).fill(piSessions)]);
   assert.equal(serverFailure, undefined);
 });

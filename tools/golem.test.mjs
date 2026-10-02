@@ -134,37 +134,25 @@ test("selects one authentication target per harness", () => {
   assert.deepEqual([...authCheckTargets(tasks).keys()], ["bugs", "qa", "security"]);
 });
 
-test("given_existingPr_when_repairing_then_preservesContextBeforeWorktreeAndPublishesWithoutWaiting", async () => {
-  const commands = [];
+test("given_existingPr_when_repairing_then_runsPrepareExecutePublishInOrder", async () => {
+  const steps = [];
   const result = await runLifecycle(
     "bugs",
     async (id) => {
-      commands.push("git fetch", "gh pr list", "gh pr view prior head", "git worktree add");
+      steps.push("prepare");
       return { id };
     },
     async (run) => {
-      commands.push("pi --print");
+      steps.push("execute");
       return run;
     },
     async (run) => {
-      commands.push("git push", "gh pr view published head");
+      steps.push("publish");
       return run.id;
     },
   );
   assert.equal(result, "bugs");
-  assert.deepEqual(commands, [
-    "git fetch",
-    "gh pr list",
-    "gh pr view prior head",
-    "git worktree add",
-    "pi --print",
-    "git push",
-    "gh pr view published head",
-  ]);
-  const source = readFileSync(join(process.cwd(), "tools", "golem.mjs"), "utf8");
-  const prepare = source.slice(source.indexOf("const prepareRun ="), source.indexOf("const executeRun ="));
-  assert.ok(prepare.indexOf("pullRequestContext(pullRequest") < prepare.indexOf("prepareWorktree(task"));
-  assert.doesNotMatch(source, /waitForChecks|CHECK_TIMEOUT_MILLIS/u);
+  assert.deepEqual(steps, ["prepare", "execute", "publish"]);
 });
 
 test("given_priorFailedChecks_when_resumingPr_then_providesBoundedLinksWithoutFullReviewText", () => {

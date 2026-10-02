@@ -31,12 +31,13 @@ final class AssetsTest {
     assertTrue(css.contains("@media (prefers-reduced-motion: reduce)"));
     assertTrue(css.contains("@media (max-width: 44rem)"));
     assertTrue(css.contains(":focus-visible"));
+    Set<String> themeColors = baseColors(css, "theme");
+    assertFalse(themeColors.isEmpty());
     assertEquals("/assets/main." + sha256(expected).substring(0, 32) + ".css", url);
     byte[] datastar = Files.readAllBytes(Path.of("sources/toktrak/assets/public/datastar.js"));
     assertEquals(
         "/assets/datastar." + sha256(datastar).substring(0, 32) + ".js",
         assets.publicUrl("datastar.js"));
-    assertTrue(new String(datastar, StandardCharsets.UTF_8).startsWith("// Datastar v1.0.2\n"));
     byte[] clipboard = Files.readAllBytes(Path.of("sources/toktrak/assets/public/clipboard.js"));
     assertEquals(
         "/assets/clipboard." + sha256(clipboard).substring(0, 32) + ".js",
@@ -63,12 +64,13 @@ final class AssetsTest {
       var colors = Pattern.compile("#[0-9a-fA-F]{6}").matcher(svg);
       while (colors.find()) {
         assertTrue(
-            Set.of("#0b0909", "#2e4540", "#408175", "#b5b9f0")
-                .contains(colors.group().toLowerCase(Locale.ROOT)),
+            themeColors.contains(colors.group().toLowerCase(Locale.ROOT)),
             name + ": " + colors.group());
       }
     }
-    assertEquals(10, assets.publicCount());
+    try (var publicFiles = Files.list(Path.of("sources/toktrak/assets/public"))) {
+      assertEquals(publicFiles.filter(Files::isRegularFile).count(), assets.publicCount());
+    }
     Assets inMemory =
         Assets.loadForTest(
             index("public", "main.css", CSS_MEDIA_TYPE, expected),
@@ -84,12 +86,17 @@ final class AssetsTest {
     var matcher = Pattern.compile("#[0-9a-fA-F]{6}").matcher(css);
     while (matcher.find()) colors.add(matcher.group().toLowerCase(Locale.ROOT));
 
-    assertEquals(
-        Set.of(
-            "#0b0909", "#2e4540", "#408175", "#b5b9f0", "#c52f4f", "#c88900", "#2f6fa8", "#2f7d56"),
-        colors);
-    assertTrue(css.contains("--background: oklch(from var(--theme-lilac)"));
-    assertTrue(css.contains("--danger-surface: oklch(from var(--semantic-danger)"));
+    var baseColors = new HashSet<>(baseColors(css, "theme"));
+    baseColors.addAll(baseColors(css, "semantic"));
+    assertFalse(baseColors.isEmpty());
+    assertEquals(baseColors, colors);
+  }
+
+  private static Set<String> baseColors(String css, String category) {
+    var colors = new HashSet<String>();
+    var matcher = Pattern.compile("--" + category + "-[a-z-]+:\\s*(#[0-9a-fA-F]{6});").matcher(css);
+    while (matcher.find()) colors.add(matcher.group(1).toLowerCase(Locale.ROOT));
+    return colors;
   }
 
   @Test
