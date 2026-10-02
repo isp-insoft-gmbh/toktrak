@@ -787,6 +787,25 @@ public final class SelfCheck {
     check(
         "oversized JSON rejected", throwsRuntime(() -> Json.parse(" ".repeat(Json.BYTES_MAX + 1))));
 
+    // Adapted from nst/JSONTestSuite/test_parsing (MIT): y_string_u+2028_line_sep,
+    // n_number_0.3e+, and n_string_escaped_ctrl_char_tab. Escaped-key aliases and
+    // the depth boundary exercise TokTrak's stricter local limits.
+    var separator = "\u2028";
+    check(
+        "line separator inside JSON string accepted",
+        Json.parse("[\"" + separator + "\"]")
+            .equals(new Json.ArrayValue(List.of(new Json.StringValue(separator)))));
+    check("exponent sign needs a digit", throwsRuntime(() -> Json.parse("[0.3e+]")));
+    check(
+        "escaped literal tab rejected",
+        throwsRuntime(() -> Json.parse("[\"" + "\\" + "\t" + "\"]")));
+    check(
+        "escaped duplicate key rejected",
+        throwsRuntime(() -> Json.parse("{\"a\":0,\"\\u0061\":1}")));
+    var deepest = "[".repeat(Json.DEPTH_MAX) + "0" + "]".repeat(Json.DEPTH_MAX);
+    check("exact nesting limit accepted", Json.parse(deepest) instanceof Json.ArrayValue);
+    check("excess nesting rejected", throwsRuntime(() -> Json.parse("[" + deepest + "]")));
+
     var silent =
         Agent.interpret(
             new Proc.Result(1, "nothing useful", "private-token-value", Proc.Stop.NONE), local);
