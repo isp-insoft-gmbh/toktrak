@@ -34,9 +34,6 @@ final class Proc {
   /// down.
   private static final Duration GRACE = Duration.ofSeconds(10);
 
-  /// How long the interrupt helper itself may take. It either signals at once or it is not there.
-  private static final Duration KILL_BUDGET = Duration.ofSeconds(5);
-
   /// Default budget for a command the orchestrator expects to succeed quickly.
   private static final Duration CAPTURE_BUDGET = Duration.ofMinutes(5);
 
@@ -159,60 +156,23 @@ final class Proc {
           String.join(" ", command)
               + " failed with "
               + result.exit()
-              + System.lineSeparator()
-              + result.err());
+              + " (stderr withheld to avoid exposing credentials)");
     }
     return result.out().strip();
   }
 
-  /// Ends a process and everything it started.
+  /// Stops the child and its descendants using the JDK only.
   ///
-  /// The escalation is deliberate: an interrupt lets the agent close the turn it is in, a terminate
-  /// makes it stop, and only then is the remaining tree destroyed. Descendants are collected before
-  /// signalling, because a dying parent orphans them and they would otherwise survive the run.
+  /// Capture descendants first so an exiting parent cannot orphan them; terminate gracefully, then
+  /// force any process that still lives after the bounded grace period.
   private static void terminate(Process process) throws InterruptedException {
     var descendants = process.descendants().toList();
-    // The grace period is only spent when there is something to be graceful
-    // about. Where no interrupt was delivered, waiting for a reaction to it costs
-    // the full period and changes nothing, so the escalation starts one step
-    // later instead.
-    if (interrupt(process.pid()) == Signal.SENT
-        && process.waitFor(GRACE.toMillis(), TimeUnit.MILLISECONDS)) {
-      descendants.forEach(ProcessHandle::destroyForcibly);
-      return;
-    }
     process.destroy();
     if (!process.waitFor(GRACE.toMillis(), TimeUnit.MILLISECONDS)) {
       process.destroyForcibly();
       process.waitFor();
     }
     descendants.forEach(ProcessHandle::destroyForcibly);
-  }
-
-  /// Whether the polite stop reached the process at all.
-  private enum Signal {
-    SENT,
-    UNAVAILABLE
-  }
-
-  /// Sends SIGINT where the platform has it.
-  ///
-  /// Java offers no portable interrupt, so this shells out on POSIX. On Windows, and wherever
-  /// `kill` is missing, there is nothing to send and the caller is told so rather than left waiting
-  /// for an answer.
-  private static Signal interrupt(long pid) {
-    if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows")) {
-      return Signal.UNAVAILABLE;
-    }
-    try {
-      var kill = new ProcessBuilder("kill", "-INT", Long.toString(pid)).start();
-      return kill.waitFor(KILL_BUDGET.toSeconds(), TimeUnit.SECONDS) && kill.exitValue() == 0
-          ? Signal.SENT
-          : Signal.UNAVAILABLE;
-    } catch (IOException | InterruptedException unavailable) {
-      // The forceful path is the guarantee; a missing kill only skips a courtesy.
-      return Signal.UNAVAILABLE;
-    }
   }
 
   /// Drains one stream into a bounded buffer.

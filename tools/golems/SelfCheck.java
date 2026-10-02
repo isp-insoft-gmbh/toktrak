@@ -370,9 +370,8 @@ public final class SelfCheck {
             budget);
     var elapsed = Duration.ofNanos(System.nanoTime() - started);
     check("timeout is recorded", hang.stopped() == Proc.Stop.TIMEOUT);
-    // Stopping a hung child must not cost a grace period per escalation step it
-    // never took. Where no interrupt can be delivered, waiting for a reaction to
-    // it is pure delay, and this is the check that keeps that delay gone.
+    // Stopping a hung child must not cost the full grace period when
+    // termination succeeds promptly.
     check(
         "a hung child is stopped promptly",
         elapsed.minus(budget).toSeconds() < PROMPT_STOP.toSeconds());
