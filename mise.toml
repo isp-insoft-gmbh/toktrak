@@ -108,17 +108,6 @@ run = "java -ea tools/Build.java golem"
 description = "Build and verify the self-contained production runtime"
 run = "java -ea tools/Build.java prod"
 
-[tasks.container-build]
-description = "Build and inspect the immutable TokTrak container image"
-run = "java -ea tools/Build.java image"
-
-[tasks.container-verify]
-description = "Verify the image with rootless Podman; separate from core verify"
-run = "java -ea tools/Build.java container-verify"
-run_windows = "set CONTAINER_CONNECTION=podman-machine-default&& java -ea tools/Build.java container-verify"
-
 [tasks.release]
-description = "Verify and publish the next vN release plus the latest image"
-raw_args = true
+description = "Review and push the next annotated release-intent tag; CI verifies and publishes"
 run = "java -ea tools/Build.java release"
-run_windows = "set CONTAINER_CONNECTION=podman-machine-default&& java -ea tools/Build.java release"

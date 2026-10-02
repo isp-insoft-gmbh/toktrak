@@ -107,13 +107,7 @@ public final class BuildTest {
     given_refasterPattern_when_checkingPatch_then_detectsChangeWithoutEditingSource();
     given_gitTreeWithUntrackedFile_when_checkingStatus_then_reportsDirty();
     given_releaseTags_when_selectingNextVersion_then_requiresConsecutiveIntegers();
-    given_releasePromotion_when_targetingLatest_then_rejectsStaleTagsAndPreservesImage();
     given_dirtyOrDivergedTree_when_checkingRelease_then_rejectsPreflight();
-    given_changelogSections_when_checkingRelease_then_requiresExactNonemptySection();
-    given_podmanImageIds_when_canonicalizing_then_acceptsOnlySha256();
-    given_containerBuilderImages_when_validatingJavaFeature_then_requiresDigestPinnedParity();
-    given_linkedJavaProperties_when_requiringParity_then_ignoresOnlyVendorMetadata();
-    given_imageRepositoryConfig_when_validating_then_acceptsCanonicalRepositories();
     given_productionRuntime_when_selectingRoots_then_includesManagementAndDiagnostics();
     given_controlledGitAndPodman_when_runningReleaseMutations_then_preservesOrderAndRedactsFailure();
     given_invalidToolOutput_when_runningTool_then_rejectsBoundAndEncoding();
@@ -1694,31 +1688,6 @@ public final class BuildTest {
         () -> Build.nextVersionForTest("v2147483648\n"), "release version exceeds integer range");
   }
 
-  private static void
-      given_releasePromotion_when_targetingLatest_then_rejectsStaleTagsAndPreservesImage() {
-    String tagId = "b".repeat(40);
-    Build.requirePromotionTagForTest(tagId, tagId);
-    expectFailure(
-        () -> Build.requirePromotionTagForTest(tagId, "c".repeat(40)),
-        "last release tag differs from origin");
-    Build.requireLatestPromotionVersionForTest(2, List.of(0, 1, 2));
-    expectFailure(
-        () -> Build.requireLatestPromotionVersionForTest(1, List.of(0, 1, 2)),
-        "a newer release exists");
-    expectFailure(
-        () -> Build.requireLatestPromotionVersionForTest(0, List.of()),
-        "no published release to promote");
-    String imageId = "sha256:" + "d".repeat(64);
-    if (!Build.releasePushArgumentsForTest(imageId, "registry.example.com/team/toktrak", "v2")
-            .equals(List.of("push", imageId, "docker://registry.example.com/team/toktrak:v2"))
-        || !Build.releasePushArgumentsForTest(
-                imageId, "registry.example.com/team/toktrak", "latest")
-            .equals(
-                List.of("push", imageId, "docker://registry.example.com/team/toktrak:latest"))) {
-      throw new AssertionError("release pushes must reuse the verified image ID");
-    }
-  }
-
   private static void given_dirtyOrDivergedTree_when_checkingRelease_then_rejectsPreflight() {
     String revision = "a".repeat(40);
     Build.requireReleaseTreeForTest("trunk", "", revision, revision);
@@ -1731,91 +1700,6 @@ public final class BuildTest {
     expectFailure(
         () -> Build.requireReleaseTreeForTest("trunk", "", revision, "b".repeat(40)),
         "trunk must be synchronized with origin/trunk");
-  }
-
-  private static void
-      given_changelogSections_when_checkingRelease_then_requiresExactNonemptySection() {
-    Build.requireChangelogForTest(2, "# Changelog\n\n## v2\n\n- Done.\n\n## v1\n\n- Old.\n");
-    expectFailure(
-        () -> Build.requireChangelogForTest(2, "# Changelog\n"),
-        "CHANGELOG.md requires exactly one ## v2 section");
-    expectFailure(
-        () -> Build.requireChangelogForTest(2, "# Changelog\n\n## v2\n"), "## v2 section is empty");
-  }
-
-  private static void given_podmanImageIds_when_canonicalizing_then_acceptsOnlySha256() {
-    String digest = "a".repeat(64);
-    if (!Build.canonicalImageIdForTest(digest).equals("sha256:" + digest)
-        || !Build.canonicalImageIdForTest("sha256:" + digest).equals("sha256:" + digest)) {
-      throw new AssertionError("Podman image ID canonicalization mismatch");
-    }
-    expectFailure(
-        () -> Build.canonicalImageIdForTest("sha512:" + digest),
-        "Podman returned invalid image ID");
-  }
-
-  private static void
-      given_containerBuilderImages_when_validatingJavaFeature_then_requiresDigestPinnedParity()
-          throws Exception {
-    String digest = "a".repeat(64);
-    Build.requireContainerJavaFeatureForTest(
-        "FROM registry.example/acme/jdk:26-jdk@sha256:" + digest + " AS build\n", 26);
-    Build.requireContainerJavaFeatureForTest(
-        Files.readString(Path.of("Containerfile")), Runtime.version().feature());
-    expectFailure(
-        () ->
-            Build.requireContainerJavaFeatureForTest(
-                "FROM registry.example/acme/jdk:27-jdk@sha256:" + digest + " AS build\n", 26),
-        "builder uses Java 27 but the build uses Java 26");
-    expectFailure(
-        () ->
-            Build.requireContainerJavaFeatureForTest(
-                "FROM registry.example/acme/jdk:26-jdk AS build\n", 26),
-        "feature-tagged, digest-pinned JDK image");
-  }
-
-  private static void
-      given_linkedJavaProperties_when_requiringParity_then_ignoresOnlyVendorMetadata() {
-    Runtime.Version expected = Runtime.Version.parse("26.0.2+10");
-    Build.requireJavaRuntimeParityForTest(
-        expected, "Property settings:\n    java.runtime.version = 26.0.2+10-LTS\n");
-    for (String version : List.of("27.0.2+10", "26.0.3+10", "26.0.2+11", "26.0.2-ea+10")) {
-      expectFailure(
-          () ->
-              Build.requireJavaRuntimeParityForTest(
-                  expected, "    java.runtime.version = " + version + "\n"),
-          "differs from build Java runtime");
-    }
-    expectFailure(
-        () -> Build.requireJavaRuntimeParityForTest(expected, "java.vendor = Eclipse Adoptium\n"),
-        "runtime version is missing");
-    expectFailure(
-        () ->
-            Build.requireJavaRuntimeParityForTest(
-                expected, "java.runtime.version = 26.0.2+10\njava.runtime.version = 26.0.2+10\n"),
-        "runtime version is duplicated");
-    expectFailure(
-        () -> Build.requireJavaRuntimeParityForTest(expected, "java.runtime.version = invalid\n"),
-        "runtime version is invalid");
-  }
-
-  private static void
-      given_imageRepositoryConfig_when_validating_then_acceptsCanonicalRepositories() {
-    for (String repository :
-        List.of("localhost/toktrak", "localhost:5000/toktrak", "ghcr.io/isp-insoft-gmbh/toktrak")) {
-      if (!Build.imageRepositoryForTest(repository).equals(repository)) {
-        throw new AssertionError("image repository changed: " + repository);
-      }
-    }
-    for (String repository :
-        List.of(
-            "", "TokTrak/image", "registry.example/image:v0", "registry.example/image@sha256")) {
-      expectFailure(() -> Build.imageRepositoryForTest(repository), "TOKTRAK_IMAGE_REPOSITORY");
-    }
-    expectFailure(() -> Build.imageRepositoryForTest(null), "TOKTRAK_IMAGE_REPOSITORY is required");
-    expectFailure(
-        () -> Build.imageRepositoryForTest("localhost:99999/toktrak"),
-        "TOKTRAK_IMAGE_REPOSITORY has an invalid registry port");
   }
 
   private static void

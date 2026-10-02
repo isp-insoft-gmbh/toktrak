@@ -21,7 +21,16 @@ export function relevantChecks(paths) {
       path === "tools/ci-scope.mjs"
     )
       return all();
-    if (path === "Containerfile" || path === ".containerignore" || path === ".github/workflows/prod.yml") {
+    if (
+      path === "Containerfile" ||
+      path === ".containerignore" ||
+      path === "CHANGELOG.md" ||
+      path === ".github/workflows/prod.yml" ||
+      path === ".github/workflows/release.yml" ||
+      path === "tools/container-ci.mjs" ||
+      path === "tools/release-notes.mjs" ||
+      path === "tools/release-notes.test.mjs"
+    ) {
       selected.prod = true;
     } else if (
       path === ".github/workflows/perf.yml" ||
