@@ -24,6 +24,17 @@ fixture identity or event count changes unexpectedly. In GitHub Actions, the
 same report is also shown in the job summary so the measurement remains visible
 without downloading the artifact.
 
-Compare performance only for the same `hostKey`. Use recorded environment fields
-as caveats, not automatic history invalidators. New benchmarks do not apply
-slowdown thresholds until stable same-host history exists.
+PR CI runs the suite on the merge commit and its first parent, sequentially on
+one runner. `tools/perf/compare.mjs` compares matching JMH measurements by
+benchmark ID, configuration, source and fixture identity. A slowdown of at least
+2× whose 99.9% error ranges do not overlap is measured again in reverse order;
+only a confirmed slowdown fails CI. Changed or missing workloads are reported as
+not comparable. The benchmark registry and comparison belong to `tools/perf/**`:
+adding a benchmark does not require editing the workflow. Include its fixture
+and benchmark source in comparison identity checks when adding a new workload.
+
+PR comparisons write versioned `comparison.json` alongside raw results. Trunk
+runs remain observational; their raw JMH JSON and `host.json` can feed future
+history storage and visualization. Trunk artifacts currently expire after three
+days. For cross-run analysis compare only matching `hostKey` values and treat
+recorded environment differences as caveats, not automatic invalidators.

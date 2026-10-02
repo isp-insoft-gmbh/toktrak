@@ -91,6 +91,14 @@ test("given_pullRequest_when_ciRuns_then_requiredCheckEnforcesSelectedOrSkippedR
   }
 });
 
+test("given_pullRequest_when_measuringPerformance_then_comparesOnSameRunnerWithGenerousBudget", () => {
+  const perf = workflow("perf");
+  assert.match(perf, /timeout-minutes: 60/u);
+  assert.match(perf, /fetch-depth: 2/u);
+  assert.match(perf, /if: github\.event_name == 'pull_request'\n        run: node tools\/perf\/compare\.mjs/u);
+  assert.match(perf, /if: github\.event_name != 'pull_request'\n        run: mise run perf/u);
+});
+
 test("given_releaseIntentTag_when_publishing_then_ciOwnsContainerAndSerializesPromotion", () => {
   const release = workflow("release");
   const prod = workflow("prod");
