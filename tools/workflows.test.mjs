@@ -102,7 +102,14 @@ test("given_pullRequest_when_measuringPerformance_then_comparesOnSameRunnerWithG
 test("given_golemDispatch_when_running_then_javaOwnsLifecycleAndAuthRotation", () => {
   const golem = workflow("golem");
   assert.match(golem, /java -ea tools\/golems\/Golems\.java select --event schedule/u);
-  assert.match(golem, /java -ea tools\/golems\/Golems\.java run --golem/u);
+  assert.match(golem, /run: mise run golem "\$\{\{ matrix\.golem \}\}"/u);
+  assert.doesNotMatch(golem, /run: java -ea tools\/golems\/Golems\.java run --golem/u);
+  const mise = readFileSync(join(process.cwd(), "mise.toml"), "utf8");
+  assert.match(
+    mise,
+    /\[task_templates\.golem-tools\]\ntools = \{[^\n]*aqua:earendil-works\/pi[^\n]*aqua:openai\/codex[^\n]*\}/u,
+  );
+  assert.match(mise, /\[tasks\.golem\]\nextends = "golem-tools"/u);
   assert.match(golem, /java -ea tools\/golems\/Auth\.java decrypt/u);
   assert.match(golem, /java -ea tools\/golems\/Auth\.java encrypt/u);
   assert.match(golem, /java -ea tools\/golems\/Auth\.java seed/u);
