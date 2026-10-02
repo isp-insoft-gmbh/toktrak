@@ -13,11 +13,10 @@ verify: mise run check
 This manual-only task tests the Java Golem publication path without changing
 product behavior.
 
-Inspect README.md for one small, factual clarification about the tracker's
-local-only usage scope or estimated cost totals. If no clarification is
-justified by the current documentation, make no change and explain why.
-Otherwise, edit README.md only, verify the exact claim against the current code
-and documentation, run the declared check, and commit the change. Write a
-concise pull-request description to `$GOLEM_PR_FILE` that explicitly identifies
-the change as a Java Golem canary requiring human review. Never merge the PR,
-create a release, change runtime code, or edit CI and control-plane files.
+README.md names `.github/golems` and `_golem.md` as the current task policy.
+Current tasks live in `.golems/`, with shared policy in `_golems.md`. Verify the
+paths, then correct only that README.md sentence. Run the declared check and
+commit the change. Write `$GOLEM_PR_FILE` identifying this as a canary requiring
+human review. If README.md is already correct, make no change and explain why.
+Never merge a PR, release, change runtime code, or edit CI or control-plane
+files.
