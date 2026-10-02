@@ -1084,10 +1084,16 @@ public final class SelfCheck {
     check("candidate starts at pinned base", staged.git().head().equals(staged.prepared().base()));
     check("creation is explained", staged.prepared().note().contains("created from"));
     shell(source, "git", "branch", "golem/x");
+    shell(source, "git", "checkout", "-q", "golem/x");
+    commit(source, "A different local base", "local.txt", "local");
+    var localHead = branched.head();
+    shell(source, "git", "checkout", "-q", original.branch());
     var again =
         branched.stage(
             "golem/x", Git.Remote.SKIP, source.resolveSibling(source.getFileName() + "-second"));
     check("existing branch reused", again.prepared().note().contains("local branch"));
+    check("existing local head pinned", again.prepared().base().equals(localHead));
+    check("original checkout still pinned", branched.position().equals(original));
 
     check(
         "a non-repository is rejected",
@@ -1127,6 +1133,17 @@ public final class SelfCheck {
     check(
         "foreign commit preserved",
         candidate.git("log", "--format=%s", "-1").contains("Work from the first clone"));
+
+    shell(second, "git", "branch", "golem/probe", "origin/golem/probe");
+    shell(second, "git", "checkout", "-q", "golem/probe");
+    commit(second, "An unpublished local commit", "local.txt", "local");
+    var localHead = secondGit.head();
+    var refused = second.resolveSibling(second.getFileName() + "-refused");
+    check(
+        "unpublished local commit blocks staging",
+        throwsRuntime(() -> secondGit.stage("golem/probe", Git.Remote.USE, refused))
+            && !Files.exists(refused));
+    check("rejected staging leaves local head intact", secondGit.head().equals(localHead));
 
     commit(first, "A commit the second clone never saw", "third.txt", "three");
     firstGit.push("golem/probe");
