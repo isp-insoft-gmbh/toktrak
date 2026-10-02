@@ -806,6 +806,23 @@ public final class SelfCheck {
     check("exact nesting limit accepted", Json.parse(deepest) instanceof Json.ArrayValue);
     check("excess nesting rejected", throwsRuntime(() -> Json.parse("[" + deepest + "]")));
 
+    // A three-byte character, as in JSONTestSuite's y_string_three-byte-utf-8,
+    // distinguishes the byte budget from Java's UTF-16 String.length().
+    var nearLimit = "€".repeat(Json.BYTES_MAX / 3 - 1);
+    var overLimit = nearLimit + "€";
+    check(
+        "multibyte input within byte budget accepted",
+        Json.parse("\"" + nearLimit + "\"").equals(new Json.StringValue(nearLimit)));
+    check(
+        "multibyte output within byte budget accepted",
+        Json.encode(new Json.StringValue(nearLimit)).equals("\"" + nearLimit + "\""));
+    check(
+        "multibyte input over byte budget rejected",
+        throwsRuntime(() -> Json.parse("\"" + overLimit + "\"")));
+    check(
+        "multibyte output over byte budget rejected",
+        throwsRuntime(() -> Json.encode(new Json.StringValue(overLimit))));
+
     var silent =
         Agent.interpret(
             new Proc.Result(1, "nothing useful", "private-token-value", Proc.Stop.NONE), local);
