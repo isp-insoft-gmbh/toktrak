@@ -43,11 +43,25 @@
   --avatar-4: color-mix(in oklab, var(--theme-lilac) 90%, var(--theme-ink));
   --avatar-5: color-mix(in oklab, var(--theme-lilac) 62%, var(--theme-teal));
   --avatar-6: color-mix(in oklab, var(--theme-lilac) 72%, var(--semantic-info));
-  --avatar-7: color-mix(in oklab, var(--theme-lilac) 72%, var(--semantic-danger));
-  --avatar-8: color-mix(in oklab, var(--theme-lilac) 72%, var(--semantic-warning));
+  --avatar-7: color-mix(
+    in oklab,
+    var(--theme-lilac) 72%,
+    var(--semantic-danger)
+  );
+  --avatar-8: color-mix(
+    in oklab,
+    var(--theme-lilac) 72%,
+    var(--semantic-warning)
+  );
 
   --gap: clamp(0.75rem, 2vw, 1.5rem);
-  font: 15px/1.45 ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  font:
+    15px/1.45 ui-monospace,
+    "Cascadia Mono",
+    "SFMono-Regular",
+    Menlo,
+    Consolas,
+    monospace;
 }
 
 *,
@@ -364,14 +378,30 @@ h3 {
   font-weight: 900;
 }
 
-.color-1 { background: var(--avatar-1); }
-.color-2 { background: var(--avatar-2); }
-.color-3 { background: var(--avatar-3); }
-.color-4 { background: var(--avatar-4); }
-.color-5 { background: var(--avatar-5); }
-.color-6 { background: var(--avatar-6); }
-.color-7 { background: var(--avatar-7); }
-.color-8 { background: var(--avatar-8); }
+.color-1 {
+  background: var(--avatar-1);
+}
+.color-2 {
+  background: var(--avatar-2);
+}
+.color-3 {
+  background: var(--avatar-3);
+}
+.color-4 {
+  background: var(--avatar-4);
+}
+.color-5 {
+  background: var(--avatar-5);
+}
+.color-6 {
+  background: var(--avatar-6);
+}
+.color-7 {
+  background: var(--avatar-7);
+}
+.color-8 {
+  background: var(--avatar-8);
+}
 
 .person,
 .ingestion-list li > span:nth-child(2) {
@@ -407,8 +437,12 @@ h3 {
   text-transform: uppercase;
 }
 
-.status-ok { color: var(--success-text); }
-.status-warn { color: var(--warning-text); }
+.status-ok {
+  color: var(--success-text);
+}
+.status-warn {
+  color: var(--warning-text);
+}
 
 .empty {
   color: var(--muted);
@@ -469,7 +503,8 @@ h3 {
 }
 
 .viz-section.split {
-  grid-template-columns: 4rem minmax(13rem, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns:
+    4rem minmax(13rem, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .viz-section > .table-wrap {
@@ -518,7 +553,8 @@ h3 {
 
 .metric-row {
   display: grid;
-  grid-template-columns: minmax(8rem, 1fr) minmax(6rem, 1fr) auto minmax(9rem, auto);
+  grid-template-columns:
+    minmax(8rem, 1fr) minmax(6rem, 1fr) auto minmax(9rem, auto);
   gap: 0.8rem;
   align-items: center;
   border-bottom: 1px solid var(--line);
@@ -1017,7 +1053,7 @@ button.button-danger:hover {
     grid-template-columns: 3rem minmax(0, 1fr);
   }
 
-  .viz-section > :nth-child(n + 3) {
+  .viz-section > :nth-child(n+3) {
     grid-column: 2;
   }
 }

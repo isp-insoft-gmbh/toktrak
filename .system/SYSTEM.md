@@ -45,5 +45,6 @@ compression, and data-volume backups. Rootless Podman is preferred.
 ## Repository
 
 Production code lives under `sources`, tests under `tests`, build logic under
-`tools`, and disposable generated artifacts under `output`. Mise pins the
-runtime and tools; `tools/Build.java` remains the build authority.
+`tools`, and disposable generated artifacts under `output`. Mise is the central
+version manager for development and CI; `tools/Build.java` remains the build
+authority.

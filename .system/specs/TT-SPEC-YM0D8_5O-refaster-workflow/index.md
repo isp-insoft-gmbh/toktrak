@@ -9,8 +9,8 @@ research:
 For three or more identical Java transformations, try one current documented
 Refaster rule before manual repetition. Compile rules through the existing Java
 build and cache deterministic output. `mise run refactor` applies rules then
-formats; normal verification remains read-only. CI applies Refaster, requires a
-clean tree, then verifies.
+formats; normal verification remains read-only. CI checks Refaster conformance
+without rewriting sources, requires a clean tree, and enforces coverage floors.
 
 If expression/template replacement cannot safely represent the transformation,
 record date, pattern, and reason in

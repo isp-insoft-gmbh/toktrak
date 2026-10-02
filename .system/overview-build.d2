@@ -21,9 +21,11 @@ entry: |md
   ```sh
   mise install
   mise run check
-  mise run dev
-  mise run test [paths...]
+  mise run test
   mise run verify
+  mise run ci
+  mise run test --only [paths...]
+  mise run dev
   ```
 |
 entry.shape: document
@@ -57,15 +59,15 @@ quality: "Quality gates" {
 
   fmt: "fmt\ndprint + google-java-format" {shape: document}
   check: "check\ncompile, Error Prone, PMD" {shape: diamond}
-  test: "test\nJUnit + Selfie snapshots" {shape: hexagon}
+  test: "test\ncheck + core tests" {shape: hexagon}
+  verify: "verify\ntest + linked runtime" {shape: hexagon}
   pit: "PIT\nafter unit-test edits" {shape: hexagon}
   coverage: "JaCoCo\ncoverage floors" {shape: hexagon}
-  ci: "ci\nRefaster rewrite, clean tree, verify" {shape: queue}
+  ci: "ci\nRefaster check + coverage + clean tree" {shape: queue}
 
-  fmt -> check -> test
+  fmt -> check -> test -> verify -> ci
   test -> pit
-  test -> coverage
-  ci -> check
+  ci -> coverage: "enforces"
 }
 
 repo: |md
@@ -85,10 +87,10 @@ dev: "Development mode" {
 
   corpus: "tests/corpus/dev.jsonl\nanonymized seed data" {shape: stored_data}
   auth: "TOKTRAK_DEV_AUTH=true\nlocal auth only" {shape: diamond}
-  watch: "mise watch\nrestart dev server" {shape: queue}
+  server: "mise run dev\nrun until stopped" {shape: queue}
 
-  corpus -> watch: "seed"
-  auth -> watch: "dev auth"
+  corpus -> server: "seed"
+  auth -> server: "dev auth"
 }
 
 golems: |md

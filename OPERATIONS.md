@@ -31,7 +31,9 @@ Configure the release checkout locally:
 TOKTRAK_IMAGE_REPOSITORY = "registry.example.com/team/toktrak"
 ```
 
-This ignored file selects where image and release tasks tag and push images.
+This ignored file selects where image and release tasks tag and push images. The
+registry must allow `:latest` to move while retaining versioned `:vN` images for
+rollback.
 
 ## Configuration
 
@@ -85,8 +87,18 @@ restoration regularly. Keep the env file and stable token pepper in the
 protected deployment secret store, separate from volume backups.
 
 Before upgrades, operators should pull the next immutable tag, stop TokTrak,
-back up the volume, and replace the container with the new tag. Rollback policy
-should restore the matching data backup and run the previous image tag.
+back up the volume, and replace the container with the new tag.
+
+Nightly automation may poll `:latest`, but must compare its registry digest with
+the running image and deploy the resolved digest only when it changes.
+
+Pulling an image alone does not replace a running container.
+
+Keep the previous image tag or digest and its matching data backup for rollback;
+rolling back the image alone cannot undo a data migration.
+
+Nightly deployments may skip intermediate releases, so migrations must accept
+older persisted data.
 
 ## Diagnostics
 
@@ -128,10 +140,28 @@ mise run release
 ```
 
 The dry run performs local verification, runtime/image builds, and a rootless
-restart/persistence check without tags or remote writes. A release pushes only
-`$TOKTRAK_IMAGE_REPOSITORY:vN` and the matching Git tag; no `latest` tag exists.
+restart/persistence check without tags or remote writes.
 
-If image or Git-tag push fails, retain the local candidate tag and image, fix
-authentication or networking, and rerun `mise run release`. Release recovery
-republishes that exact candidate. If either local artifact was removed, inspect
-registry and Git state before retrying.
+A release publishes `$TOKTRAK_IMAGE_REPOSITORY:vN` and its Git tag, then pushes
+the same verified image as the mutable `$TOKTRAK_IMAGE_REPOSITORY:latest`.
+
+Only an explicit `mise run release` publishes; deployment may poll `:latest`
+nightly without causing a new release.
+
+Run only one release or promotion at a time across all checkouts and hosts.
+
+If the versioned-image push fails, retain the local candidate tag and image, fix
+registry authentication or networking, then rerun `mise run release`.
+
+If a Git-tag push reports failure, check whether the matching tag reached
+origin; retry `mise run release` only when it did not.
+
+If the tag exists but `:latest` was not published, run
+`mise run release --promote-latest` from a clean `trunk` checkout with the local
+annotated release tag.
+
+Promotion works even after trunk advances: it pulls the latest published `vN`,
+checks the tag and image identity, verifies the container, then pushes `:latest`
+without rebuilding or creating another version.
+
+Promotion refuses an older release if a newer Git tag exists.

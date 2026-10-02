@@ -3,18 +3,19 @@ name: Mutation tests
 on:
   schedule:
     - cron: "0 5 * * 1"
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pit
-  cancel-in-progress: false
+  group: pit-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'default' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   pit:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -22,19 +23,24 @@ jobs:
         with:
           version: 2026.9.18
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: output/pit.history
-          key: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml') }}-
-      - run: mise run pit --history
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+          key: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml', 'mise.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml', 'mise.lock') }}-
+      - if: github.event_name == 'pull_request'
+        run: mise run pit
+      - if: github.event_name != 'pull_request'
+        run: mise run pit --history
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: output/pit.history
-          key: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml', 'mise.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Upload mutation report
         id: mutation-artifact
-        if: always() && hashFiles('output/mutations/**') != ''
+        if: always() && github.event_name != 'pull_request' && hashFiles('output/mutations/**') != ''
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -42,7 +48,17 @@ jobs:
           path: output/mutations
           if-no-files-found: error
           overwrite: true
-          retention-days: 14
+          retention-days: 7
+      - name: Upload failed mutation XML
+        if: failure() && github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mutation-failure-xml
+          path: output/.mutations.stage-*/mutations.xml
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
       - name: Summarize mutation report
         if: always()
         env:
@@ -51,11 +67,19 @@ jobs:
           {
             echo "## PIT mutation tests"
             echo
+            if [[ -f output/mutations/mutations.xml ]]; then
+              for status in KILLED SURVIVED NO_COVERAGE; do
+                count=$(grep -o "status=\"$status\"" output/mutations/mutations.xml | wc -l) || true
+                echo "- $status: $count"
+              done
+            else
+              echo "No mutation report was generated; inspect the job log."
+            fi
             if [[ "$ARTIFACT_OUTCOME" == "success" ]]; then
               echo "Download the \`mutation-report\` artifact and open \`index.html\`."
-            else
+            elif [[ "$ARTIFACT_OUTCOME" == "failure" ]]; then
               echo "> [!WARNING]"
-              echo "> Mutation report is unavailable. The PIT step result remains authoritative."
+              echo "> Mutation report upload failed; PIT's result remains authoritative."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           if [[ "$ARTIFACT_OUTCOME" == "failure" ]]; then

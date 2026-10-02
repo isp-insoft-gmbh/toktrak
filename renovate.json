@@ -1,28 +1,22 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
+  "automerge": false,
+  "lockFileMaintenance": { "enabled": true },
   "packageRules": [
     {
       "matchDatasources": ["docker", "java-version"],
-      "matchPackageNames": ["java", "/(^|\\/)eclipse-temurin$/"],
+      "matchPackageNames": ["java", "/(^|\\/)eclipse-temurin$/", "/(^|\\/)amazoncorretto$/"],
       "groupName": "Java toolchain",
       "groupSlug": "java-toolchain"
     },
     {
-      "matchPackageNames": ["net.sourceforge.pmd:pmd-cli", "net.sourceforge.pmd:pmd-java"],
-      "groupName": "PMD"
+      "matchFileNames": ["sources/*-deps.txt"],
+      "groupName": "{{packageFile}}"
     },
     {
-      "matchPackageNames": ["io.jstach:jstachio", "io.jstach:jstachio-annotation", "io.jstach:jstachio-apt"],
-      "groupName": "JStachio"
-    },
-    {
-      "matchPackageNames": ["org.jacoco:org.jacoco.agent", "org.jacoco:org.jacoco.cli"],
-      "groupName": "JaCoCo"
-    },
-    {
-      "matchPackageNames": ["org.openjdk.jmh:jmh-core", "org.openjdk.jmh:jmh-generator-annprocess"],
-      "groupName": "JMH"
+      "matchFileNames": ["sources/main-deps.txt", "sources/build-deps.txt", "sources/refaster-deps.txt"],
+      "groupName": "Java application and build dependencies"
     }
   ],
   "customManagers": [

@@ -60,7 +60,7 @@ adopting newer CSS.
 1. Inspect changed Mustache semantics, labels, landmarks, native controls, and
    Datastar hooks; deliberately review affected HTML snapshots.
 2. Run focused asset and snapshot tests, then `mise run verify`; run
-   `mise run prod` when runtime behavior or packaging can change.
+   `mise run runtime-build` when runtime behavior or packaging can change.
 3. Manually verify keyboard focus, reduced motion, light/dark contrast, 320px
    reflow, 200% zoom, local overflow, and current Chrome, Firefox, and Safari.
 4. Confirm no CSS dependency, build step, broad motion override, global minimum

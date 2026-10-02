@@ -1,20 +1,7 @@
 name: Tracker integration
 
 on:
-  push:
-    branches: [trunk]
-    paths:
-      - sources/toktrak/assets/private/tracker.mjs
-      - tests/tracker/**
-      - mise.toml
-      - .github/workflows/tracker.yml
-  pull_request:
-    branches: [trunk]
-    paths:
-      - sources/toktrak/assets/private/tracker.mjs
-      - tests/tracker/**
-      - mise.toml
-      - .github/workflows/tracker.yml
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -32,7 +19,7 @@ jobs:
       matrix:
         include:
           - platform: Linux
-            runner: blacksmith-4vcpu-ubuntu-2404
+            runner: ubuntu-24.04
           - platform: macOS
             runner: macos-15
           - platform: Windows
@@ -44,6 +31,6 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
           version: 2026.9.18
-          install_args: node
+          install_args: node java
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - run: mise run tracker-test

@@ -4,11 +4,11 @@
 
 - Git.
 - [mise](https://mise.jdx.dev/).
-- Windows, macOS, or Linux.
+- Windows, Apple Silicon macOS, or Linux.
 
-Run `mise install`; mise installs the pinned Java, Node.js, hyperfine,
-formatter, and watcher versions. No Maven, Gradle, npm install, or JavaScript
-build is used.
+Run `mise install`; mise installs the versions committed in `mise.lock` for
+Java, Node.js, hyperfine, and formatters. Temurin 27 no longer ships macOS Intel
+binaries. No Maven, Gradle, npm install, or JavaScript build is used.
 
 Rootless Podman is required only for image, container, and release work. Start a
 Podman machine first on Windows or macOS. `mise run release` selects the
@@ -32,8 +32,9 @@ mise run check
 mise run dev
 ```
 
-Development uses local dev authentication and the anonymized corpus. Stop the
-dev server before running build tasks; `mise run fmt` remains available.
+Development uses local dev authentication and the anonymized corpus. Restart
+`mise run dev` manually after edits. Stop the dev server before running build
+tasks; `mise run fmt` remains available.
 
 ## Repository
 
@@ -73,18 +74,38 @@ Selfie `.ss` files are reviewed golden files, not disposable output. Commit an
 intentional snapshot change with its rewritten Java test; never commit update
 markers.
 
-`mise run refactor` and `mise run ci` may rewrite authored Java through
-Refaster. Inspect the diff. CI requires the rewrite to leave the tree clean.
+`mise run refactor` rewrites authored Java through Refaster; inspect the diff.
+`mise run refactor --check` checks conformance without editing. `mise run ci`
+includes that check and requires a clean tree.
 
 ## Verify
 
-During iteration:
+The source-preserving ladder adds guarantees at each rung:
 
 ```sh
-mise run fmt [paths...]
-mise run test [test paths...]
+mise run check
+mise run test
 mise run verify
+mise run ci
 ```
+
+`test` includes checks, Java tests, golem tests, and tracker tests; use
+`mise run test --only [test paths...]` for focused tests without repository-wide
+checks. `verify` also links and checks the production runtime. `ci` also checks
+Refaster conformance and coverage floors, and requires a clean Git tree. `check`
+already includes Markdown lint, tracker JavaScript lint, and offline golem
+definition validation. Live golem authentication remains separate from the
+ladder. Tracker tests exercise the host's native scheduler on Linux, macOS, and
+Windows; all three matrix jobs must pass before the required `CI / ci` gate
+succeeds. Format changes explicitly with `mise run fmt [paths...]`.
+
+Dprint plugins in `dprint.json` are versioned and SHA-256 pinned. The weekly
+`.github/workflows/dprint.yml` workflow (also manually dispatchable) checks for
+new releases, verifies their hashes, formats changed files, and opens a PR. Do
+not use `dprint config update` for routine updates: the locked dprint version
+converts HTTPS plugins to npm references and drops Wasm checksum pins. D2 and
+SVG are excluded; Mustache templates are also excluded because markup_fmt
+changes JStachio standalone-tag whitespace and rendered HTML snapshots.
 
 Additional gates:
 
@@ -92,10 +113,13 @@ Additional gates:
 | ----------------------- | ------------------------------------------------- |
 | Unit tests              | `mise run pit --history -- [production paths...]` |
 | Coverage-sensitive code | `mise run coverage`                               |
-| Runtime or packaging    | `mise run prod`                                   |
+| Tracker scheduler       | `mise run tracker-test`                           |
+| Golem authentication    | `mise run golem-auth-check`                       |
+| Runtime or packaging    | `mise run runtime-build`                          |
 | Performance evidence    | `mise run perf`                                   |
+| Container image build   | `mise run container-build`                        |
 | Container behavior      | `mise run container-verify`                       |
-| Before pushing          | `mise run ci`, then `mise run coverage`           |
+| Before pushing          | `mise run ci`                                     |
 
 On Windows, run container verification through the rootless connection:
 

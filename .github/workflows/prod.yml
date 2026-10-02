@@ -8,17 +8,12 @@ on:
       - .github/workflows/prod.yml
       - Containerfile
       - mise.toml
+      - mise.lock
+      - .mise/locks/**
       - sources/**
       - tools/**
       - vendored/**
-  pull_request:
-    branches: [trunk]
-    paths:
-      - .containerignore
-      - .github/workflows/prod.yml
-      - Containerfile
-      - mise.toml
-      - tools/**
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -30,7 +25,7 @@ concurrency:
 
 jobs:
   prod:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       TOKTRAK_IMAGE_REPOSITORY: localhost/toktrak
@@ -40,5 +35,5 @@ jobs:
         with:
           version: 2026.9.18
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
-      - run: mise run prod
+      - run: mise run runtime-build
       - run: mise run container-verify

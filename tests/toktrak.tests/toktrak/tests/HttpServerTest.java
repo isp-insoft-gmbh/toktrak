@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
@@ -89,14 +90,22 @@ final class HttpServerTest {
   }
 
   @Test
-  void given_methodAboveLengthLimit_when_requestingBrowserRoute_then_returnsDiagnosticBadRequest()
+  void given_methodAtAndAboveLengthLimit_when_requestingRoutes_then_enforcesBoundary()
       throws Exception {
     try (var app = App.start(new String[] {}, devEnvironment())) {
+      var client = HttpClient.newHttpClient();
+      var accepted =
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + app.port() + "/health"))
+              .timeout(Duration.ofSeconds(2))
+              .method("X".repeat(32), HttpRequest.BodyPublishers.noBody())
+              .build();
+      assertEquals(200, client.send(accepted, BodyHandlers.ofString()).statusCode());
       var request =
           HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + app.port() + "/nope"))
+              .timeout(Duration.ofSeconds(2))
               .method("X".repeat(33), HttpRequest.BodyPublishers.noBody())
               .build();
-      var response = HttpClient.newHttpClient().send(request, BodyHandlers.ofString());
+      var response = client.send(request, BodyHandlers.ofString());
       assertEquals(400, response.statusCode());
       assertTrue(response.body().contains("Request method is invalid."));
       assertTrue(response.body().contains("<code>(invalid method)</code>"));
