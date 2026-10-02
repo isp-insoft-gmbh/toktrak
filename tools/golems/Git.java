@@ -115,11 +115,10 @@ record Git(Path root) {
     return git("status", "--porcelain").isEmpty() ? Tree.CLEAN : Tree.DIRTY;
   }
 
-  /// Everything the golem left behind, read in one walk of the history.
+  /// Everything the golem left behind, checked against its pinned base.
   ///
-  /// The commits, the files they touched, and the resulting head all describe the same range, so
-  /// they are read together: it is one process instead of three, and one snapshot instead of three
-  /// that could disagree.
+  /// An ancestry check, commit log, and name-only diff keep history and file changes distinct. The
+  /// caller reads them again after verification to catch a command that changed the candidate.
   record Work(String head, List<String> commits, List<String> files, List<String> violations) {
     Work {
       assert head != null && !head.isBlank() : "work is always pinned to a commit";
@@ -187,14 +186,16 @@ record Git(Path root) {
       throw new IllegalStateException("candidate worktree already exists: " + destination);
     var online = fetch(remote);
     var remoteRef = ORIGIN + "/" + branch;
+    var remoteHead = online ? attempt("rev-parse", "--verify", "--quiet", remoteRef) : null;
+    var localRef = "refs/heads/" + branch;
+    var localHead = attempt("rev-parse", "--verify", "--quiet", localRef);
     Prepared prepared;
-    if (online && attempt("rev-parse", "--verify", "--quiet", remoteRef).ok()) {
-      if (attempt("show-ref", "--verify", "--quiet", "refs/heads/" + branch).ok()
-          && !attempt("merge-base", "--is-ancestor", branch, remoteRef).ok())
+    if (remoteHead != null && remoteHead.ok()) {
+      if (localHead.ok() && !attempt("merge-base", "--is-ancestor", localRef, remoteRef).ok())
         throw new IllegalStateException("local branch has commits absent from " + remoteRef);
-      prepared = new Prepared(branch, git("rev-parse", remoteRef), "continued from " + remoteRef);
-    } else if (attempt("show-ref", "--verify", "--quiet", "refs/heads/" + branch).ok()) {
-      prepared = new Prepared(branch, git("rev-parse", branch), "local branch");
+      prepared = new Prepared(branch, remoteHead.out().strip(), "continued from " + remoteRef);
+    } else if (localHead.ok()) {
+      prepared = new Prepared(branch, localHead.out().strip(), "local branch");
     } else {
       var start = position();
       prepared = new Prepared(branch, start.head(), "created from " + start.branch());
@@ -208,8 +209,8 @@ record Git(Path root) {
             prepared.base());
     if (!result.ok()) throw new IllegalStateException("cannot create detached candidate worktree");
     var candidate = Git.open(destination);
-    assert candidate.position().branch().equals("HEAD") : "candidate must remain detached";
-    assert candidate.head().equals(prepared.base()) : "candidate must start at the pinned base";
+    assert candidate.position().equals(new Position(prepared.base(), "HEAD"))
+        : "candidate must remain detached at the pinned base";
     return new Staged(candidate, prepared);
   }
 
