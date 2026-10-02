@@ -32,7 +32,7 @@ test("given_pinnedPlugins_when_updatingToNewReleases_then_preservesConfigAndPair
   assert.equal(updated.lineWidth, 80);
   assert.equal(updated.plugins[0], `${latest.markdown.url}@${latest.markdown.checksum}`);
   assert.deepEqual(updated.plugins.slice(1), original.plugins.slice(1));
-  assert.equal(updated.plugins.length, 8);
+  assert.equal(updated.plugins.length, original.plugins.length);
   assert.notEqual(updated, original);
 });
 

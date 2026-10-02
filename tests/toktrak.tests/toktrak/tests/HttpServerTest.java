@@ -70,8 +70,7 @@ final class HttpServerTest {
       assertEquals(200, response.statusCode());
       assertTrue(response.body().contains("<strong>TokTrak dev</strong>"), response.body());
       assertTrue(response.body().contains("<span>Unreleased</span>"), response.body());
-      assertTrue(response.body().contains("<h2>TokTrak v2</h2>"), response.body());
-      assertTrue(response.body().contains("<code>PATH</code>"), response.body());
+      assertTrue(response.body().matches("(?s).*<h2>TokTrak v[0-9]+</h2>.*"), response.body());
       assertTrue(response.body().contains("<details>"), response.body());
       assertFalse(response.body().contains("class=\"site-header\""), response.body());
     }

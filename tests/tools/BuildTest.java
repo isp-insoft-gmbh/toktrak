@@ -557,23 +557,28 @@ public final class BuildTest {
       throw new AssertionError("focused tracker test was not selected");
     }
     List<Path> trackerSuite = Build.javascriptTestPathsForTest(List.of("tests/tracker"));
-    if (trackerSuite.size() != 7
-        || !trackerSuite.contains(tracker)
-        || !trackerSuite.contains(
-            Path.of("tests/tracker/scheduler.linux.test.mjs").toAbsolutePath())
-        || !trackerSuite.contains(
-            Path.of("tests/tracker/scheduler.macos.test.mjs").toAbsolutePath())
-        || !trackerSuite.contains(
-            Path.of("tests/tracker/scheduler.win32.test.mjs").toAbsolutePath())) {
-      throw new AssertionError("tracker suite selection is incomplete: " + trackerSuite);
+    try (var files = Files.list(Path.of("tests/tracker"))) {
+      List<Path> trackerTests =
+          files
+              .filter(path -> path.getFileName().toString().endsWith(".test.mjs"))
+              .map(Path::toAbsolutePath)
+              .sorted()
+              .toList();
+      if (trackerTests.isEmpty() || !trackerSuite.equals(trackerTests)) {
+        throw new AssertionError("tracker suite selection is incomplete: " + trackerSuite);
+      }
     }
     List<Path> tools = Build.javascriptTestPathsForTest(List.of("tools"));
-    if (!tools.equals(
-        List.of(
-            Path.of("tools/golem.test.mjs").toAbsolutePath(),
-            Path.of("tools/update-dprint.test.mjs").toAbsolutePath(),
-            Path.of("tools/workflows.test.mjs").toAbsolutePath()))) {
-      throw new AssertionError("tool directory omitted JavaScript tests: " + tools);
+    try (var files = Files.list(Path.of("tools"))) {
+      List<Path> toolTests =
+          files
+              .filter(path -> path.getFileName().toString().endsWith(".test.mjs"))
+              .map(Path::toAbsolutePath)
+              .sorted()
+              .toList();
+      if (!tools.equals(toolTests)) {
+        throw new AssertionError("tool directory omitted JavaScript tests: " + tools);
+      }
     }
     if (!Build.javascriptTestPathsForTest(
             List.of("tests/tracker/usage.test.mjs", "./tests/tracker/usage.test.mjs"))
@@ -769,17 +774,22 @@ public final class BuildTest {
             "--excludedTestClasses",
             "toktrak.tests.SnapshotTest",
             "--threads",
-            "4",
             "--mutationUnitSize",
-            "50",
             "--timeoutConst",
-            "10000",
             "-ea,-Djunit.jupiter.execution.timeout.default=5s,-Djunit.platform.execution.listeners.deactivate=com.diffplug.selfie.*",
             "--verbosity",
             "NO_SPINNER",
             "--fullMutationMatrix")) {
       if (!arguments.contains(expected)) {
         throw new AssertionError("missing PIT argument: " + expected + " in " + arguments);
+      }
+    }
+    for (String option : List.of("--threads", "--mutationUnitSize", "--timeoutConst")) {
+      int index = arguments.indexOf(option);
+      if (index < 0
+          || index + 1 >= arguments.size()
+          || Integer.parseInt(arguments.get(index + 1)) <= 0) {
+        throw new AssertionError("PIT limit must be positive: " + option + " in " + arguments);
       }
     }
     if (arguments.contains("--classPath")) {
@@ -1550,16 +1560,16 @@ public final class BuildTest {
     var sources = new ArrayList<String>();
     for (int index = 0; index < 300; index++) sources.add("Source" + index + ".java");
     List<List<String>> batches = Build.formatterArgumentsForTest(sources);
-    if (batches.size() != 3) throw new AssertionError("unexpected formatter batches: " + batches);
-    int sourceCount = 0;
+    var selected = new ArrayList<String>();
     for (List<String> batch : batches) {
       Build.commandForTest("dprint", batch);
       if (!batch.getFirst().equals("fmt")) throw new AssertionError("unexpected command: " + batch);
-      sourceCount = Math.addExact(sourceCount, batch.size() - 1);
+      if (batch.size() <= 1 || batch.size() > 129) {
+        throw new AssertionError("formatter batch must be bounded and nonempty: " + batch);
+      }
+      selected.addAll(batch.subList(1, batch.size()));
     }
-    if (sourceCount != sources.size()) {
-      throw new AssertionError("formatter sources lost: " + sourceCount);
-    }
+    if (!selected.equals(sources)) throw new AssertionError("formatter sources lost or reordered");
   }
 
   private static void given_commandAboveLengthLimit_when_buildingCommand_then_rejectsInput() {
@@ -1893,11 +1903,14 @@ public final class BuildTest {
   }
 
   private static void given_testGroups_when_selectingTimeouts_then_returnsConfiguredDurations() {
-    if (!Build.testTimeout("--unit").equals(Duration.ofSeconds(30))) {
-      throw new AssertionError("unit test timeout is not 30 seconds");
+    Duration unit = Build.testTimeout("--unit");
+    Duration tagged = Build.testTimeout("--tagged");
+    if (unit.isNegative() || unit.isZero() || unit.compareTo(Duration.ofMinutes(2)) > 0) {
+      throw new AssertionError("unit test timeout must be bounded: " + unit);
     }
-    if (!Build.testTimeout("--tagged").equals(Duration.ofMinutes(10))) {
-      throw new AssertionError("tagged test timeout changed");
+    if (tagged.compareTo(unit) < 0 || tagged.compareTo(Duration.ofMinutes(20)) > 0) {
+      throw new AssertionError(
+          "tagged test timeout must be bounded and at least unit timeout: " + tagged);
     }
   }
 

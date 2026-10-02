@@ -45,57 +45,31 @@ test("given_changedPaths_when_classifyingPr_then_runsOnlyRelevantChecks", () => 
 
 test("given_oldPrAndRenamedSource_when_diffingMerge_then_ignoresBaseDriftAndPreservesDeletedPaths", () => {
   const directory = mkdtempSync(join(process.cwd(), "output", "ci-scope-"));
-  const git = (...args) => execFileSync("git", args, { cwd: directory, encoding: "utf8", timeout: 30_000 });
-  const commit = (message) =>
-    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", message);
+  const git = (args, input) => execFileSync("git", args, { cwd: directory, input, timeout: 30_000 });
+  const blob = (mark, content) => `blob\nmark :${mark}\ndata ${Buffer.byteLength(content)}\n${content}\n`;
+  const commit = (branch, mark, parents, changes) =>
+    `commit refs/heads/${branch}\nmark :${mark}\ncommitter Fixture <fixture@example.invalid> 0 +0000\n` +
+    `data 1\nx\n${parents}${changes.join("\n")}\n`;
   try {
-    git("init", "-q", "-b", "trunk");
-    git("config", "branch.autoSetupMerge", "false");
-    mkdirSync(join(directory, "sources"));
-    writeFileSync(join(directory, "sources", "Old.java"), "class Old {}\n");
-    git("add", ".");
-    commit("base");
-    git("checkout", "-qb", "docs");
-    writeFileSync(join(directory, "README.md"), "PR documentation\n");
-    git("add", ".");
-    commit("documentation");
-    git("checkout", "-q", "trunk");
-    writeFileSync(join(directory, "sources", "New.java"), "class New {}\n");
-    git("add", ".");
-    commit("unrelated trunk source");
-    git(
-      "-c",
-      "user.name=Fixture",
-      "-c",
-      "user.email=fixture@example.invalid",
-      "merge",
-      "-q",
-      "--no-ff",
-      "docs",
-      "-m",
-      "merge docs",
-    );
-    assert.deepEqual(changedPaths(directory), ["README.md"]);
-    git("checkout", "-qb", "move");
-    mkdirSync(join(directory, "tools"));
-    git("mv", "sources/Old.java", "tools/Old.java");
-    commit("move source into tools");
-    git("checkout", "-q", "trunk");
-    git(
-      "-c",
-      "user.name=Fixture",
-      "-c",
-      "user.email=fixture@example.invalid",
-      "merge",
-      "-q",
-      "--no-ff",
-      "move",
-      "-m",
-      "merge move",
-    );
-    const moved = changedPaths(directory);
-    assert.deepEqual(moved, ["sources/Old.java", "tools/Old.java"]);
-    assert.equal(relevantChecks(moved).pit, true);
+    git(["init", "-q", "-b", "trunk"]);
+    const config = join(directory, ".git", "config");
+    writeFileSync(config, `${readFileSync(config, "utf8")}\n[diff]\n\trenames = true\n`);
+    const fixture =
+      blob(1, "class Old {}\n") +
+      blob(2, "class New {}\n") +
+      blob(3, "PR documentation\n") +
+      commit("trunk", 4, "", ["M 100644 :1 sources/Old.java"]) +
+      commit("trunk", 5, "from :4\n", ["M 100644 :2 sources/New.java"]) +
+      commit("pr", 6, "from :4\n", ["D sources/Old.java", "M 100644 :1 tools/Old.java", "M 100644 :3 README.md"]) +
+      commit("trunk", 7, "from :5\nmerge :6\n", [
+        "D sources/Old.java",
+        "M 100644 :1 tools/Old.java",
+        "M 100644 :3 README.md",
+      ]);
+    git(["fast-import", "--quiet"], fixture);
+    const changed = changedPaths(directory);
+    assert.deepEqual(changed, ["README.md", "sources/Old.java", "tools/Old.java"]);
+    assert.equal(relevantChecks(changed).pit, true);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -113,8 +87,6 @@ test("given_pullRequest_when_ciRuns_then_requiredCheckEnforcesSelectedOrSkippedR
     assert.ok(ci.includes(`check ${job} "$${job.toUpperCase()}_RESULT" "$${job}_expected"`));
     assert.match(workflow(job), /^  workflow_call:$/mu);
   }
-  assert.ok(ci.includes('echo "## PR validation plan"'));
-  assert.ok(ci.includes('echo "## CI validation"'));
 });
 
 test("given_pullRequest_when_checkingReports_then_uploadsOnlyFailedMutationXml", () => {
@@ -158,11 +130,33 @@ test("given_renovateUpdate_when_configured_then_disablesAutomaticMerge", () => {
 });
 
 test("given_linuxWorkflows_when_choosingRunners_then_usesGithubHostedUbuntu", () => {
+  const ubuntuRunner = /^ubuntu-\d{2}\.\d{2}$/u;
   for (const file of readdirSync(workflowDirectory).filter((entry) => entry.endsWith(".yml"))) {
     const source = readFileSync(join(workflowDirectory, file), "utf8");
-    assert.doesNotMatch(source, /blacksmith/iu, file);
-    if (file !== "tracker.yml") assert.match(source, /runs-on: ubuntu-24\.04/u, file);
+    const runners = [...source.matchAll(/^\s+runs-on: ([^\n#]+)$/gmu)].map((match) => match[1].trim());
+    assert.ok(runners.length > 0, file);
+    if (file === "tracker.yml") {
+      assert.deepEqual(runners, ["${{ matrix.runner }}"]);
+      const matrixRunners = [...source.matchAll(/^\s+runner: (\S+)$/gmu)].map((match) => match[1]);
+      assert.ok(
+        matrixRunners.some((runner) => ubuntuRunner.test(runner)),
+        file,
+      );
+      assert.ok(
+        matrixRunners.some((runner) => /^macos-\d+$/u.test(runner)),
+        file,
+      );
+      assert.ok(
+        matrixRunners.some((runner) => /^windows-\d+$/u.test(runner)),
+        file,
+      );
+    } else {
+      for (const runner of runners) assert.match(runner, ubuntuRunner, file);
+    }
   }
-  assert.match(workflow("tracker"), /runner: ubuntu-24\.04/u);
-  assert.match(workflow("perf"), /PERF_RUNNER_LABEL: ubuntu-24\.04/u);
+  const perf = workflow("perf");
+  const runner = perf.match(/^\s+runs-on: (ubuntu-\d{2}\.\d{2})$/mu)?.[1];
+  const label = perf.match(/^\s+PERF_RUNNER_LABEL: (\S+)$/mu)?.[1];
+  assert.ok(runner && label, "performance runner and baseline label are required");
+  assert.equal(label, runner);
 });

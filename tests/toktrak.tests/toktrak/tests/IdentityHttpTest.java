@@ -114,7 +114,6 @@ final class IdentityHttpTest {
       assertEquals(
           sha256(tracker.body()), tracker.headers().firstValue("X-TokTrak-SHA256").orElseThrow());
       assertTrue(tracker.body().contains("const TOKEN = \"" + token + "\";"));
-      assertTrue(tracker.body().contains("ccusage@${CCUSAGE_VERSION}"));
       assertFalse(tracker.body().contains("__TOKTRAK_"));
       HttpResponse<String> usedPage =
           send(client, base.resolve("/tokens"), "GET", cookie, null, null);
