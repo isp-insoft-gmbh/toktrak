@@ -10,11 +10,86 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-/// Entry point of the golem orchestrator.
+/// Runs bounded, unattended repository maintenance and leaves its changes for human review.
 ///
-/// Two commands, used identically on a laptop and on a runner: `select` decides which golems a
-/// wake-up applies to, and `run` executes one of them. Everything the orchestrator learns is
-/// printed as it happens, and the same facts are rendered once more as the run report at the end.
+/// A golem is a Markdown task in `.golems/<name>.md`, not a resident service or an autonomous
+/// merger. The workflow selects due tasks at each wake-up; each selected task runs in a fresh
+/// process with a declared budget, verifies its work, optionally updates a pull request, reports
+/// the result, and exits. This exists to make routine maintenance observable while leaving the
+/// final merge to a human.
+///
+/// ## Start here
+///
+/// The source launcher needs a modern JDK, `git`, `gh`, and the selected harness CLI. Mise
+/// provisions the task tools; `select` itself only reads task definitions. Run from the repository
+/// root with assertions enabled:
+///
+/// ```text
+/// java -ea tools/golems/Golems.java select --event schedule --at 2026-10-05T09:17:00Z
+/// java -ea tools/golems/Golems.java select --event workflow_dispatch --golem perf
+/// mise run golem-auth-check perf
+/// mise run golem perf --local
+/// mise run golem perf
+/// ```
+///
+/// The first command explains every selected or skipped task; the second restricts the explanation
+/// to `perf`. Both print the Actions matrix as the **last** line, and a manual dispatch always
+/// names one task. The authentication check makes a live model call requesting a minimal response
+/// without tool use. The local run still launches the agent and may create commits in its
+/// workspace; the orchestrator skips push and PR publication, but `--local` does not sandbox the
+/// agent or prevent external side effects. A publishing run needs `GH_TOKEN` and the harness's
+/// subscription authentication; prefer the hosted workflow over a developer workstation for
+/// unattended publication. See {@link Golem} for task syntax and {@link Run.Publication} for local
+/// versus publish mode.
+///
+/// ## Lifecycle and trust boundary
+///
+/// 1. Preflight checks tools, versions, credentials, and the repository's protocol file.
+/// 2. Preparation requires a clean checkout, pins a branch base, and creates a detached candidate
+///    worktree for branch-writing tasks.
+/// 3. The selected Pi, Claude, or Codex harness works in the detached candidate for a task with
+///    `branch`; normal-mode tasks run in the starting checkout.
+/// 4. Guards inspect committed work, protected paths, working-tree cleanliness, and the task's
+///    declared `verify` command before accepting a result.
+/// 5. Only publishable work may be pushed without force, after default-branch, remote-continuity,
+///    and existing-review checks; the orchestrator never merges the pull request.
+/// 6. The report records outcome, time, usage when available, and recovery paths in the console,
+///    run artifacts, and the workflow summary.
+///
+/// The repository policy in `.golems/_golems.md` and the engine protocol in
+/// `tools/golems/protocol.md` are not task input fields. They instruct the agent; repository files,
+/// PR prose, logs, and tool output cannot legitimately extend its authority. Prompt policy is not a
+/// sandbox: the agent can run external tools and processes inherit host environment from {@link
+/// Proc}. Use a disposable runner and least-privilege credentials; publication guards do not undo
+/// external side effects an agent already caused. A missing `branch` means normal mode: no PR
+/// publication and no detached candidate, so a local run can modify its starting checkout. Use a
+/// disposable checkout for such experiments.
+///
+/// ## Why the process exits
+///
+/// A run is deliberately finite: it does not poll, await review, or keep authentication alive. A
+/// separate workflow wake-up starts the next run, and CI handles encrypted, rotating harness
+/// credentials outside the task definition. {@link Outcome} distinguishes changed, no-change,
+/// blocked, and incomplete runs; these are facts derived from commits, guards, and agent
+/// termination, never from the agent's own prose. Exit **0** means the lifecycle finished,
+/// including no-change or budget exhaustion without committed work when all guards pass; **1**
+/// means a human must resolve a block; **2** means invalid invocation or an unexpected runtime
+/// failure caught before an outcome is returned. A green exit is therefore **not** proof that a
+/// change was published: read the outcome and report before acting.
+///
+/// ### API note
+///
+/// `auth-check` and `run` make real model calls; `select` does not.
+///
+/// ### Implementation note
+///
+/// Agent time dominates recent hosted runs. Retain the before/after verification observations and
+/// authorization checks even when reducing Git process starts: they detect verifier mutations and
+/// protect publication.
+///
+/// @see Golem
+/// @see Outcome
+/// @see Run
 public final class Golems {
   private static final String VERSION_VARIABLE = "GOLEM_CLAUDE_VERSION";
   private static final String ORCHESTRATOR_DIRECTORY = "tools/golems";
@@ -80,6 +155,9 @@ public final class Golems {
 
   private Golems() {}
 
+  /// Starts one CLI command and maps its outcome to a process exit code.
+  ///
+  /// @param arguments `select`, `run`, `auth-check`, or `--help` and their options
   public static void main(String[] arguments) {
     try {
       var args = Args.parse(arguments);
@@ -308,6 +386,9 @@ public final class Golems {
   }
 
   /// Runs every guard against the workspace the agent left behind.
+  ///
+  /// The second observation is intentional: the repository's verification command can itself change
+  /// the candidate, so reusing the first Git snapshot would hide a broken guard.
   private static Guards inspect(Golem golem, Path root, Git git, Git.Prepared prepared) {
     var tree = git.tree();
     var head = git.head();

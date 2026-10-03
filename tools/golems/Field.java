@@ -10,10 +10,10 @@ enum Field {
   BRANCH("branch", "the guarded branch this golem owns", "normal mode"),
   HARNESS("harness", "pi, claude, or codex", "claude"),
   OS("os", "runner label", Golem.DEFAULT_OS),
-  TIMEOUT("timeout", "whole-run budget, with unit: 90s, 45m, 2h", Golem.DEFAULT_TIMEOUT),
-  TURNS("turns", "agentic turn cap, positive integer", "unset"),
-  MODEL("model", "claude model alias", Golem.DEFAULT_MODEL),
-  EFFORT("effort", "claude effort level", Golem.DEFAULT_EFFORT),
+  TIMEOUT("timeout", "agent process budget, with unit: 90s, 45m, 2h", Golem.DEFAULT_TIMEOUT),
+  TURNS("turns", "Claude turn cap, positive integer", "unset"),
+  MODEL("model", "model identifier for the chosen harness", Golem.DEFAULT_MODEL),
+  EFFORT("effort", "effort level for the chosen harness", Golem.DEFAULT_EFFORT),
   VERIFY("verify", "command the orchestrator runs before publishing", "none");
 
   private final String key;

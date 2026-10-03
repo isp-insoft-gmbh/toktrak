@@ -1,10 +1,28 @@
-/// How a run ended.
+/// The observed result of one {@link Golems} lifecycle, distinct from process exit status.
 ///
-/// Sealed so every consumer must handle all four states, and modelled as records rather than an
-/// enum plus a loose string, so a state that needs a reason cannot be constructed without one.
+/// | Outcome | Meaning | Exit | Orchestrator publication |
+/// | --- | --- | --- | --- |
+/// | {@link Changed} | Committed work accepted by guards | 0 | PR update permitted |
+/// | {@link NoChange} | Agent finished without commits | 0 | None |
+/// | {@link Incomplete} | Budget or turns expired without commits, guards passed | 0 | None |
+/// | {@link Blocked} | Unsafe, invalid, or unfinished committed state | 1 | Skipped or partially completed |
 ///
-/// Every value here is derived from what the orchestrator observed: its own preflight, the signal
-/// it sent, the agent's result, and the workspace. Nothing is derived from the agent's prose.
+/// Declared verification runs before publication when work is clean and committed; a task without
+/// `verify` has no repository check, so `Changed` alone does not imply tests ran. A budget
+/// expiration **with** committed work is blocked rather than incomplete because the agent did not
+/// finish that work; it must not be published as a partial result. Publication can push a branch
+/// before a later PR update fails; a blocked result does not roll back that push, so inspect the
+/// remote state before retrying. Invalid CLI arguments and otherwise unhandled runtime failures
+/// have exit code 2 before an outcome exists. No-change and incomplete remain green on a schedule
+/// when guards pass; read the report to distinguish them.
+///
+/// Sealed alternatives force consumers to handle all states, and reason-bearing states are records
+/// rather than an enum with an optional string. These values come from preflight, agent
+/// termination, Git commits, and guard observations, never from an agent's prose or a guessed
+/// zero-cost usage record.
+///
+/// @see ExitCode
+/// @see Golems
 sealed interface Outcome {
   /// The agent finished and left new commits.
   record Changed() implements Outcome {}
@@ -20,7 +38,8 @@ sealed interface Outcome {
     }
   }
 
-  /// The run ran out of budget or turns without committed work. No partial change is published.
+  /// The run ran out of budget or turns without committed work. No partial change is published;
+  /// inspect {@link #reason()} for the limit reached.
   record Incomplete(String reason) implements Outcome {
     public Incomplete {
       assert reason != null && !reason.isBlank() : "an incomplete run must say why";
@@ -57,8 +76,9 @@ sealed interface Outcome {
 
   /// How the process should exit.
   ///
-  /// Only `blocked` is a failure. A golem that found nothing to do, or that ran out of budget,
-  /// completed its lifecycle and must not turn a schedule red.
+  /// Only `blocked` is a failure. A golem that found nothing to do, or that ran out of budget
+  /// without committed work, completed its lifecycle and must not turn a schedule red. A malformed
+  /// invocation maps to {@link ExitCode#USAGE} outside this interface.
   default ExitCode exit() {
     return switch (this) {
       case Changed _, NoChange _, Incomplete _ -> ExitCode.COMPLETED;
