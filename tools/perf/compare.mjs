@@ -86,7 +86,31 @@ const settings = [
   "measurementBatchSize",
 ];
 
-export function compare(base, candidate, sameFixture = true) {
+function requireHostKey(value) {
+  if (typeof value !== "string" || !value.trim() || value.length > 4096) {
+    throw new Error("missing or invalid performance hostKey");
+  }
+  return value;
+}
+
+function hostKey(directory) {
+  const file = join(directory, "host.json");
+  if (!existsSync(file) || statSync(file).size > 16 * 1024) {
+    throw new Error(`missing or oversized performance host metadata: ${file}`);
+  }
+  return requireHostKey(JSON.parse(readFileSync(file, "utf8")).hostKey);
+}
+
+export function compareRuns(baseDirectory, candidateDirectory, sameFixture) {
+  return compare(measurements(baseDirectory), measurements(candidateDirectory), {
+    sameFixture,
+    baseHostKey: hostKey(baseDirectory),
+    candidateHostKey: hostKey(candidateDirectory),
+  });
+}
+
+export function compare(base, candidate, { sameFixture = true, baseHostKey, candidateHostKey }) {
+  const sameHost = requireHostKey(baseHostKey) === requireHostKey(candidateHostKey);
   const rows = [];
   for (const id of new Set([...base.keys(), ...candidate.keys()])) {
     const left = base.get(id);
@@ -95,6 +119,7 @@ export function compare(base, candidate, sameFixture = true) {
       !left ||
       !right ||
       !sameFixture ||
+      !sameHost ||
       settings.some((key) => left[key] !== right[key]) ||
       JSON.stringify(left.params ?? null) !== JSON.stringify(right.params ?? null) ||
       left.primaryMetric.scoreUnit !== right.primaryMetric.scoreUnit
@@ -140,13 +165,17 @@ export function confirmed(first, confirmation) {
 
 function report(base, candidate, first, confirmation, baseSha, headSha) {
   const results = confirmed(first, confirmation);
-  const document = { schemaVersion: 1, baseSha, headSha, measurements: results };
+  const baseHostKey = hostKey(base);
+  const candidateHostKey = hostKey(candidate);
+  const document = { schemaVersion: 1, baseSha, headSha, baseHostKey, candidateHostKey, measurements: results };
   const destination = join(candidate, "comparison.json");
   writeFileSync(destination, JSON.stringify(document, null, 2) + "\n");
   const lines = [
     "## Performance comparison",
     "",
     `Base: \`${baseSha}\` · Candidate: \`${headSha}\``,
+    "",
+    `Base host: \`${baseHostKey}\` · Candidate host: \`${candidateHostKey}\``,
     "",
     "| Benchmark | Base | Candidate | Unit | Ratio | Verdict |",
     "| --- | ---: | ---: | --- | ---: | --- |",
@@ -158,7 +187,7 @@ function report(base, candidate, first, confirmation, baseSha, headSha) {
   }
   lines.push(
     "",
-    "A suspected ≥2× slowdown is confirmed with a second baseline/candidate pair.",
+    "Only matching host keys and workloads are comparable. A suspected ≥2× slowdown is confirmed with a second baseline/candidate pair.",
     `Raw baseline: \`${base}\` · candidate: \`${candidate}\``,
     "",
   );
@@ -181,13 +210,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     const baseRun = run(baseline);
     const candidateRun = run(root);
     const comparable = JSON.stringify(identity(baseline)) === JSON.stringify(identity(root));
-    const first = compare(measurements(baseRun), measurements(candidateRun), comparable);
+    const first = compareRuns(baseRun, candidateRun, comparable);
     let confirmation;
     if (first.some((row) => row.verdict === "suspect")) {
       // Reverse order to reduce systematic effects from warming or runner contention.
       const candidateRetry = run(root);
       const baseRetry = run(baseline);
-      confirmation = compare(measurements(baseRetry), measurements(candidateRetry), comparable);
+      confirmation = compareRuns(baseRetry, candidateRetry, comparable);
       cpSync(candidateRetry, join(candidateRun, "confirmation-candidate"), { recursive: true });
       cpSync(baseRetry, join(candidateRun, "confirmation-baseline"), { recursive: true });
     }
