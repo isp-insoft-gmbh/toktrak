@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -275,13 +276,13 @@ record Golem(
   /// }
   ///
   /// @param event `schedule` or a forge event name
-  /// @param tick instant whose UTC day the caller selected
+  /// @param tick instant evaluated on its UTC weekday, regardless of its supplied offset
   /// @return whether the declaration matches this wake-up
   boolean due(String event, ZonedDateTime tick) {
     assert event != null && !event.isBlank() : "an event is required";
     assert tick != null : "a tick is required";
     return Event.SCHEDULE.is(event)
-        ? schedule.matches(tick.getDayOfWeek())
+        ? schedule.matches(tick.withZoneSameInstant(ZoneOffset.UTC).getDayOfWeek())
         : triggers.contains(event);
   }
 
@@ -293,12 +294,10 @@ record Golem(
       if (!schedule.declared()) {
         return "skip: no schedule";
       }
-      return schedule.matches(tick.getDayOfWeek())
+      var day = tick.withZoneSameInstant(ZoneOffset.UTC).getDayOfWeek();
+      return schedule.matches(day)
           ? "due: schedule " + schedule.describe()
-          : "skip: schedule "
-              + schedule.describe()
-              + " does not match "
-              + shortDay(tick.getDayOfWeek());
+          : "skip: schedule " + schedule.describe() + " does not match " + shortDay(day);
     }
     if (triggers.isEmpty()) {
       return "skip: no triggers";
