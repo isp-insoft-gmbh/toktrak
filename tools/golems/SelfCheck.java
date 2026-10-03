@@ -619,6 +619,14 @@ public final class SelfCheck {
     var weekly = parse("---\nschedule: [mon]\n---\nwork");
     check("weekday match", weekly.due("schedule", monday()));
     check("weekday mismatch", !weekly.due("schedule", thursday()));
+    var mondayInPlusFourteen = ZonedDateTime.parse("2026-10-05T00:30:00+14:00");
+    check(
+        "given_offsetMonday_when_selectingUtcSunday_then_skipMonday",
+        !weekly.due("schedule", mondayInPlusFourteen)
+            && weekly.reason("schedule", mondayInPlusFourteen).contains("sun"));
+    check(
+        "given_offsetMonday_when_selectingUtcSunday_then_runSunday",
+        parse("---\nschedule: [sun]\n---\nwork").due("schedule", mondayInPlusFourteen));
     check("a schedule is not an event", !weekly.due("pull_request_review", monday()));
 
     var daily = parse("---\nschedule: daily\n---\nwork");

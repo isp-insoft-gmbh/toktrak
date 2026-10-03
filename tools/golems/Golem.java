@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -17,15 +18,66 @@ import java.util.OptionalInt;
 import java.util.Properties;
 import java.util.Set;
 
-/// One golem: its declared frontmatter and its task instructions.
+/// A named maintenance task: strict frontmatter plus Markdown instructions for one agent.
 ///
-/// The frontmatter block is read by `java.util.Properties`, so key and value splitting, escaping,
-/// and encoding are the platform's problem rather than a hand-written parser's. What Properties
-/// deliberately tolerates is rejected first: a blank line, a comment, a duplicate key, or a line
-/// continuation would otherwise let a golem mean something other than it appears to.
+/// {@link Golems} discovers these files by name under `.golems/`; `_golems.md` supplies shared
+/// policy but is never itself selected. Define the wake-up, harness, budget, checks, and optional
+/// PR branch in the file rather than in runner-specific CLI arguments. For example,
+/// `.golems/perf.md` could contain:
 ///
-/// Strictness matters here because nobody is watching. A misread golem runs at the wrong time, on
-/// the wrong machine, or without its budget.
+/// ```markdown
+/// ---
+/// schedule: [mon, thu]
+/// harness: pi
+/// model: openai-codex/gpt-6.1-sol
+/// effort: high
+/// branch: golem/perf
+/// os: ubuntu-26.04
+/// timeout: 45m
+/// verify: mise run verify
+/// ---
+/// # Performance maintenance
+///
+/// Inspect measurements; make one reviewable improvement or report no change.
+/// ```
+///
+/// This runs on matching **UTC** schedule ticks only when the host workflow is enabled. `schedule:
+/// daily` is also valid; omitting `schedule` makes the task not time-driven. `triggers:
+/// [pull_request_review]` selects that forge event independently of the schedule, but declaring a
+/// trigger does **not** register the event in `.github/workflows/golem.yml`. A task with neither
+/// activation is manual-only: select it with `workflow_dispatch` plus `--golem <name>`. `timeout`
+/// bounds the agent process, not preparation or verification; verification has a separate 30-minute
+/// limit, and the hosted job has its own timeout. `turns` is currently enforced only for Claude; Pi
+/// and Codex have the agent time budget but no turn cap.
+///
+/// | Field | Meaning when omitted |
+/// | --- | --- |
+/// | `harness` | Claude |
+/// | `os` | `ubuntu-latest` |
+/// | `model`, `effort` | `sonnet`, `medium` |
+/// | `timeout` | `30m` |
+/// | `turns`, `verify` | No Claude turn cap, no repository check |
+/// | `branch` | Normal mode: no PR publication, no detached candidate |
+///
+/// The model default is Claude-specific; declare a supported model when choosing Pi or Codex.
+/// `turns` must be positive; `timeout` requires a unit (`90s`, `45m`, `2h`). Refer to the live
+/// field list in {@link Field} or `Golems --help` when adding a task. A declared `verify` command
+/// is a whitespace-separated argument list, not a shell script; the orchestrator runs it for clean,
+/// committed changes before publication.
+///
+/// The frontmatter block is read by {@link java.util.Properties}, so key and value splitting,
+/// escaping, and encoding are delegated to the JDK rather than a custom parser. Before loading,
+/// validation rejects blank lines, comments, duplicate or unknown keys, and line continuations that
+/// Properties would silently accept. Strictness matters when nobody is watching: a misread
+/// declaration could run on the wrong day, host, or budget.
+///
+/// ### API note
+///
+/// The task body is a prompt, not a trusted source of permissions. The engine protocol and shared
+/// policy still limit what the agent may edit or publish.
+///
+/// @see Golems
+/// @see Field
 record Golem(
     String name,
     Path file,
@@ -170,6 +222,10 @@ record Golem(
   }
 
   /// Parses one golem file: a fenced frontmatter block, then the task body.
+  ///
+  /// @param file task Markdown path; its basename becomes the golem name
+  /// @return validated task with defaults filled in
+  /// @throws IllegalArgumentException if frontmatter or instructions are invalid
   static Golem read(Path file) {
     assert file != null : "a file is required";
     var lines = Text.read(file).split("\r?\n", -1);
@@ -210,12 +266,23 @@ record Golem(
   /// Whether this golem should run for the given wake-up.
   ///
   /// Schedule and triggers are orthogonal activations: the presence of a schedule is the time
-  /// activation, and triggers name forge events only. Neither is listed inside the other.
+  /// activation, and triggers name forge events only. Neither is listed inside the other; manual
+  /// dispatch selection is handled by {@link Golems}, not this method.
+  ///
+  /// {@snippet lang="java" :
+  /// var task = Golem.require(Path.of("."), "perf");
+  /// var monday = ZonedDateTime.parse("2026-10-05T09:17:00Z");
+  /// boolean wakesToday = task.due("schedule", monday);
+  /// }
+  ///
+  /// @param event `schedule` or a forge event name
+  /// @param tick instant evaluated on its UTC weekday, regardless of its supplied offset
+  /// @return whether the declaration matches this wake-up
   boolean due(String event, ZonedDateTime tick) {
     assert event != null && !event.isBlank() : "an event is required";
     assert tick != null : "a tick is required";
     return Event.SCHEDULE.is(event)
-        ? schedule.matches(tick.getDayOfWeek())
+        ? schedule.matches(tick.withZoneSameInstant(ZoneOffset.UTC).getDayOfWeek())
         : triggers.contains(event);
   }
 
@@ -227,12 +294,10 @@ record Golem(
       if (!schedule.declared()) {
         return "skip: no schedule";
       }
-      return schedule.matches(tick.getDayOfWeek())
+      var day = tick.withZoneSameInstant(ZoneOffset.UTC).getDayOfWeek();
+      return schedule.matches(day)
           ? "due: schedule " + schedule.describe()
-          : "skip: schedule "
-              + schedule.describe()
-              + " does not match "
-              + shortDay(tick.getDayOfWeek());
+          : "skip: schedule " + schedule.describe() + " does not match " + shortDay(day);
     }
     if (triggers.isEmpty()) {
       return "skip: no triggers";
