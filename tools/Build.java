@@ -17,6 +17,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
@@ -4187,7 +4188,7 @@ public final class Build {
 
   private static void deleteTree(Path path) throws IOException {
     assert path != null;
-    if (!Files.exists(path)) return;
+    if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return;
     var paths = new ArrayList<>(treePaths(path, TREE_ENTRIES_MAX));
     paths.sort(Comparator.reverseOrder());
     for (Path child : paths) Files.delete(child);
