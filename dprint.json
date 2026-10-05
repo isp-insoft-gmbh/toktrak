@@ -1,6 +1,11 @@
 {
   "lineWidth": 80,
-  "excludes": ["sources/toktrak/assets/public/datastar.js", "**/*.d2", "**/*.svg", "**/*.mustache"],
+  "excludes": [
+    "sources/toktrak/assets/public/datastar.js",
+    "**/*.d2",
+    "**/*.svg",
+    "**/*.mustache"
+  ],
   "biome": {
     "indentStyle": "space",
     "indentWidth": 2,
@@ -10,26 +15,32 @@
     "textWrap": "always"
   },
   "dockerfile": {
-    "associations": ["Containerfile"]
+    "associations": [
+      "Containerfile"
+    ]
   },
   "exec": {
     "cwd": "${configDir}",
     "commands": [
       {
         "command": "google-java-format -",
-        "exts": ["java"],
-        "cacheKeyFiles": ["mise.lock"]
+        "exts": [
+          "java"
+        ],
+        "cacheKeyFiles": [
+          "mise.lock"
+        ]
       }
     ]
   },
   "plugins": [
-    "https://plugins.dprint.dev/markdown-0.22.1.wasm@4906fbb038977732aae0e216e4b0b957e2722f8d79282660ccb36d27dd051f17",
-    "https://plugins.dprint.dev/biome-0.13.6.wasm@965d37a7c046a7466124105136498ba72e52d5884f9a318244e4512a432dcf8e",
+    "https://plugins.dprint.dev/markdown-0.26.0.wasm@5cebd0459bf1aa13fb027331720158d03e2a897b1d9f7b3bf93cac661ca4ddbd",
+    "https://plugins.dprint.dev/biome-0.13.13.wasm@bc3678f6c16757fb88d09de4706b04616217015744650fe0174b990c5eb7bb51",
     "https://plugins.dprint.dev/exec-0.7.3.json@a7898d5f1897e77bff474cec3d948c3ec3a7f455e32de2cc60c8adb9a5dd24aa",
     "https://plugins.dprint.dev/g-plane/pretty_yaml-v0.6.0.wasm@40a2fdda7040317eb1b23520f3a00769a5571eedb049c4ca9175c1b9eeba01ae",
-    "https://plugins.dprint.dev/toml-0.8.0.wasm@69cb40cba5e8a53560ccea7fdced073a55d04eb05492f0d9b877f916b976945d",
+    "https://plugins.dprint.dev/toml-0.9.0.wasm@776e088ed4255a51a80e3640e5fd20b15661147e86df3e99611aaa37e9c59852",
     "https://plugins.dprint.dev/g-plane/malva-v0.16.0.wasm@1c1b31f972ef5aae052f97b6723aaf962e0175c5bbe4ba877e092512af354113",
     "https://plugins.dprint.dev/g-plane/markup_fmt-v0.27.5.wasm@64baa23c20ff51becba26f0203bd2ff193983a4315e7f722df705541bb9d0f76",
-    "https://plugins.dprint.dev/dockerfile-0.6.0.wasm@412f8b9329fd2ad7fbf21cd5ef0619a891cd47a39aa9fe900708f33108e1bd42"
+    "https://plugins.dprint.dev/dockerfile-0.7.0.wasm@04e0bef5fb60355247da7937af0df9641bf93922c60aaa19cc94ca141e293d1d"
   ]
 }
