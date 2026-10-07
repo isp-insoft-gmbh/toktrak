@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<test>
+  <step name="Public home">
+    <instruction>Open the dev app in a fresh browser session.</instruction>
+    <expectation>Sign in is visible; team usage is not visible.</expectation>
+  </step>
+  <step name="Sign in">
+    <instruction>Click Sign in.</instruction>
+    <expectation>My Tracker opens with the DEV AUTH banner and token creation form.</expectation>
+  </step>
+  <step name="Overview">
+    <instruction>Click Overview.</instruction>
+    <expectation>Seeded projected cost, tokens, active users, average, leaderboard, and ingestion health are visible without rendering errors.</expectation>
+  </step>
+  <step name="Visualizations">
+    <instruction>Click Visualizations and scroll through the page.</instruction>
+    <expectation>Daily cost, token types, UTC weekday rhythm, model/harness mix, user streams, sessions, and coding blocks render without broken tables or charts.</expectation>
+  </step>
+  <step name="Currency">
+    <instruction>On Overview, record USD amounts, switch to EUR, then switch back to USD.</instruction>
+    <expectation>Cost labels and amounts change to EUR; token counts stay unchanged; switching back restores the original USD amounts.</expectation>
+  </step>
+  <step name="Information links">
+    <instruction>Open Data scope, return with Back to overview, then open What’s new in the footer.</instruction>
+    <expectation>Data scope explains local-only usage and estimated costs; return navigation works; What’s new shows release history.</expectation>
+  </step>
+  <step name="Small screen and themes">
+    <instruction>Inspect Overview and My Tracker at a 390-pixel viewport width in light and dark modes, then restore the desktop viewport.</instruction>
+    <expectation>Text remains legible; navigation and controls remain reachable; no whole-page horizontal overflow occurs.</expectation>
+  </step>
+  <step name="Create token">
+    <instruction>On My Tracker, create a token labeled golem-tester; mask its secret before taking the screenshot.</instruction>
+    <expectation>Tracker token created appears with a shown-once warning, Copy token, and Download toktrak.mjs controls.</expectation>
+  </step>
+  <step name="Revoke token">
+    <instruction>Return to My Tracker and revoke golem-tester.</instruction>
+    <expectation>Token is listed as revoked without a Revoke button; its plaintext secret is not displayed.</expectation>
+  </step>
+  <step name="Sign out">
+    <instruction>Click Sign out.</instruction>
+    <expectation>Public home appears with Sign in and no team usage.</expectation>
+  </step>
+</test>
