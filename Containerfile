@@ -10,7 +10,7 @@ COPY tools tools
 COPY vendored vendored
 RUN java -ea tools/Build.java prod
 
-FROM docker.io/library/debian@sha256:d5ce19d4736f0ebbacd686d1040271a5aeb0cc920f5990c1bfae1717627f0674
+FROM docker.io/library/debian@sha256:bcf83fd8af414eda0c0a99d25a4e61dedd88e7aac7f7bc519d04555ff0c40ec5
 ARG VERSION
 ARG REVISION
 ARG DISPLAY_VERSION=dev
