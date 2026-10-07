@@ -55,6 +55,15 @@ existing one, update its prose with `gh`. The parent appends run data after the
 prose. Use the `make-pr` skill's human-review guidance when shaping this
 description.
 
+Browser work:
+
+- Use CI-provided `agent-browser`; never install it locally.
+- Read `agent-browser skills get core` before use.
+- Resolve references with `agent-browser skills path core`.
+- Use existing Chrome/Chromium; never install or upgrade browser tooling.
+- Use named sessions; store screenshots and downloads in OS temp space.
+- Close sessions after use; missing CLI means the browser check is blocked.
+
 Use visual communication to make review faster: a small inline diagram,
 before/after snippet, screenshot, short video, or other publicly safe evidence.
 Attach useful, publicly safe evidence to the pull request when it clarifies
