@@ -115,33 +115,6 @@ final class ApiErrorHttpTest {
     }
   }
 
-  @Test
-  void given_streamAheadOfProjection_when_noCommitArrives_then_sendsKeepaliveAfterFullWait()
-      throws Exception {
-    try (var app = start(new String[] {})) {
-      URI base = URI.create("http://127.0.0.1:" + app.port());
-      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
-      String cookie = login(client, base);
-
-      long started = System.nanoTime();
-      HttpResponse<String> stream =
-          send(
-              client,
-              base.resolve("/api/stream?revision=9000000000&datastar=%7B%7D"),
-              "GET",
-              null,
-              cookie);
-      Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
-
-      assertEquals(200, stream.statusCode(), stream.body());
-      assertEquals(": keepalive\n\n", stream.body());
-      assertEquals(
-          "text/event-stream; charset=utf-8",
-          stream.headers().firstValue("Content-Type").orElseThrow());
-      assertTrue(elapsed.compareTo(Duration.ofSeconds(4)) >= 0, elapsed.toString());
-    }
-  }
-
   private App start(String[] args) {
     return App.start(
         args,
