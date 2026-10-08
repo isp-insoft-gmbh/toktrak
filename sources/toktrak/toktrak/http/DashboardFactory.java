@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -529,7 +530,8 @@ final class DashboardFactory {
       for (Map.Entry<?, ?> entry : map.entrySet()) {
         if (entry.getKey() instanceof String key) converted.put(key, entry.getValue());
       }
-      result.add(Map.copyOf(converted));
+      // Optional ccusage fields may contain JSON null; keep them for the fallback readers.
+      result.add(Collections.unmodifiableMap(converted));
     }
     return List.copyOf(result);
   }
