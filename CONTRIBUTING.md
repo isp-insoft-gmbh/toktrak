@@ -51,6 +51,11 @@ tests must prove the complete development corpus still replays without loss,
 corruption, or reinterpretation. Never add production data or separate release
 fixtures.
 
+New usage uploads accept numbers with at most 256 integer digits and 256
+fractional digits after exponent expansion. This admission limit also covers
+nested report fields. It applies only to incoming uploads; replay preserves
+previously stored numbers without changing the v1 event schema or rounding data.
+
 ## Generated code
 
 JStachio generates renderers from `sources/toktrak/templates` during
