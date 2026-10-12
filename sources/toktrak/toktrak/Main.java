@@ -32,6 +32,7 @@ public final class Main {
       Assets assets = Assets.load();
       String stylesheetUrl = assets.publicUrl("main.css");
       String datastarUrl = assets.publicUrl("datastar.js");
+      String dashboardUrl = assets.publicUrl("dashboard.js");
       String faviconUrl = assets.publicUrl("favicon.svg");
       String logoWordmarkUrl = assets.publicUrl("logo-wordmark.svg");
       String logoWordmarkDarkUrl = assets.publicUrl("logo-wordmark-dark.svg");
@@ -43,6 +44,7 @@ public final class Main {
               "TokTrak",
               stylesheetUrl,
               datastarUrl,
+              dashboardUrl,
               faviconUrl,
               logoWordmarkUrl,
               logoWordmarkDarkUrl,

@@ -1,21 +1,16 @@
 {{<base.mustache}}
 {{$content}}
-  <div class="dashboard" data-signals="{_usageRevision: {{revision}} , _initialRevision: {{revision}} }" data-init="@get('/api/stream?revision=' + $_usageRevision)" data-on-interval__duration.6s="@get('/api/stream?revision=' + $_usageRevision)" data-effect="$_usageRevision > $_initialRevision && location.reload()">
+  <div id="dashboard" class="dashboard" data-signals__ifmissing="{_observedUsageRevision: {{revision}}, _htmlPending: false, _streamPending: false, _authExpired: false, _retrying: false}" data-signals="{_renderedUsageRevision: {{revision}}, _retrying: false}" data-init="!$_authExpired && !$_streamPending && (($_streamPending = true) && @get('/api/stream?revision=' + $_observedUsageRevision, {retry: 'never'}).finally(() => $_streamPending = false).catch(() => $_retrying = true))" data-on-interval__duration.6s="!$_authExpired && ($_observedUsageRevision > $_renderedUsageRevision ? (!$_htmlPending && (($_htmlPending = true) && @get(window.location.pathname, {retry: 'never'}).finally(() => $_htmlPending = false).catch(() => $_retrying = true))) : (!$_streamPending && (($_streamPending = true) && @get('/api/stream?revision=' + $_observedUsageRevision, {retry: 'never'}).finally(() => $_streamPending = false).catch(() => $_retrying = true))))" data-effect="$_observedUsageRevision > $_renderedUsageRevision && @peek(() => document.dispatchEvent(new CustomEvent('toktrak-dashboard-revision')))" data-on:toktrak-dashboard-revision__document="!$_authExpired && $_observedUsageRevision > $_renderedUsageRevision && !$_htmlPending && (($_htmlPending = true) && @get(window.location.pathname, {retry: 'never'}).finally(() => $_htmlPending = false).catch(() => $_retrying = true))" data-on:datastar-fetch__document="evt.detail.el.id === 'dashboard' && evt.detail.argsRaw.status === '401' ? (($_authExpired = true) && ($_retrying = false)) : (evt.detail.el.id === 'dashboard' && (evt.detail.type === 'retrying' || /^5\d\d$/u.test(evt.detail.argsRaw.status)) ? ($_retrying = true) : (evt.detail.el.id === 'dashboard' && evt.detail.type === 'datastar-patch-signals' && $_observedUsageRevision === $_renderedUsageRevision && ($_retrying = false)))">
+    <p id="dashboard-refresh-state" data-show="$_authExpired || $_retrying" role="status"><span data-show="$_authExpired">Dashboard updates paused. Refresh to sign in again.</span><span data-show="!$_authExpired && $_retrying">Dashboard updates delayed. Retrying shortly.</span></p>
     <header class="page-heading">
-      <div>
-        <p class="eyebrow">FIXED NARRATIVE / ALL RETAINED USAGE</p>
-        <h1>Visualizations</h1>
-      </div>
-      <p>Signed in as <strong>{{signedInName}}</strong></p>
+      <h1>Visualizations</h1>
     </header>
 {{#dashboard.degraded}}
-    <aside class="warning" role="alert"><strong>READ-ONLY MODE</strong> Showing last stored usage.</aside>
+    <aside class="warning" role="alert"><strong>Read-only mode</strong> Showing last stored usage.</aside>
 {{/dashboard.degraded}}
     <div class="narrative">
       <section class="viz-section viz-hero" aria-labelledby="trend-heading">
-        <div class="section-number" aria-hidden="true">01</div>
         <div>
-          <p class="eyebrow">TOTALS → TRENDS</p>
           <h2 id="trend-heading">Daily projected cost</h2>
           <p>Recent daily totals across the team. USD remains canonical; the selected currency is an estimate.</p>
         </div>
@@ -24,7 +19,7 @@
           <figcaption class="sr-only">Daily cost trend shown as proportional text bars.</figcaption>
 {{#dashboard.trends}}
           <div class="trend-row">
-            <time>{{date}}</time>
+            <time datetime="{{date}}">{{humanReadableDate}}</time>
             <span class="bar" aria-hidden="true">{{bar}}</span>
             <strong>{{cost}}</strong>
             <small>{{tokens}} tokens</small>
@@ -37,9 +32,7 @@
       </section>
 
       <section class="viz-section" aria-labelledby="tokens-heading">
-        <div class="section-number" aria-hidden="true">02</div>
         <div>
-          <p class="eyebrow">TOKEN TYPES → CACHE</p>
           <h2 id="tokens-heading">Where tokens go</h2>
         </div>
         <div class="metric-list">
@@ -50,9 +43,7 @@
       </section>
 
       <section class="viz-section" aria-labelledby="rhythm-heading">
-        <div class="section-number" aria-hidden="true">03</div>
         <div>
-          <p class="eyebrow">HEATMAP → RHYTHM</p>
           <h2 id="rhythm-heading">Usage rhythm by UTC weekday</h2>
         </div>
         <div class="rhythm-grid" role="list">
@@ -63,9 +54,7 @@
       </section>
 
       <section class="viz-section split" aria-labelledby="mix-heading">
-        <div class="section-number" aria-hidden="true">04</div>
         <div>
-          <p class="eyebrow">MODELS → SOURCES</p>
           <h2 id="mix-heading">Model and harness mix</h2>
         </div>
         <article>
@@ -87,9 +76,7 @@
       </section>
 
       <section class="viz-section" aria-labelledby="streams-heading">
-        <div class="section-number" aria-hidden="true">05</div>
         <div>
-          <p class="eyebrow">USER STREAMS → SPIKES</p>
           <h2 id="streams-heading">Individual streams, shared context</h2>
         </div>
         <ol class="leaderboard streams">
@@ -103,7 +90,7 @@
             <thead><tr><th>Date</th><th>User</th><th>Cost</th><th>Tokens</th></tr></thead>
             <tbody>
 {{#dashboard.spikes}}
-              <tr><td>{{date}}</td><td>{{user}}</td><td>{{cost}}</td><td>{{tokens}}</td></tr>
+              <tr><td><time datetime="{{date}}">{{humanReadableDate}}</time></td><td>{{user}}</td><td>{{cost}}</td><td>{{tokens}}</td></tr>
 {{/dashboard.spikes}}
             </tbody>
           </table>
@@ -111,9 +98,7 @@
       </section>
 
       <section class="viz-section" aria-labelledby="details-heading">
-        <div class="section-number" aria-hidden="true">06</div>
         <div>
-          <p class="eyebrow">SESSIONS → HARNESS / PROJECT</p>
           <h2 id="details-heading">Costliest sessions</h2>
           <p>Harness is always shown. Project appears when ccusage reports it.</p>
         </div>
@@ -131,9 +116,7 @@
       </section>
 
       <section class="viz-section" aria-labelledby="blocks-heading">
-        <div class="section-number" aria-hidden="true">07</div>
         <div>
-          <p class="eyebrow">BLOCKS → DETAIL TABLE</p>
           <h2 id="blocks-heading">Recent coding blocks</h2>
         </div>
         <div class="table-wrap">

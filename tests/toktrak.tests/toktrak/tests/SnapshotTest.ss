@@ -11,6 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
+  <script type="module" src="/assets/dashboard.0123456789abcdef0123456789abcdef.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
@@ -89,6 +90,7 @@
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
+  <script type="module" src="/assets/dashboard.0123456789abcdef0123456789abcdef.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
@@ -115,7 +117,7 @@
     </div>
     <p class="secret-note token-warning" role="alert">Copy it now. This token will never be shown again.</p>
     <section class="tracker-panel" aria-labelledby="download-heading">
-      <h2 id="download-heading">3. Install tracker</h2>
+      <h2 id="download-heading">Install tracker</h2>
       <textarea id="tracker-script" hidden>const TOKEN &#x3D; &quot;tt_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&quot;;
 </textarea>
       <button type="button" data-download-tracker data-sha256="0000000000000000000000000000000000000000000000000000000000000000" aria-controls="tracker-script">Download toktrak.mjs</button>
@@ -160,10 +162,11 @@
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
+  <script type="module" src="/assets/dashboard.0123456789abcdef0123456789abcdef.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
-  <div class="environment-banner" role="status">DEV AUTH</div>
+  <div class="environment-banner" role="status">Dev auth</div>
   <main id="content">
   <div class="scope-page home-page">
     <h1 class="home-brand">
@@ -176,7 +179,7 @@
     </h1>
     <p class="home-intro">Understand projected AI coding subscription costs from your team's local harness usage.</p>
     <p class="home-detail">No prompts, code, cloud, web, or CI usage. Estimates inform awareness—not billing or performance reviews.</p>
-    <p>Signed in · <a class="button-link" href="/tokens">My Tracker</a></p>
+    <p><a class="button-link" href="/tokens">My Tracker</a></p>
   </div>
 
   </main>
@@ -199,6 +202,7 @@
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
+  <script type="module" src="/assets/dashboard.0123456789abcdef0123456789abcdef.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
@@ -221,7 +225,7 @@
     <h1>My Tracker</h1>
     <p class="lede">Create and revoke user-scoped tokens for the workstation uploader. Token secrets are shown once.</p>
     <section class="tracker-panel platform-panel" aria-labelledby="node-heading">
-      <h2 id="node-heading">1. Install Node.js</h2>
+      <h2 id="node-heading">Install Node.js</h2>
       <p data-platform-status>Choose your platform:</p>
       <div class="platform-instructions" data-platform="win32">
         <h3>Windows</h3>
@@ -243,7 +247,7 @@
     <div class="tracker-pagination">
     </div>
     <section class="tracker-panel" aria-labelledby="create-token-heading">
-      <h2 id="create-token-heading">2. Create tracker token</h2>
+      <h2 id="create-token-heading">Create tracker token</h2>
       <form class="tracker-form" method="post" action="/tokens">
         <input type="hidden" name="csrf" value="csrf-value">
         <label for="tracker-label">Label</label>
@@ -292,6 +296,7 @@
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
+  <script type="module" src="/assets/dashboard.0123456789abcdef0123456789abcdef.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
@@ -330,10 +335,11 @@
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.0123456789abcdef0123456789abcdef.svg">
   <link rel="stylesheet" href="/assets/main.0123456789abcdef0123456789abcdef.css">
   <script type="module" src="/assets/datastar.0123456789abcdef0123456789abcdef.js"></script>
+  <script type="module" src="/assets/dashboard.0123456789abcdef0123456789abcdef.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
-  <div class="environment-banner" role="status">DEV AUTH</div>
+  <div class="environment-banner" role="status">Dev auth</div>
   <header class="site-header">
     <a class="wordmark" href="/" aria-label="TokTrak home">
       <picture>
@@ -353,7 +359,7 @@
     <h1>My Tracker</h1>
     <p class="lede">Create and revoke user-scoped tokens for the workstation uploader. Token secrets are shown once.</p>
     <section class="tracker-panel platform-panel" aria-labelledby="node-heading">
-      <h2 id="node-heading">1. Install Node.js</h2>
+      <h2 id="node-heading">Install Node.js</h2>
       <p data-platform-status>Choose your platform:</p>
       <div class="platform-instructions" data-platform="win32">
         <h3>Windows</h3>
@@ -387,7 +393,7 @@
           <strong>Old workstation</strong>
           <code>00000000-0000-4000-8000-000000000002</code>
           <span class="token-status">revoked</span>
-          · last used <time>2026-07-10T12:00:00Z</time>
+          · last used <time datetime="2026-07-10T12:00:00Z">10 Jul 2026 · 12:00 UTC</time>
         </div>
       </li>
     </ul>
@@ -396,7 +402,7 @@
       <a href="/tokens?page&#x3D;3">Next</a>
     </div>
     <section class="tracker-panel" aria-labelledby="create-token-heading">
-      <h2 id="create-token-heading">2. Create tracker token</h2>
+      <h2 id="create-token-heading">Create tracker token</h2>
       <form class="tracker-form" method="post" action="/tokens">
         <input type="hidden" name="csrf" value="csrf-value">
         <label for="tracker-label">Label</label>

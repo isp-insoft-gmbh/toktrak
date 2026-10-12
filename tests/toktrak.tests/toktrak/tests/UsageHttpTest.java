@@ -89,7 +89,7 @@ final class UsageHttpTest {
           "text/event-stream; charset=utf-8",
           stream.headers().firstValue("Content-Type").orElseThrow());
       assertTrue(stream.body().startsWith("event: datastar-patch-signals\n"), stream.body());
-      assertTrue(stream.body().contains("\"_usageRevision\":"), stream.body());
+      assertTrue(stream.body().contains("\"_observedUsageRevision\":"), stream.body());
       assertEquals(
           400,
           send(

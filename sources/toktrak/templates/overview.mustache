@@ -1,61 +1,52 @@
 {{<base.mustache}}
 {{$content}}
-  <div class="dashboard" data-signals="{_usageRevision: {{revision}} , _initialRevision: {{revision}} }" data-init="@get('/api/stream?revision=' + $_usageRevision)" data-on-interval__duration.6s="@get('/api/stream?revision=' + $_usageRevision)" data-effect="$_usageRevision > $_initialRevision && location.reload()">
+  <div id="dashboard" class="dashboard" data-signals__ifmissing="{_observedUsageRevision: {{revision}}, _htmlPending: false, _streamPending: false, _authExpired: false, _retrying: false}" data-signals="{_renderedUsageRevision: {{revision}}, _retrying: false}" data-init="!$_authExpired && !$_streamPending && (($_streamPending = true) && @get('/api/stream?revision=' + $_observedUsageRevision, {retry: 'never'}).finally(() => $_streamPending = false).catch(() => $_retrying = true))" data-on-interval__duration.6s="!$_authExpired && ($_observedUsageRevision > $_renderedUsageRevision ? (!$_htmlPending && (($_htmlPending = true) && @get(window.location.pathname, {retry: 'never'}).finally(() => $_htmlPending = false).catch(() => $_retrying = true))) : (!$_streamPending && (($_streamPending = true) && @get('/api/stream?revision=' + $_observedUsageRevision, {retry: 'never'}).finally(() => $_streamPending = false).catch(() => $_retrying = true))))" data-effect="$_observedUsageRevision > $_renderedUsageRevision && @peek(() => document.dispatchEvent(new CustomEvent('toktrak-dashboard-revision')))" data-on:toktrak-dashboard-revision__document="!$_authExpired && $_observedUsageRevision > $_renderedUsageRevision && !$_htmlPending && (($_htmlPending = true) && @get(window.location.pathname, {retry: 'never'}).finally(() => $_htmlPending = false).catch(() => $_retrying = true))" data-on:datastar-fetch__document="evt.detail.el.id === 'dashboard' && evt.detail.argsRaw.status === '401' ? (($_authExpired = true) && ($_retrying = false)) : (evt.detail.el.id === 'dashboard' && (evt.detail.type === 'retrying' || /^5\d\d$/u.test(evt.detail.argsRaw.status)) ? ($_retrying = true) : (evt.detail.el.id === 'dashboard' && evt.detail.type === 'datastar-patch-signals' && $_observedUsageRevision === $_renderedUsageRevision && ($_retrying = false)))">
+    <p id="dashboard-refresh-state" data-show="$_authExpired || $_retrying" role="status"><span data-show="$_authExpired">Dashboard updates paused. Refresh to sign in again.</span><span data-show="!$_authExpired && $_retrying">Dashboard updates delayed. Retrying shortly.</span></p>
     <header class="page-heading">
-      <div>
-        <p class="eyebrow">TEAM USAGE / {{dashboard.period}}</p>
-        <h1>Overview</h1>
-      </div>
-      <p>Signed in as <strong>{{signedInName}}</strong></p>
+      <h1>Overview</h1>
+{{#dashboard.hasPeriod}}
+      <time class="period" datetime="{{dashboard.period}}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="5" width="16" height="15" rx="1"/><path d="M8 3v4m8-4v4M4 10h16"/></svg> {{dashboard.periodLabel}}</time>
+{{/dashboard.hasPeriod}}
+{{^dashboard.hasPeriod}}
+      <span class="period">{{dashboard.periodLabel}}</span>
+{{/dashboard.hasPeriod}}
     </header>
 {{#dashboard.degraded}}
     <aside class="warning" role="alert">
-      <strong>READ-ONLY MODE</strong>
+      <strong>Read-only mode</strong>
       Uploads are unavailable. Showing last stored usage.
     </aside>
 {{/dashboard.degraded}}
-{{#dashboard.partial}}
-    <aside class="warning warning-partial" role="status">
-      <strong>PARTIAL REPORTS</strong>
-      Some workstation reports failed; preserved data remains visible.
-    </aside>
-{{/dashboard.partial}}
     <section class="kpi-grid" aria-labelledby="month-heading">
       <h2 id="month-heading" class="section-heading">Current period</h2>
       <article class="kpi kpi-primary">
-        <span>Projected cost</span>
-        <strong>{{dashboard.cost}}</strong>
+        <span>Estimated cost</span>
+        <strong id="kpi-cost" data-counter="{{dashboard.costCounter}}">{{dashboard.cost}}</strong>
         <small>{{dashboard.fx}}</small>
+{{#dashboard.partial}}
+        <small class="warning-inline" role="status"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg>Some reports missing</small>
+{{/dashboard.partial}}
       </article>
       <article class="kpi">
         <span>Tokens</span>
-        <strong>{{dashboard.tokens}}</strong>
-        <small>Canonical daily reports</small>
+        <strong id="kpi-tokens" data-counter="{{dashboard.tokensCounter}}">{{dashboard.tokens}}</strong>
       </article>
       <article class="kpi">
-        <span>Active users</span>
-        <strong>{{dashboard.activeUsers}}</strong>
-        <small>Users with usage this period</small>
-      </article>
-      <article class="kpi">
-        <span>Average / user</span>
-        <strong>{{dashboard.averageCost}}</strong>
-        <small>Awareness estimate, not billing</small>
+        <span>Average per user</span>
+        <strong id="kpi-average" data-counter="{{dashboard.averageCounter}}">{{dashboard.averageCost}}</strong>
+        <small>{{dashboard.activeUsers}} active users</small>
       </article>
     </section>
     <div class="overview-grid">
       <section aria-labelledby="leaderboard-heading">
         <div class="section-heading-row">
-          <h2 id="leaderboard-heading">Period leaderboard</h2>
-          <span>COST / TOKENS</span>
+          <h2 id="leaderboard-heading">By person</h2>
         </div>
         <ol class="leaderboard">
 {{#dashboard.leaderboard}}
           <li>
-            <span class="rank">{{rank}}</span>
-            <span class="avatar {{colorClass}}" aria-hidden="true">{{initials}}</span>
             <span class="person"><strong>{{name}}</strong><span class="bar" aria-hidden="true">{{bar}}</span></span>
-            <span class="values"><strong>{{cost}}</strong><small>{{tokens}}</small></span>
+            <span class="values"><strong>{{cost}}</strong><small>{{tokens}} tokens</small></span>
           </li>
 {{/dashboard.leaderboard}}
 {{^dashboard.leaderboard}}
@@ -65,15 +56,13 @@
       </section>
       <section aria-labelledby="ingestion-heading">
         <div class="section-heading-row">
-          <h2 id="ingestion-heading">Ingestion health</h2>
-          <span>LATEST SNAPSHOT</span>
+          <h2 id="ingestion-heading"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Tracker updates</h2>
         </div>
         <ul class="ingestion-list">
 {{#dashboard.ingestion}}
           <li>
-            <span class="avatar {{colorClass}}" aria-hidden="true">{{initials}}</span>
-            <span><strong>{{name}}</strong><time class="ingestion-date{{#stale}} ingestion-date-warn{{/stale}}" datetime="{{receivedAt}}">{{receivedAt}}</time><small>{{detail}}</small></span>
-            <span class="status {{statusClass}}">{{status}}</span>
+            <span><strong>{{name}}</strong><time class="ingestion-date{{#stale}} ingestion-date-warn{{/stale}}" datetime="{{receivedAt}}">{{humanReadableReceivedAt}}</time><details class="ingestion-details"><summary>Details</summary><small>{{detail}}</small></details></span>
+            <span class="status {{statusClass}}" aria-label="{{status}}" role="img">{{#warning}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg> {{status}}{{/warning}}{{^warning}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12 4 4L19 6"/></svg>{{/warning}}</span>
           </li>
 {{/dashboard.ingestion}}
 {{^dashboard.ingestion}}
@@ -84,7 +73,7 @@
     </div>
     <footer class="page-footer">
       <p>Local coding-harness usage only. Estimates are incomplete by design.</p>
-      <a href="/scope">Read data scope →</a>
+      <a href="/scope">Read data scope</a>
     </footer>
   </div>
 {{/content}}

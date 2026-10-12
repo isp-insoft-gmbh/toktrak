@@ -123,9 +123,12 @@ final class DashboardFactory {
     return new DashboardSnapshot(
         period,
         money(monthly.cost, currency, rate),
+        counter(monthly.cost, currency, rate),
         integer(monthly.tokens),
+        monthly.tokens.toString(),
         activeUsers,
         money(average, currency, rate),
+        counter(average, currency, rate),
         fx(rate, currency),
         health.healthy() ? DashboardHealth.HEALTHY : DashboardHealth.DEGRADED,
         partial ? ReportCompleteness.PARTIAL : ReportCompleteness.COMPLETE,
@@ -433,8 +436,11 @@ final class DashboardFactory {
               boolean stale = stale(row, now);
               String detail =
                   row.partial()
-                      ? "Missing: " + String.join(", ", row.failedReports())
-                      : "All reports · Tracker v" + row.trackerVersion();
+                      ? "Missing: "
+                          + String.join(", ", row.failedReports())
+                          + " · Tracker v"
+                          + row.trackerVersion()
+                      : "Tracker v" + row.trackerVersion();
               if (stale) detail = "No uploads for more than 5 weekdays (UTC) · " + detail;
               String status = row.partial() ? "Partial" : stale ? "Stale" : "Complete";
               return new DashboardIngestionRow(
@@ -484,6 +490,15 @@ final class DashboardFactory {
     var format = new DecimalFormat("#,##0.00", symbols);
     format.setRoundingMode(RoundingMode.HALF_UP);
     return currency.symbol() + format.format(value);
+  }
+
+  private static String counter(BigDecimal usd, DashboardCurrency currency, FxRate rate) {
+    assert usd != null && usd.signum() >= 0;
+    BigDecimal value =
+        currency == DashboardCurrency.EUR
+            ? usd.multiply(Objects.requireNonNull(rate).eurPerUsd())
+            : usd;
+    return value.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
   }
 
   private static String fx(FxRate rate, DashboardCurrency currency) {

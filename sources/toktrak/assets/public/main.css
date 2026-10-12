@@ -55,13 +55,7 @@
   );
 
   --gap: clamp(0.75rem, 2vw, 1.5rem);
-  font:
-    15px/1.45 ui-monospace,
-    "Cascadia Mono",
-    "SFMono-Regular",
-    Menlo,
-    Consolas,
-    monospace;
+  font: 1rem/1.5 system-ui, sans-serif;
 }
 
 *,
@@ -102,6 +96,17 @@ textarea {
   font: inherit;
 }
 
+code,
+pre {
+  font-family:
+    ui-monospace,
+    "Cascadia Mono",
+    "SFMono-Regular",
+    Menlo,
+    Consolas,
+    monospace;
+}
+
 :focus-visible {
   outline: 4px solid var(--focus-ring);
   outline-offset: 3px;
@@ -126,9 +131,8 @@ textarea {
   padding: 0.45rem 1rem;
   background: var(--danger);
   color: var(--on-danger);
-  font-weight: 900;
+  font-weight: 700;
   text-align: center;
-  letter-spacing: 0.15em;
 }
 
 .site-header {
@@ -201,11 +205,11 @@ main {
 
 .page-heading {
   display: flex;
-  align-items: end;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 2rem;
+  gap: 1rem;
   margin-bottom: 2rem;
-  border-bottom: 5px solid var(--line);
+  border-bottom: 3px solid var(--line);
 }
 
 h1,
@@ -216,33 +220,27 @@ p {
 }
 
 h1 {
-  margin-bottom: 0.35rem;
-  overflow-wrap: anywhere;
-  font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
-  font-size: clamp(2.5rem, 10vw, 8rem);
-  font-weight: 900;
-  line-height: 0.9;
-  letter-spacing: -0.035em;
-  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
 }
 
 h2 {
-  font-size: clamp(1.35rem, 3vw, 2rem);
-  line-height: 1.1;
-  text-transform: uppercase;
+  font-size: 1.25rem;
+  line-height: 1.2;
 }
 
 h3 {
   font-size: 1rem;
-  text-transform: uppercase;
 }
 
-.eyebrow {
-  margin-bottom: 0.5rem;
+.period {
+  margin-bottom: 0.75rem;
   color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 900;
-  letter-spacing: 0.12em;
+  font-size: 0.9375rem;
+  white-space: nowrap;
 }
 
 .warning {
@@ -255,15 +253,10 @@ h3 {
   color: var(--warning-text);
 }
 
-.warning-partial {
-  background: var(--warning-surface-strong);
-}
-
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-top: 3px solid var(--line);
-  border-left: 3px solid var(--line);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-bottom: 3px solid var(--line);
 }
 
 .section-heading {
@@ -276,16 +269,17 @@ h3 {
 
 .kpi {
   min-width: 0;
-  min-height: 10rem;
-  border-right: 3px solid var(--line);
-  border-bottom: 3px solid var(--line);
-  padding: 1rem;
-  background: var(--surface);
+  padding: 1.25rem 0;
+}
+
+.kpi + .kpi {
+  border-top: 1px solid var(--line);
 }
 
 .kpi-primary {
-  background: var(--accent-surface);
-  color: var(--on-accent);
+  grid-column: 1 / -1;
+  padding-top: 0;
+  color: var(--accent);
 }
 
 .kpi > span,
@@ -298,16 +292,31 @@ h3 {
 
 .kpi-primary > span,
 .kpi-primary > small {
-  color: var(--on-accent-muted);
+  color: var(--muted);
+}
+
+.kpi:last-child {
+  border-left: 1px solid var(--line);
+  padding-left: var(--gap);
 }
 
 .kpi > strong {
   display: block;
-  margin: 1rem 0 0.5rem;
-  overflow-wrap: anywhere;
-  font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
-  font-size: clamp(2rem, 4vw, 3.75rem);
-  line-height: 1;
+  margin: 0.5rem 0;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: 1.875rem;
+  font-variant-numeric: lining-nums tabular-nums;
+  white-space: nowrap;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.kpi-primary > strong {
+  font-size: clamp(2.5rem, 5.5vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
 }
 
 .overview-grid {
@@ -318,20 +327,11 @@ h3 {
 }
 
 .section-heading-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
   border-bottom: 3px solid var(--line);
 }
 
 .section-heading-row h2 {
   margin-bottom: 0.65rem;
-}
-
-.section-heading-row span {
-  color: var(--muted);
-  font-size: 0.72rem;
 }
 
 .leaderboard,
@@ -352,7 +352,7 @@ h3 {
 }
 
 .leaderboard li {
-  grid-template-columns: 2rem 2.5rem minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .streams li {
@@ -360,12 +360,7 @@ h3 {
 }
 
 .ingestion-list li {
-  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
-}
-
-.rank {
-  color: var(--muted);
-  font-weight: 900;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .avatar {
@@ -403,8 +398,32 @@ h3 {
   background: var(--avatar-8);
 }
 
+.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+  vertical-align: -0.15em;
+}
+
+.warning-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--warning-text);
+}
+
+.kpi-primary > .warning-inline {
+  color: var(--warning-text);
+}
+
 .person,
-.ingestion-list li > span:nth-child(2) {
+.ingestion-list li > span:first-child {
   min-width: 0;
 }
 
@@ -417,7 +436,6 @@ h3 {
 .ingestion-date {
   display: block;
   width: fit-content;
-  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
@@ -432,6 +450,21 @@ h3 {
   font-weight: 900;
 }
 
+.ingestion-details {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.ingestion-details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.ingestion-details small {
+  display: block;
+  margin-top: 0.2rem;
+}
 .values {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -442,17 +475,19 @@ h3 {
   display: block;
   overflow: hidden;
   color: var(--accent);
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: -0.08em;
   white-space: nowrap;
 }
 
 .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
   border: 2px solid currentColor;
   padding: 0.2rem 0.4rem;
-  font-size: 0.72rem;
-  font-weight: 900;
-  text-transform: uppercase;
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
 .status-ok {
@@ -514,26 +549,18 @@ h3 {
 
 .viz-section {
   display: grid;
-  grid-template-columns: 4rem minmax(15rem, 0.8fr) minmax(0, 2fr);
+  grid-template-columns: minmax(15rem, 0.8fr) minmax(0, 2fr);
   gap: var(--gap);
   border-bottom: 3px solid var(--line);
   padding: clamp(1.5rem, 4vw, 4rem) 0;
 }
 
 .viz-section.split {
-  grid-template-columns:
-    4rem minmax(13rem, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(13rem, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .viz-section > .table-wrap {
-  grid-column: 2 / -1;
-}
-
-.section-number {
-  color: var(--accent);
-  font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
-  font-size: 3rem;
-  line-height: 1;
+  grid-column: 1 / -1;
 }
 
 .trend-chart,
@@ -629,9 +656,8 @@ table {
 caption {
   padding: 0.75rem;
   border-bottom: 2px solid var(--line);
-  font-weight: 900;
+  font-weight: 700;
   text-align: left;
-  text-transform: uppercase;
 }
 
 th,
@@ -731,9 +757,8 @@ th {
 }
 
 .token-status {
-  font-size: 0.78rem;
-  font-weight: 900;
-  text-transform: uppercase;
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
 .token-action {
@@ -877,10 +902,8 @@ button.button-danger {
 
 .current-release > header span {
   color: var(--on-strong);
-  font-size: 0.8rem;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
 .current-release ul,
@@ -1008,7 +1031,7 @@ button.button-danger:hover {
 }
 
 .error-page p {
-  font-family: system-ui, sans-serif;
+  color: var(--muted);
 }
 
 .error-page dl {
@@ -1068,7 +1091,7 @@ button.button-danger:hover {
 
   .viz-section,
   .viz-section.split {
-    grid-template-columns: 3rem minmax(0, 1fr);
+    grid-template-columns: minmax(10rem, 0.8fr) minmax(0, 1fr);
   }
 
   .viz-section > :nth-child(n+3) {
@@ -1121,13 +1144,21 @@ button.button-danger:hover {
     grid-template-columns: 1fr;
   }
 
+  .kpi:last-child {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .kpi-primary > strong {
+    font-size: clamp(2.75rem, 13.33vw, 3rem);
+  }
+
   .leaderboard li {
-    grid-template-columns: 1.5rem 2.5rem minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .leaderboard .values {
-    grid-column: 3;
-    text-align: left;
+    text-align: right;
   }
 
   .streams li {

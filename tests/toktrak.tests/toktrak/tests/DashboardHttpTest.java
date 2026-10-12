@@ -27,6 +27,14 @@ final class DashboardHttpTest {
       URI base = URI.create("http://127.0.0.1:" + app.port());
       var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
       assertEquals(302, send(client, base.resolve("/visualizations"), null).statusCode());
+      HttpResponse<String> backgroundSignedOut =
+          client.send(
+              HttpRequest.newBuilder(base.resolve("/?datastar=%7B%7D"))
+                  .header("Datastar-Request", "true")
+                  .GET()
+                  .build(),
+              BodyHandlers.ofString());
+      assertEquals(401, backgroundSignedOut.statusCode());
       String session = login(client, base);
 
       HttpResponse<String> overview = send(client, base.resolve("/"), session);
@@ -40,29 +48,64 @@ final class DashboardHttpTest {
       assertTrue(overview.body().contains("href=\"/tokens\">My Tracker</a>"));
       assertTrue(overview.body().contains("$1,068.19"), overview.body());
       assertTrue(overview.body().contains("560,418,883"), overview.body());
-      assertTrue(overview.body().contains("PARTIAL REPORTS"), overview.body());
-      assertTrue(overview.body().contains("Synthetic User 1"), overview.body());
-      assertTrue(overview.body().contains("<span class=\"rank\">1</span>"), overview.body());
-      assertTrue(overview.body().contains(">S1</span>"), overview.body());
+      assertTrue(overview.body().contains("Some reports missing"), overview.body());
+      assertFalse(overview.body().contains("Read-only mode"), overview.body());
+      assertTrue(overview.body().contains("role=\"status\""), overview.body());
       assertTrue(
-          overview.body().contains("<span class=\"status status-ok\">Complete</span>"),
+          overview
+              .body()
+              .contains("<details class=\"ingestion-details\"><summary>Details</summary>"),
           overview.body());
-      assertTrue(overview.body().contains("All reports · Tracker vdev-corpus"), overview.body());
+      assertTrue(overview.body().contains("Synthetic User 1"), overview.body());
+      assertTrue(overview.body().contains("<div id=\"dashboard\""), overview.body());
       assertTrue(
-          overview.body().contains("<span class=\"status status-warn\">Partial</span>"),
+          overview.body().contains("id=\"kpi-cost\" data-counter=\"1068.19\""), overview.body());
+      assertTrue(
+          overview.body().contains("id=\"kpi-tokens\" data-counter=\"560418883\""),
+          overview.body());
+      assertTrue(
+          overview.body().contains("id=\"kpi-average\" data-counter=\"213.64\""), overview.body());
+      assertTrue(
+          overview.body().contains("<time class=\"period\" datetime=\"2026-07\">"),
+          overview.body());
+      assertTrue(overview.body().contains("</svg> July 2026</time>"), overview.body());
+      assertTrue(
+          overview.body().contains("class=\"status status-ok\" aria-label=\"Complete\""),
+          overview.body());
+      assertTrue(
+          overview.body().contains("Tracker vdev-corpus</small></details>"), overview.body());
+      assertTrue(
+          overview.body().contains("class=\"status status-warn\" aria-label=\"Partial\""),
           overview.body());
       int ingestionStart = overview.body().indexOf("<ul class=\"ingestion-list\">");
       int ingestionEnd = overview.body().indexOf("</ul>", ingestionStart);
       String ingestion = overview.body().substring(ingestionStart, ingestionEnd);
+      assertTrue(ingestion.contains("</svg> Partial</span>"), ingestion);
+      assertFalse(ingestion.contains("</svg> Complete</span>"), ingestion);
       assertTrue(
           ingestion.indexOf("<strong>Synthetic User 5</strong>")
               < ingestion.indexOf("<strong>Synthetic User 1</strong>"),
           ingestion);
       assertTrue(overview.body().contains(">██████████</span>"), overview.body());
-      assertFalse(overview.body().contains("datastar-patch-signals"), overview.body());
+      assertTrue(overview.body().contains("datastar-patch-signals"), overview.body());
       assertTrue(
           overview.body().matches("(?s).*src=\"/assets/datastar\\.[0-9a-f]{32}\\.js\".*"),
           overview.body());
+      assertTrue(
+          overview.body().matches("(?s).*src=\"/assets/dashboard\\.[0-9a-f]{32}\\.js\".*"),
+          overview.body());
+      assertTrue(overview.body().contains("data-signals__ifmissing"), overview.body());
+      assertTrue(overview.body().contains("_observedUsageRevision"), overview.body());
+      assertTrue(overview.body().contains("_renderedUsageRevision"), overview.body());
+      assertTrue(
+          overview.body().contains("data-on:toktrak-dashboard-revision__document"),
+          overview.body());
+      assertTrue(overview.body().contains("data-on:datastar-fetch__document"), overview.body());
+      assertTrue(overview.body().contains("@peek(() => document.dispatchEvent"), overview.body());
+      assertTrue(
+          overview.body().contains("@get(window.location.pathname, {retry: 'never'})"),
+          overview.body());
+      assertFalse(overview.body().contains("location.reload()"), overview.body());
 
       HttpResponse<String> visualizations = send(client, base.resolve("/visualizations"), session);
       assertEquals(200, visualizations.statusCode());
@@ -84,7 +127,8 @@ final class DashboardHttpTest {
         assertTrue(visualizations.body().contains(heading), heading);
       }
       assertTrue(visualizations.body().contains("<svg class=\"chart-rule\""));
-      assertTrue(visualizations.body().contains("<time>2026-07-14</time>"));
+      assertTrue(
+          visualizations.body().contains("<time datetime=\"2026-07-14\">14 Jul 2026</time>"));
       assertTrue(visualizations.body().contains("4,263,701,600"));
       assertTrue(visualizations.body().contains(">Monday<"));
       assertTrue(visualizations.body().contains("<strong>claude-fable-5</strong>"));
@@ -111,7 +155,14 @@ final class DashboardHttpTest {
           preference.headers().firstValue("Set-Cookie").orElseThrow().split(";", 2)[0];
       HttpResponse<String> eur = send(client, base.resolve("/"), session + "; " + currency);
       assertTrue(eur.body().contains("€982.74"), eur.body());
+      assertTrue(eur.body().contains("id=\"kpi-cost\" data-counter=\"982.74\""), eur.body());
+      assertTrue(eur.body().contains("id=\"kpi-average\" data-counter=\"196.55\""), eur.body());
       assertTrue(eur.body().contains("Showing EUR estimates"), eur.body());
+      assertEquals(200, send(client, base.resolve("/?datastar=%7B%7D"), session).statusCode());
+      assertEquals(
+          400,
+          send(client, base.resolve("/?datastar=%7B%22unexpected%22%3A1%7D"), session)
+              .statusCode());
       assertEquals(400, send(client, base.resolve("/?currency=GBP"), session).statusCode());
     }
   }
@@ -134,7 +185,7 @@ final class DashboardHttpTest {
       String session = login(client, base);
 
       String body = send(client, base.resolve("/"), session).body();
-      assertTrue(body.contains("READ-ONLY MODE"), body);
+      assertTrue(body.contains("Read-only mode"), body);
       assertTrue(body.contains("$1,068.19"), body);
     }
   }
@@ -143,16 +194,17 @@ final class DashboardHttpTest {
   void given_completeSnapshot_when_moreThanFiveWeekdaysOld_then_marksItStaleAndItsDate()
       throws Exception {
     String atLimit = corpusOverview("2026-07-21T23:59:59Z", "five-weekdays");
-    assertTrue(atLimit.contains("<span class=\"status status-ok\">Complete</span>"), atLimit);
-    assertFalse(atLimit.contains("<span class=\"status status-warn\">Stale</span>"), atLimit);
+    assertTrue(atLimit.contains("class=\"status status-ok\" aria-label=\"Complete\""), atLimit);
+    assertFalse(atLimit.contains("class=\"status status-warn\" aria-label=\"Stale\""), atLimit);
 
     String stale = corpusOverview("2026-07-22T00:00:00Z", "six-weekdays");
-    assertTrue(stale.contains("<span class=\"status status-warn\">Stale</span>"), stale);
+    assertTrue(stale.contains("class=\"status status-warn\" aria-label=\"Stale\""), stale);
     assertTrue(stale.contains("No uploads for more than 5 weekdays (UTC)"), stale);
+    assertTrue(stale.contains("</svg> Stale</span>"), stale);
     assertTrue(
         stale.contains(
             "<time class=\"ingestion-date ingestion-date-warn\""
-                + " datetime=\"2026-07-14T14:14:39Z\">2026-07-14T14:14:39Z</time>"),
+                + " datetime=\"2026-07-14T14:14:39Z\">14 Jul 2026 · 14:14 UTC</time>"),
         stale);
   }
 
@@ -184,7 +236,8 @@ final class DashboardHttpTest {
       String ingestion = body.substring(start, end);
       assertTrue(body.contains("2026-07"), body);
       assertTrue(ingestion.contains("<strong>Synthetic User 1</strong>"), ingestion);
-      assertTrue(ingestion.contains("<span class=\"status status-warn\">Stale</span>"), ingestion);
+      assertTrue(
+          ingestion.contains("class=\"status status-warn\" aria-label=\"Stale\""), ingestion);
       for (int user = 2; user <= 5; user++) {
         assertFalse(ingestion.contains("<strong>Synthetic User " + user + "</strong>"), ingestion);
       }
@@ -213,12 +266,12 @@ final class DashboardHttpTest {
             .toList();
     Files.write(corpus, events);
     String body = corpusOverview(corpus, "2026-07-21T23:59:59Z", "client-clock-behind");
-    assertTrue(body.contains("<span class=\"status status-ok\">Complete</span>"), body);
-    assertFalse(body.contains("<span class=\"status status-warn\">Stale</span>"), body);
+    assertTrue(body.contains("class=\"status status-ok\" aria-label=\"Complete\""), body);
+    assertFalse(body.contains("class=\"status status-warn\" aria-label=\"Stale\""), body);
     assertTrue(
         body.contains(
             "<time class=\"ingestion-date\" datetime=\"2026-07-14T14:14:39Z\">"
-                + "2026-07-14T14:14:39Z</time>"),
+                + "14 Jul 2026 · 14:14 UTC</time>"),
         body);
   }
 
@@ -249,8 +302,8 @@ final class DashboardHttpTest {
     assertTrue(stale >= 0 && partial >= 0 && fresh >= 0, ingestion);
     assertTrue(stale < fresh && partial < fresh, ingestion);
     assertTrue(ingestion.contains("Missing: daily, blocks"), ingestion);
-    assertTrue(ingestion.contains("<span class=\"status status-ok\">Complete</span>"), ingestion);
-    assertTrue(ingestion.contains("<span class=\"status status-warn\">Stale</span>"), ingestion);
+    assertTrue(ingestion.contains("class=\"status status-ok\" aria-label=\"Complete\""), ingestion);
+    assertTrue(ingestion.contains("class=\"status status-warn\" aria-label=\"Stale\""), ingestion);
   }
 
   private String corpusOverview(String clock, String dataName) throws Exception {

@@ -51,7 +51,7 @@ final class IdentityHttpTest {
       String cookie = login.headers().firstValue("Set-Cookie").orElseThrow().split(";", 2)[0];
       HttpResponse<String> signedInHome =
           send(client, base.resolve("/"), "GET", cookie, null, null);
-      assertTrue(signedInHome.body().contains("Signed in"), signedInHome.body());
+      assertTrue(signedInHome.body().contains("<h1>Overview</h1>"), signedInHome.body());
       assertNavigation(signedInHome.body(), "/", "Overview");
       assertTrue(signedInHome.body().contains("EUR unavailable · showing USD"));
       assertFalse(signedInHome.body().contains("href=\"/login\">Sign in</a>"), signedInHome.body());

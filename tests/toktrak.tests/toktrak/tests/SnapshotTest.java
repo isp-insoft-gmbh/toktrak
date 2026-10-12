@@ -41,6 +41,7 @@ final class SnapshotTest {
 
   private static final String STYLESHEET = "/assets/main.0123456789abcdef0123456789abcdef.css";
   private static final String DATASTAR = "/assets/datastar.0123456789abcdef0123456789abcdef.js";
+  private static final String DASHBOARD = "/assets/dashboard.0123456789abcdef0123456789abcdef.js";
   private static final String CLIPBOARD = "/assets/clipboard.0123456789abcdef0123456789abcdef.js";
   private static final String PLATFORM = "/assets/platform.0123456789abcdef0123456789abcdef.js";
   private static final String TOKEN = "tt_" + "A".repeat(43);
@@ -85,6 +86,7 @@ final class SnapshotTest {
             "What’s new · TokTrak",
             STYLESHEET,
             DATASTAR,
+            DASHBOARD,
             FAVICON,
             LOGO_WORDMARK,
             LOGO_WORDMARK_DARK,
@@ -237,6 +239,7 @@ final class SnapshotTest {
         title,
         STYLESHEET,
         DATASTAR,
+        DASHBOARD,
         FAVICON,
         LOGO_WORDMARK,
         LOGO_WORDMARK_DARK,
@@ -253,6 +256,7 @@ final class SnapshotTest {
         title,
         STYLESHEET,
         DATASTAR,
+        DASHBOARD,
         FAVICON,
         LOGO_WORDMARK,
         LOGO_WORDMARK_DARK,
