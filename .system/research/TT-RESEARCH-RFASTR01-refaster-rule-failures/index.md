@@ -86,9 +86,8 @@ Refaster rule can match without touching external validation.
 
 ## 2026-07-15 — Explicit imports to module imports
 
-**Pattern:** Replace groups of traditional type/package imports with
-`import module ...;` when the imported types are exported by one readable
-module.
+**Pattern:** Replace groups of traditional type/package imports with `import
+module ...;` when the imported types are exported by one readable module.
 
 **Attempt:** Checked current Refaster 2.50.0 template and import APIs against
 finalized JDK 25 module import declarations. Refaster templates express
@@ -97,8 +96,8 @@ compilation-unit-wide and cannot differ between `@BeforeTemplate` and
 `@AfterTemplate`. Refaster's `ImportPolicy` can only add top-level,
 direct-class, or static imports.
 
-**Failure:** Refaster cannot match a set of import declarations or emit
-`import module`. Module-import conversion also requires whole-compilation-unit
+**Failure:** Refaster cannot match a set of import declarations or emit `import
+module`. Module-import conversion also requires whole-compilation-unit
 name-ambiguity analysis outside Refaster's template model.
 
 **Outcome:** Rule rejected as impossible. The original task continues without
