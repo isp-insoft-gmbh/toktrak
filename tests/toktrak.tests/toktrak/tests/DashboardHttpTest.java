@@ -7,6 +7,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -153,6 +154,44 @@ final class DashboardHttpTest {
             "<time class=\"ingestion-date ingestion-date-warn\""
                 + " datetime=\"2026-07-14T14:14:39Z\">2026-07-14T14:14:39Z</time>"),
         stale);
+  }
+
+  @Test
+  void given_priorMonthUsers_when_openingOverview_then_showsOnlyDisplayedMonthIngestion()
+      throws Exception {
+    Path corpus = directory.resolve("monthly-ingestion.jsonl");
+    var events =
+        Files.readAllLines(Path.of("tests/corpus/dev.jsonl")).stream()
+            .map(
+                line ->
+                    line.contains("\"type\":\"usage-uploaded\"")
+                            && !line.contains("\"subject\":\"viewer\"")
+                        ? line.replace("\"period\":\"2026-07", "\"period\":\"2025-07")
+                        : line)
+            .toList();
+    Files.write(corpus, events);
+    try (var app =
+        App.start(
+            new String[] {"--corpus", corpus.toString(), "--clock", "2026-12-01T00:00:00Z"},
+            environment(false))) {
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      String body = send(client, base.resolve("/"), login(client, base)).body();
+      int start = body.indexOf("<ul class=\"ingestion-list\">");
+      assertTrue(start >= 0, body);
+      int end = body.indexOf("</ul>", start);
+      assertTrue(end > start, body);
+      String ingestion = body.substring(start, end);
+      assertTrue(body.contains("2026-07"), body);
+      assertTrue(ingestion.contains("<strong>Synthetic User 1</strong>"), ingestion);
+      assertTrue(ingestion.contains("<span class=\"status status-warn\">Stale</span>"), ingestion);
+      for (int user = 2; user <= 5; user++) {
+        assertFalse(ingestion.contains("<strong>Synthetic User " + user + "</strong>"), ingestion);
+      }
+      String visualizations =
+          send(client, base.resolve("/visualizations"), login(client, base)).body();
+      assertTrue(visualizations.contains("Synthetic User 4"), visualizations);
+    }
   }
 
   private String corpusOverview(String clock, String dataName) throws Exception {

@@ -112,7 +112,11 @@ final class DashboardFactory {
     List<DashboardSpikeRow> spikes = spikes(daily, usersByKey, currency, rate);
     List<DashboardSessionRow> sessionRows = sessions(sessions, usersByKey, currency, rate);
     List<DashboardBlockRow> blockRows = blocks(blocks, currency, rate);
-    List<DashboardIngestionRow> ingestion = ingestion(projection.ingestion(), usersByKey, now);
+    List<Ingestion> monthlyIngestion =
+        projection.ingestion().stream()
+            .filter(row -> monthlyUsers.containsKey(row.owner()))
+            .toList();
+    List<DashboardIngestionRow> ingestion = ingestion(monthlyIngestion, usersByKey, now);
     boolean partial = projection.ingestion().stream().anyMatch(Ingestion::partial);
 
     return new DashboardSnapshot(
