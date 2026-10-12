@@ -226,6 +226,38 @@ final class UsageHttpTest {
   }
 
   @Test
+  void given_breakdownsWithNullFields_when_renderingAndRestarting_then_preservesUsageAndDashboard()
+      throws Exception {
+    try (var app = start()) {
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      String cookie = login(client, base);
+      String token = createTrackerToken(client, base, cookie);
+
+      HttpResponse<String> uploaded =
+          send(
+              client,
+              base.resolve("/api/usage"),
+              "POST",
+              "application/json",
+              null,
+              usageWithNullBreakdownFields(),
+              token);
+      assertEquals(200, uploaded.statusCode(), uploaded.body());
+      assertNullBreakdownDashboard(client, base, cookie);
+    }
+
+    String events = Files.readString(directory.resolve("events.ndjson"));
+    assertTrue(events.contains("\"futureModelField\":null"), events);
+    assertTrue(events.contains("\"futureAgentField\":null"), events);
+    try (var app = start()) {
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      assertNullBreakdownDashboard(client, base, login(client, base));
+    }
+  }
+
+  @Test
   void
       given_individuallyValidUsageCounters_when_teamTotalExceedsLongRange_then_servesExactAnalyticsAndDashboard()
           throws Exception {
@@ -319,6 +351,60 @@ final class UsageHttpTest {
         ]}
        ]}}}}}
     """;
+  }
+
+  private static String usageWithNullBreakdownFields() {
+    return """
+    {"trackerVersion":"1","ccusageVersion":"20.0.17","clientTimeZone":"UTC","full":true,
+     "generatedAt":"2026-07-14T23:00:00Z","reports":{"daily":{"ok":true,"json":{"daily":[
+       {"period":"2026-07-14","agent":"all","inputTokens":10,"outputTokens":2,
+        "cacheCreationTokens":3,"cacheReadTokens":4,"totalTokens":19,"totalCost":1,
+        "modelBreakdowns":[
+          {"modelName":"test-model","inputTokens":10,"outputTokens":2,
+           "cacheCreationTokens":3,"cacheReadTokens":4,"cost":1,"futureModelField":null},
+          {"modelName":null,"inputTokens":null,"outputTokens":null,
+           "cacheCreationTokens":null,"cacheReadTokens":null,"cost":null}
+        ],"agents":[
+          {"agent":"claude","totalTokens":19,"totalCost":1,"futureAgentField":null},
+          {"agent":null,"totalTokens":null,"totalCost":null}
+        ]}
+     ]}}}}
+    """;
+  }
+
+  private static void assertNullBreakdownDashboard(HttpClient client, URI base, String cookie)
+      throws Exception {
+    HttpResponse<String> overview = send(client, base.resolve("/"), "GET", null, cookie, null);
+    assertEquals(200, overview.statusCode(), overview.body());
+    assertTrue(overview.body().contains("<h1>Overview</h1>"), overview.body());
+    assertTrue(overview.body().contains("$1.00"), overview.body());
+
+    HttpResponse<String> visualizations =
+        send(client, base.resolve("/visualizations"), "GET", null, cookie, null);
+    assertEquals(200, visualizations.statusCode(), visualizations.body());
+    for (String label : new String[] {"test-model", "claude"}) {
+      assertBreakdownMetric(visualizations.body(), label, "$1.00", "19 tokens");
+    }
+    assertBreakdownMetric(visualizations.body(), "Unknown model", "$0.00", "0 tokens");
+    assertFalse(visualizations.body().contains("<strong>all</strong>"), visualizations.body());
+
+    HttpResponse<String> daily =
+        send(client, base.resolve("/api/usage/daily"), "GET", null, cookie, null);
+    assertEquals(200, daily.statusCode(), daily.body());
+    assertTrue(daily.body().contains("\"futureModelField\":null"), daily.body());
+    assertTrue(daily.body().contains("\"futureAgentField\":null"), daily.body());
+  }
+
+  private static void assertBreakdownMetric(String html, String label, String cost, String tokens) {
+    String expected =
+        "<strong>"
+            + Pattern.quote(label)
+            + "</strong><span class=\"bar\" aria-hidden=\"true\">[^<]*</span><span>"
+            + Pattern.quote(cost)
+            + "</span><small>"
+            + Pattern.quote(tokens)
+            + "</small>";
+    assertTrue(Pattern.compile(expected).matcher(html).find(), html);
   }
 
   private static String usageBeyondLongTotal() {
