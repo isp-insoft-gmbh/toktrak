@@ -116,8 +116,33 @@ test("given_golemDispatch_when_running_then_javaOwnsLifecycleAndAuthRotation", (
   assert.match(golem, /matrix:\n        include: \$\{\{ fromJSON\(needs\.select\.outputs\.tasks\) \}\}/u);
   assert.doesNotMatch(golem, /node tools\/golem\.mjs|matrix\.task|matrix\.thinking/u);
   assert.match(golem, /persist-credentials: false/u);
+  assert.match(golem, /permission-issues: write/u);
   assert.match(golem, /CUTOVER: \$\{\{ vars\.GOLEM_JAVA_CUTOVER \}\}/u);
   assert.match(golem, /"\$CUTOVER" != "enabled" && "\$TASK" != "canary"/u);
+});
+
+test("given_golemRunner_when_preparingBrowser_then_allTasksUsePinnedCliAndExistingChromium", () => {
+  const golem = workflow("golem");
+  const setup = golem.match(/      - name: Install browser CLI\n[\s\S]*?(?=      - name:)/u)?.[0];
+  assert.ok(setup, "all golems need browser setup before launch");
+  assert.match(setup, /if: matrix\.golem != ''/u);
+  assert.doesNotMatch(setup, /matrix\.golem ==|actions\/cache|agent-browser install/u);
+  assert.match(
+    setup,
+    /npm install --prefix "\$browser_dir" --no-save --no-package-lock --no-audit --no-fund agent-browser@\d+\.\d+\.\d+/u,
+  );
+  assert.match(setup, /browser_dir="\$RUNNER_TEMP\/agent-browser"/u);
+  assert.match(setup, /echo "\$browser_dir\/node_modules\/\.bin" >> "\$GITHUB_PATH"/u);
+  assert.match(setup, /skills path core/u);
+  assert.match(setup, /--session ci-bootstrap open about:blank/u);
+  assert.ok(golem.indexOf(setup) < golem.indexOf("name: Mint repository GitHub App token"));
+  assert.match(
+    golem,
+    /if: always\(\) && steps\.browser\.outcome == 'success'\n        timeout-minutes: 1\n        run: agent-browser close --all/u,
+  );
+  const instructions = readFileSync(join(process.cwd(), ".golems", "_golems.md"), "utf8");
+  assert.match(instructions, /agent-browser skills get core/u);
+  assert.doesNotMatch(readFileSync(join(process.cwd(), "mise.toml"), "utf8"), /agent-browser/u);
 });
 
 test("given_releaseIntentTag_when_publishing_then_ciOwnsContainerAndSerializesPromotion", () => {
