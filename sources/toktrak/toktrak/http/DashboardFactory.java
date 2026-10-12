@@ -9,7 +9,7 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -32,6 +32,7 @@ import toktrak.http.DashboardSnapshot.DashboardSessionRow;
 import toktrak.http.DashboardSnapshot.DashboardSpikeRow;
 import toktrak.http.DashboardSnapshot.DashboardTrendRow;
 import toktrak.http.DashboardSnapshot.DashboardUserRow;
+import toktrak.http.DashboardSnapshot.IngestionFreshness;
 import toktrak.http.DashboardSnapshot.ReportCompleteness;
 import toktrak.projection.Projection;
 import toktrak.projection.Projection.FxRate;
@@ -46,7 +47,7 @@ import toktrak.usage.UsageUpload.Report;
 final class DashboardFactory {
   private static final int DETAIL_ROWS_MAX = 20;
   private static final int NESTED_ENTRIES_MAX = 100;
-  private static final int INGESTION_FRESH_WORKDAYS = 5;
+  private static final int INGESTION_FRESH_WEEKDAYS = 5;
   private static final Map<String, String> COLOR_CLASSES =
       Map.of(
           "#f4a6a6", "color-1",
@@ -65,7 +66,7 @@ final class DashboardFactory {
     assert projection != null;
     assert health != null;
     assert currency != null;
-    Objects.requireNonNull(now, "now");
+    assert now != null;
     List<Row> daily = projection.usageRows(Report.DAILY);
     List<Row> sessions = projection.usageRows(Report.SESSION);
     List<Row> blocks = projection.usageRows(Report.BLOCKS);
@@ -422,7 +423,7 @@ final class DashboardFactory {
     return rows.stream()
         .sorted(
             Comparator.comparing((Ingestion row) -> !unhealthy(row, now))
-                .thenComparing(Ingestion::generatedAt)
+                .thenComparing(Ingestion::receivedAt)
                 .thenComparing(row -> row.owner().toString()))
         .map(
             row -> {
@@ -434,7 +435,7 @@ final class DashboardFactory {
                   row.partial()
                       ? "Missing: " + String.join(", ", row.failedReports())
                       : "All reports · Tracker v" + row.trackerVersion();
-              if (stale) detail = "No reports for more than 5 workdays · " + detail;
+              if (stale) detail = "No uploads for more than 5 weekdays (UTC) · " + detail;
               String status = row.partial() ? "Partial" : stale ? "Stale" : "Complete";
               return new DashboardIngestionRow(
                   initials(name),
@@ -442,8 +443,8 @@ final class DashboardFactory {
                   colorClass(user.color()),
                   status,
                   row.partial() || stale ? "status-warn" : "status-ok",
-                  row.generatedAt().toString(),
-                  stale,
+                  row.receivedAt().toString(),
+                  stale ? IngestionFreshness.STALE : IngestionFreshness.FRESH,
                   detail);
             })
         .toList();
@@ -454,18 +455,17 @@ final class DashboardFactory {
   }
 
   private static boolean stale(Ingestion row, Instant now) {
-    ZoneId timeZone = ZoneId.of(row.clientTimeZone());
-    LocalDate cursor = row.generatedAt().atZone(timeZone).toLocalDate();
-    LocalDate today = now.atZone(timeZone).toLocalDate();
-    int workdays = 0;
-    while (cursor.isBefore(today) && workdays <= INGESTION_FRESH_WORKDAYS) {
+    LocalDate cursor = row.receivedAt().atZone(ZoneOffset.UTC).toLocalDate();
+    LocalDate today = now.atZone(ZoneOffset.UTC).toLocalDate();
+    int weekdays = 0;
+    while (cursor.isBefore(today) && weekdays <= INGESTION_FRESH_WEEKDAYS) {
       cursor = cursor.plusDays(1);
       if (cursor.getDayOfWeek() != DayOfWeek.SATURDAY
           && cursor.getDayOfWeek() != DayOfWeek.SUNDAY) {
-        workdays = Math.addExact(workdays, 1);
+        weekdays = Math.addExact(weekdays, 1);
       }
     }
-    return workdays > INGESTION_FRESH_WORKDAYS;
+    return weekdays > INGESTION_FRESH_WEEKDAYS;
   }
 
   private static Totals totals(Row row) {

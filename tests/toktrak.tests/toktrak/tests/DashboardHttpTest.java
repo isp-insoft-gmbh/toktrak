@@ -140,15 +140,15 @@ final class DashboardHttpTest {
   }
 
   @Test
-  void given_completeSnapshot_when_moreThanFiveWorkdaysOld_then_marksItStaleAndItsDate()
+  void given_completeSnapshot_when_moreThanFiveWeekdaysOld_then_marksItStaleAndItsDate()
       throws Exception {
-    String atLimit = corpusOverview("2026-07-21T23:59:59Z", "five-workdays");
+    String atLimit = corpusOverview("2026-07-21T23:59:59Z", "five-weekdays");
     assertTrue(atLimit.contains("<span class=\"status status-ok\">Complete</span>"), atLimit);
     assertFalse(atLimit.contains("<span class=\"status status-warn\">Stale</span>"), atLimit);
 
-    String stale = corpusOverview("2026-07-22T00:00:00Z", "six-workdays");
+    String stale = corpusOverview("2026-07-22T00:00:00Z", "six-weekdays");
     assertTrue(stale.contains("<span class=\"status status-warn\">Stale</span>"), stale);
-    assertTrue(stale.contains("No reports for more than 5 workdays"), stale);
+    assertTrue(stale.contains("No uploads for more than 5 weekdays (UTC)"), stale);
     assertTrue(
         stale.contains(
             "<time class=\"ingestion-date ingestion-date-warn\""
@@ -194,10 +194,73 @@ final class DashboardHttpTest {
     }
   }
 
+  @Test
+  void given_clientClockAndTimeZoneDisagree_when_openingOverview_then_usesServerReceiptInUtc()
+      throws Exception {
+    Path corpus = directory.resolve("client-clock-behind.jsonl");
+    var events =
+        Files.readAllLines(Path.of("tests/corpus/dev.jsonl")).stream()
+            .map(
+                line ->
+                    line.contains("\"type\":\"usage-uploaded\"")
+                        ? line.replace(
+                                "\"generatedAt\":\"2026-07-14T14:14:39Z\"",
+                                "\"generatedAt\":\"2026-06-01T00:00:00Z\"")
+                            .replace(
+                                "\"clientTimeZone\":\"UTC\"",
+                                "\"clientTimeZone\":\"Pacific/Kiritimati\"")
+                        : line)
+            .toList();
+    Files.write(corpus, events);
+    String body = corpusOverview(corpus, "2026-07-21T23:59:59Z", "client-clock-behind");
+    assertTrue(body.contains("<span class=\"status status-ok\">Complete</span>"), body);
+    assertFalse(body.contains("<span class=\"status status-warn\">Stale</span>"), body);
+    assertTrue(
+        body.contains(
+            "<time class=\"ingestion-date\" datetime=\"2026-07-14T14:14:39Z\">"
+                + "2026-07-14T14:14:39Z</time>"),
+        body);
+  }
+
+  @Test
+  void given_mixedReceiptAges_when_openingOverview_then_sortsStaleAndPartialBeforeFresh()
+      throws Exception {
+    Path corpus = directory.resolve("mixed-receipt-ages.jsonl");
+    var events =
+        Files.readAllLines(Path.of("tests/corpus/dev.jsonl")).stream()
+            .map(
+                line ->
+                    line.contains("\"type\":\"usage-uploaded\"")
+                            && !line.contains("\"subject\":\"viewer\"")
+                        ? line.replace(
+                            "\"at\":\"2026-07-14T14:14:39Z\"", "\"at\":\"2026-07-21T14:14:39Z\"")
+                        : line)
+            .toList();
+    Files.write(corpus, events);
+    String body = corpusOverview(corpus, "2026-07-22T00:00:00Z", "mixed-receipt-ages");
+    int start = body.indexOf("<ul class=\"ingestion-list\">");
+    assertTrue(start >= 0, body);
+    int end = body.indexOf("</ul>", start);
+    assertTrue(end > start, body);
+    String ingestion = body.substring(start, end);
+    int stale = ingestion.indexOf("<strong>Synthetic User 1</strong>");
+    int partial = ingestion.indexOf("<strong>Synthetic User 5</strong>");
+    int fresh = ingestion.indexOf("<strong>Synthetic User 2</strong>");
+    assertTrue(stale >= 0 && partial >= 0 && fresh >= 0, ingestion);
+    assertTrue(stale < fresh && partial < fresh, ingestion);
+    assertTrue(ingestion.contains("Missing: daily, blocks"), ingestion);
+    assertTrue(ingestion.contains("<span class=\"status status-ok\">Complete</span>"), ingestion);
+    assertTrue(ingestion.contains("<span class=\"status status-warn\">Stale</span>"), ingestion);
+  }
+
   private String corpusOverview(String clock, String dataName) throws Exception {
+    return corpusOverview(Path.of("tests/corpus/dev.jsonl"), clock, dataName);
+  }
+
+  private String corpusOverview(Path corpus, String clock, String dataName) throws Exception {
     try (var app =
         App.start(
-            new String[] {"--corpus", "tests/corpus/dev.jsonl", "--clock", clock},
+            new String[] {"--corpus", corpus.toString(), "--clock", clock},
             Map.of(
                 "TOKTRAK_DEV_AUTH", "true",
                 "TOKTRAK_PORT", "0",
