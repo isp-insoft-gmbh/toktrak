@@ -38,12 +38,12 @@ final class HealthModeTest {
     try (var app = App.start(new String[] {}, devEnvironment())) {
       var response = get(app, "/");
       assertEquals(200, response.statusCode());
-      assertTrue(response.body().contains("DEV AUTH"));
+      assertTrue(response.body().contains("Dev auth"));
       assertTrue(stylesheetUrl(response).matches("/assets/main\\.[0-9a-f]{32}\\.css"));
       assertTrue(
           response
               .body()
-              .contains("<div class=\"environment-banner\" role=\"status\">DEV AUTH</div>"));
+              .contains("<div class=\"environment-banner\" role=\"status\">Dev auth</div>"));
       assertFalse(response.body().contains("<div style="));
     }
   }

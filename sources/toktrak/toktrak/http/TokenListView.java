@@ -1,7 +1,11 @@
 package toktrak.http;
 
 import io.jstach.jstache.JStache;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 @JStache(path = "tokens.mustache")
@@ -104,6 +108,11 @@ public record TokenListView(
 
     public String lastUsed() {
       return lastUsage.value();
+    }
+
+    public String lastUsedLabel() {
+      return DateTimeFormatter.ofPattern("d MMM uuuu · HH:mm 'UTC'", Locale.ENGLISH)
+          .format(Instant.parse(lastUsage.value()).atOffset(ZoneOffset.UTC));
     }
 
     public boolean active() {

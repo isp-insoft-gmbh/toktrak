@@ -576,11 +576,10 @@ public final class Router implements HttpHandler {
       long after = revision(exchange.getRequestURI().getRawQuery());
       long observed = projection.awaitRevision(after, STREAM_WAIT);
       String body =
-          observed > after
-              ? "event: datastar-patch-signals\ndata: signals "
-                  + Json.write(Map.of("_usageRevision", observed))
-                  + "\n\n"
-              : ": keepalive\n\n";
+          (observed > after ? "" : ": keepalive\n\n")
+              + "event: datastar-patch-signals\ndata: signals "
+              + Json.write(Map.of("_observedUsageRevision", observed))
+              + "\n\n";
       HttpSupport.eventStream(exchange, body);
     } catch (IllegalArgumentException exception) {
       apiError(exchange, 400, "invalid_query", "stream query is invalid");
@@ -593,6 +592,10 @@ public final class Router implements HttpHandler {
   private void home(HttpExchange exchange) throws IOException {
     Session session = optionalBrowserSession(exchange);
     if (session == null) {
+      if (backgroundRequest(exchange)) {
+        apiError(exchange, 401, "login_required", "login required");
+        return;
+      }
       var view = new HomeView(base("TokTrak"), SessionState.SIGNED_OUT);
       HttpSupport.encodedHtml(
           exchange,
@@ -687,21 +690,23 @@ public final class Router implements HttpHandler {
     if (query != null) {
       try {
         Map<String, String> fields = toktrak.auth.OidcClient.parseForm(query);
-        if (!fields.keySet().equals(java.util.Set.of("currency"))) {
+        if (fields.keySet().equals(java.util.Set.of("currency"))) {
+          DashboardCurrency currency = DashboardCurrency.valueOf(fields.get("currency"));
+          exchange
+              .getResponseHeaders()
+              .add(
+                  "Set-Cookie",
+                  CURRENCY_COOKIE
+                      + "="
+                      + currency
+                      + "; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax"
+                      + (devAuth ? "" : "; Secure"));
+          HttpSupport.redirect(exchange, 303, URI.create(path));
+          return null;
+        }
+        if (!fields.equals(Map.of("datastar", "{}"))) {
           throw new IllegalArgumentException("currency query is invalid");
         }
-        DashboardCurrency currency = DashboardCurrency.valueOf(fields.get("currency"));
-        exchange
-            .getResponseHeaders()
-            .add(
-                "Set-Cookie",
-                CURRENCY_COOKIE
-                    + "="
-                    + currency
-                    + "; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax"
-                    + (devAuth ? "" : "; Secure"));
-        HttpSupport.redirect(exchange, 303, URI.create(path));
-        return null;
       } catch (IllegalArgumentException exception) {
         badRequest(exchange, "currency query is invalid");
         return null;
@@ -756,6 +761,7 @@ public final class Router implements HttpHandler {
         title,
         assets.publicUrl("main.css"),
         assets.publicUrl("datastar.js"),
+        assets.publicUrl("dashboard.js"),
         assets.publicUrl("favicon.svg"),
         assets.publicUrl("logo-wordmark.svg"),
         assets.publicUrl("logo-wordmark-dark.svg"),
@@ -779,9 +785,18 @@ public final class Router implements HttpHandler {
     try {
       return auth.requireSession(exchange.getRequestHeaders().getFirst("Cookie"));
     } catch (IllegalArgumentException exception) {
-      HttpSupport.redirect(exchange, 302, URI.create("/login"));
+      if (backgroundRequest(exchange)) {
+        apiError(exchange, 401, "login_required", "login required");
+      } else {
+        HttpSupport.redirect(exchange, 302, URI.create("/login"));
+      }
       return null;
     }
+  }
+
+  private static boolean backgroundRequest(HttpExchange exchange) {
+    assert exchange != null;
+    return "true".equals(exchange.getRequestHeaders().getFirst("Datastar-Request"));
   }
 
   private Session apiSession(HttpExchange exchange) throws IOException {

@@ -42,6 +42,11 @@ final class AssetsTest {
     assertEquals(
         "/assets/datastar." + sha256(datastar).substring(0, 32) + ".js",
         assets.publicUrl("datastar.js"));
+    byte[] dashboard = Files.readAllBytes(Path.of("sources/toktrak/assets/public/dashboard.js"));
+    assertEquals(
+        "/assets/dashboard." + sha256(dashboard).substring(0, 32) + ".js",
+        assets.publicUrl("dashboard.js"));
+    assertTrue(new String(dashboard, StandardCharsets.UTF_8).contains("Intl.DateTimeFormat"));
     byte[] clipboard = Files.readAllBytes(Path.of("sources/toktrak/assets/public/clipboard.js"));
     assertEquals(
         "/assets/clipboard." + sha256(clipboard).substring(0, 32) + ".js",
@@ -122,7 +127,7 @@ final class AssetsTest {
             "(?s).*\\.token-list > li,\\s*\\.tracker-form-row,\\s*\\.token-copy"
                 + " \\{[^}]*grid-template-columns: 1fr;[^}]*\\}.*"));
     assertTrue(css.matches("(?s).*\\.error-page \\{[^}]*width: calc\\(100% - 2rem\\);[^}]*\\}.*"));
-    assertTrue(css.contains(".viz-section > .table-wrap {\n  grid-column: 2 / -1;"));
+    assertTrue(css.contains(".viz-section > .table-wrap {\n  grid-column: 1 / -1;"));
     assertTrue(css.contains(".scope-page:not(.tracker-page) > section {\n  display: grid;"));
     assertTrue(
         css.matches(

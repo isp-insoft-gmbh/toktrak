@@ -4,7 +4,7 @@
     <h1>My Tracker</h1>
     <p class="lede">Create and revoke user-scoped tokens for the workstation uploader. Token secrets are shown once.</p>
     <section class="tracker-panel platform-panel" aria-labelledby="node-heading">
-      <h2 id="node-heading">1. Install Node.js</h2>
+      <h2 id="node-heading">Install Node.js</h2>
       <p data-platform-status>Choose your platform:</p>
       <div class="platform-instructions" data-platform="win32">
         <h3>Windows</h3>
@@ -28,7 +28,7 @@
           <code>{{id}}</code>
           <span class="token-status">{{status}}</span>
 {{#hasLastUsed}}
-          · last used <time>{{lastUsed}}</time>
+          · last used <time datetime="{{lastUsed}}">{{lastUsedLabel}}</time>
 {{/hasLastUsed}}
         </div>
 {{#active}}
@@ -53,7 +53,7 @@
 {{/hasNext}}
     </div>
     <section class="tracker-panel" aria-labelledby="create-token-heading">
-      <h2 id="create-token-heading">2. Create tracker token</h2>
+      <h2 id="create-token-heading">Create tracker token</h2>
       <form class="tracker-form" method="post" action="/tokens">
         <input type="hidden" name="csrf" value="{{csrf}}">
         <label for="tracker-label">Label</label>

@@ -6,6 +6,7 @@ public record BaseView(
     String title,
     String stylesheetUrl,
     String datastarUrl,
+    String dashboardUrl,
     String faviconUrl,
     String logoWordmarkUrl,
     String logoWordmarkDarkUrl,
@@ -19,6 +20,7 @@ public record BaseView(
     Objects.requireNonNull(title, "title");
     Objects.requireNonNull(stylesheetUrl, "stylesheetUrl");
     Objects.requireNonNull(datastarUrl, "datastarUrl");
+    Objects.requireNonNull(dashboardUrl, "dashboardUrl");
     Objects.requireNonNull(faviconUrl, "faviconUrl");
     Objects.requireNonNull(logoWordmarkUrl, "logoWordmarkUrl");
     Objects.requireNonNull(logoWordmarkDarkUrl, "logoWordmarkDarkUrl");
@@ -36,6 +38,9 @@ public record BaseView(
     }
     if (!datastarUrl.matches("/assets/datastar\\.[0-9a-f]{32}\\.js")) {
       throw new IllegalArgumentException("datastarUrl is invalid");
+    }
+    if (!dashboardUrl.matches("/assets/dashboard\\.[0-9a-f]{32}\\.js")) {
+      throw new IllegalArgumentException("dashboardUrl is invalid");
     }
     requireSvgAsset(faviconUrl, "favicon", "faviconUrl");
     requireSvgAsset(logoWordmarkUrl, "logo-wordmark", "logoWordmarkUrl");

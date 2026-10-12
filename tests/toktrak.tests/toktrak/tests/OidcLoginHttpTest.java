@@ -200,7 +200,7 @@ final class OidcLoginHttpTest {
       assertEquals(200, tokens.statusCode());
       HttpResponse<String> scope = send(client, base.resolve("/scope"), session);
       assertEquals(200, scope.statusCode());
-      assertTrue(scope.body().contains("Signed in as <strong>Example User</strong>"), scope.body());
+      assertTrue(scope.body().contains("<h1>Data scope</h1>"), scope.body());
 
       // A signed session cookie must not be replayable as an OIDC transaction cookie.
       HttpResponse<String> confused =
