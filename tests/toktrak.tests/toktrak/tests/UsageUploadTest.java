@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
+import toktrak.json.Json;
 import toktrak.usage.UsageUpload;
 import toktrak.usage.UsageUpload.Report;
 
@@ -50,6 +51,49 @@ final class UsageUploadTest {
     assertEquals(
         "block-1", UsageUpload.firstKey(Report.BLOCKS, parsed.rows(Report.BLOCKS).getFirst()));
     assertEquals("", UsageUpload.secondKey(Report.BLOCKS, parsed.rows(Report.BLOCKS).getFirst()));
+  }
+
+  @Test
+  void given_decimalDigitBoundaries_when_parsingUploadBytes_then_preservesExactValues() {
+    for (String number : List.of("1E+255", "1E-256", "-9.9E+255", "0E-256", "0E+255")) {
+      BigDecimal decimal = new BigDecimal(number);
+      Map<String, Object> value = fullUpload();
+      value.put("futureField", List.of(Map.of("amount", decimal)));
+
+      UsageUpload parsed = UsageUpload.parse(Json.write(value).getBytes(UTF_8), AT);
+
+      assertEquals(value.get("futureField"), parsed.data().get("futureField"));
+    }
+  }
+
+  @Test
+  void given_nestedExtremeDecimals_when_parsingUploadBytes_then_rejectsBeforeStorage() {
+    for (String number :
+        List.of(
+            "1E+256", "1E-257", "-1E+256", "0E-257", "0E+256", "1E+2147483647", "1E-2147483647")) {
+      Map<String, Object> value = fullUpload();
+      value.put("futureField", List.of(Map.of("amount", new BigDecimal(number))));
+
+      var failure =
+          assertThrows(
+              IllegalArgumentException.class,
+              () -> UsageUpload.parse(Json.write(value).getBytes(UTF_8), AT),
+              number);
+
+      assertEquals("usage decimal exceeds 256 integer or fractional digits", failure.getMessage());
+    }
+  }
+
+  @Test
+  void given_persistedDecimalBeyondUploadLimits_when_parsingReplayData_then_preservesValue() {
+    BigDecimal cost = new BigDecimal("1E+256");
+    Map<String, Object> row = dailyRow();
+    row.put("totalCost", cost);
+    Map<?, ?> persisted = Json.read(Json.write(reportUpload("daily", List.of(row))), Map.class);
+
+    UsageUpload replayed = UsageUpload.parse(persisted, AT);
+
+    assertEquals(cost, replayed.rows(Report.DAILY).getFirst().get("totalCost"));
   }
 
   @Test
