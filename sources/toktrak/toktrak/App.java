@@ -123,6 +123,7 @@ public final class App implements AutoCloseable {
             auth,
             usage,
             projection,
+            config.clock(),
             baseUri,
             config.buildInfo()));
     server.setExecutor(Runnable::run);

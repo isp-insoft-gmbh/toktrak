@@ -72,6 +72,7 @@ final class HttpAdmissionTest {
               auth,
               new UsageService(writer, ClockSource.system()),
               projection,
+              ClockSource.system(),
               URI.create("http://127.0.0.1"),
               BuildInfo.from(java.util.Map.of())));
       server.setExecutor(Runnable::run);

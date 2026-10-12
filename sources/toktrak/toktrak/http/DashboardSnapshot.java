@@ -81,15 +81,26 @@ record DashboardSnapshot(
     }
   }
 
+  enum IngestionFreshness {
+    FRESH,
+    STALE
+  }
+
   record DashboardIngestionRow(
       String initials,
       String name,
       String colorClass,
       String status,
       String statusClass,
-      String generatedAt,
+      String receivedAt,
+      IngestionFreshness freshness,
       String detail) {
+    boolean stale() {
+      return freshness == IngestionFreshness.STALE;
+    }
+
     DashboardIngestionRow {
+      assert freshness != null;
       if (!colorClass.matches("color-[1-8]") || !statusClass.matches("status-(?:ok|warn)")) {
         throw new IllegalArgumentException("ingestion class is invalid");
       }

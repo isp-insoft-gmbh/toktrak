@@ -9,6 +9,7 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -31,6 +32,7 @@ import toktrak.http.DashboardSnapshot.DashboardSessionRow;
 import toktrak.http.DashboardSnapshot.DashboardSpikeRow;
 import toktrak.http.DashboardSnapshot.DashboardTrendRow;
 import toktrak.http.DashboardSnapshot.DashboardUserRow;
+import toktrak.http.DashboardSnapshot.IngestionFreshness;
 import toktrak.http.DashboardSnapshot.ReportCompleteness;
 import toktrak.projection.Projection;
 import toktrak.projection.Projection.FxRate;
@@ -45,6 +47,7 @@ import toktrak.usage.UsageUpload.Report;
 final class DashboardFactory {
   private static final int DETAIL_ROWS_MAX = 20;
   private static final int NESTED_ENTRIES_MAX = 100;
+  private static final int INGESTION_FRESH_WEEKDAYS = 5;
   private static final Map<String, String> COLOR_CLASSES =
       Map.of(
           "#f4a6a6", "color-1",
@@ -59,10 +62,11 @@ final class DashboardFactory {
   private DashboardFactory() {}
 
   static DashboardSnapshot create(
-      Projection projection, HealthState health, DashboardCurrency currency) {
+      Projection projection, HealthState health, DashboardCurrency currency, Instant now) {
     assert projection != null;
     assert health != null;
     assert currency != null;
+    assert now != null;
     List<Row> daily = projection.usageRows(Report.DAILY);
     List<Row> sessions = projection.usageRows(Report.SESSION);
     List<Row> blocks = projection.usageRows(Report.BLOCKS);
@@ -109,7 +113,11 @@ final class DashboardFactory {
     List<DashboardSpikeRow> spikes = spikes(daily, usersByKey, currency, rate);
     List<DashboardSessionRow> sessionRows = sessions(sessions, usersByKey, currency, rate);
     List<DashboardBlockRow> blockRows = blocks(blocks, currency, rate);
-    List<DashboardIngestionRow> ingestion = ingestion(projection.ingestion(), usersByKey);
+    List<Ingestion> monthlyIngestion =
+        projection.ingestion().stream()
+            .filter(row -> monthlyUsers.containsKey(row.owner()))
+            .toList();
+    List<DashboardIngestionRow> ingestion = ingestion(monthlyIngestion, usersByKey, now);
     boolean partial = projection.ingestion().stream().anyMatch(Ingestion::partial);
 
     return new DashboardSnapshot(
@@ -411,27 +419,53 @@ final class DashboardFactory {
   }
 
   private static List<DashboardIngestionRow> ingestion(
-      List<Ingestion> rows, Map<UserKey, User> users) {
+      List<Ingestion> rows, Map<UserKey, User> users, Instant now) {
     return rows.stream()
+        .sorted(
+            Comparator.comparing((Ingestion row) -> !unhealthy(row, now))
+                .thenComparing(Ingestion::receivedAt)
+                .thenComparing(row -> row.owner().toString()))
         .map(
             row -> {
               User user = users.get(row.owner());
               assert user != null;
               String name = user.displayName();
+              boolean stale = stale(row, now);
               String detail =
                   row.partial()
                       ? "Missing: " + String.join(", ", row.failedReports())
                       : "All reports · Tracker v" + row.trackerVersion();
+              if (stale) detail = "No uploads for more than 5 weekdays (UTC) · " + detail;
+              String status = row.partial() ? "Partial" : stale ? "Stale" : "Complete";
               return new DashboardIngestionRow(
                   initials(name),
                   name,
                   colorClass(user.color()),
-                  row.partial() ? "Partial" : "Complete",
-                  row.partial() ? "status-warn" : "status-ok",
-                  row.generatedAt().toString(),
+                  status,
+                  row.partial() || stale ? "status-warn" : "status-ok",
+                  row.receivedAt().toString(),
+                  stale ? IngestionFreshness.STALE : IngestionFreshness.FRESH,
                   detail);
             })
         .toList();
+  }
+
+  private static boolean unhealthy(Ingestion row, Instant now) {
+    return row.partial() || stale(row, now);
+  }
+
+  private static boolean stale(Ingestion row, Instant now) {
+    LocalDate cursor = row.receivedAt().atZone(ZoneOffset.UTC).toLocalDate();
+    LocalDate today = now.atZone(ZoneOffset.UTC).toLocalDate();
+    int weekdays = 0;
+    while (cursor.isBefore(today) && weekdays <= INGESTION_FRESH_WEEKDAYS) {
+      cursor = cursor.plusDays(1);
+      if (cursor.getDayOfWeek() != DayOfWeek.SATURDAY
+          && cursor.getDayOfWeek() != DayOfWeek.SUNDAY) {
+        weekdays = Math.addExact(weekdays, 1);
+      }
+    }
+    return weekdays > INGESTION_FRESH_WEEKDAYS;
   }
 
   private static Totals totals(Row row) {
