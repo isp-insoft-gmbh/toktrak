@@ -26,12 +26,12 @@ status: approved
    tag: first `v0`, then exactly one greater than the highest release. Require a
    clean synchronized `trunk`, an exact `CHANGELOG.md` section for the next tag,
    an absent tag, and the image repository `registry.isp-insoft.de/toktrak`.
-6. Add `image`, `container-verify`, and `release` mise tasks.
-   `release --dry-run` performs every local preflight, verification, and build
-   without tags or remote writes. A real release performs the same gates before
-   creating the Git tag, pushing `registry.isp-insoft.de/toktrak:v<integer>`,
-   and pushing the Git tag; retries must not create a different artifact and no
-   mutable `latest` tag is published.
+6. Add `image`, `container-verify`, and `release` mise tasks. `release
+   --dry-run` performs every local preflight, verification, and build without
+   tags or remote writes. A real release performs the same gates before creating
+   the Git tag, pushing `registry.isp-insoft.de/toktrak:v<integer>`, and pushing
+   the Git tag; retries must not create a different artifact and no mutable
+   `latest` tag is published.
 7. Add build-tool tests with controlled fake Git and Podman executables for
    command ordering, version gaps, dirty/diverged trees, changelog failures,
    secret redaction, cleanup, dry-run isolation, and failed external mutation.

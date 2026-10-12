@@ -85,8 +85,8 @@ mise run verify
 mise run ci
 ```
 
-`test` includes checks, Java tests, golem tests, and tracker tests; use
-`mise run test --only [test paths...]` for focused tests without repository-wide
+`test` includes checks, Java tests, golem tests, and tracker tests; use `mise
+run test --only [test paths...]` for focused tests without repository-wide
 checks. `verify` also links and checks the production runtime. `ci` also checks
 Refaster conformance and coverage floors, and requires a clean Git tree. `check`
 already includes Markdown lint, tracker JavaScript lint, and offline golem
