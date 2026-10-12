@@ -52,6 +52,16 @@ final class Report {
     return this;
   }
 
+  /// Only a completed Claude result supplies structured usage; zeros without one are not facts.
+  Report usage(Golem.Harness harness, Agent.Result agent) {
+    assert harness != null && agent != null : "usage needs its harness and result";
+    if (!agent.hasUsage(harness)) return fact("usage", "not reported by harness");
+    return fact("turns", Integer.toString(agent.turns()))
+        .fact(
+            "tokens", Report.tokens(agent.inputTokens(), agent.outputTokens(), agent.cacheTokens()))
+        .fact("cost", String.format(Locale.ROOT, "$%.2f (estimate)", agent.costUsd()));
+  }
+
   /// The one line worth seeing while everything else is collapsed.
   String headline() {
     var reason = outcome.reason();

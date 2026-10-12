@@ -1,4 +1,5 @@
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -41,6 +42,13 @@ sealed interface Json {
     return new Parser(source).parse();
   }
 
+  private static boolean exceedsByteLimit(String value) {
+    if (value.length() > BYTES_MAX) return true;
+    // UTF-8 needs at most three bytes per UTF-16 code unit, so small inputs need no copy.
+    return value.length() > BYTES_MAX / 3
+        && value.getBytes(StandardCharsets.UTF_8).length > BYTES_MAX;
+  }
+
   static String encode(Json value) {
     var out = new StringBuilder();
     var pending = new ArrayDeque<Object>();
@@ -79,7 +87,9 @@ sealed interface Json {
       }
       if (out.length() > BYTES_MAX) throw new IllegalArgumentException("JSON output exceeds limit");
     }
-    return out.toString();
+    var encoded = out.toString();
+    if (exceedsByteLimit(encoded)) throw new IllegalArgumentException("JSON output exceeds limit");
+    return encoded;
   }
 
   private static void quote(StringBuilder out, String text) {
@@ -115,7 +125,7 @@ sealed interface Json {
     private int entries;
 
     private Parser(String input) {
-      if (input == null || input.length() > BYTES_MAX)
+      if (input == null || exceedsByteLimit(input))
         throw new IllegalArgumentException("JSON input exceeds limit");
       this.input = input;
     }

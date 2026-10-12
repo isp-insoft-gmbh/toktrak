@@ -115,6 +115,19 @@ jobs:
           gh_version="$(gh --version | head -n 1 | awk '{print $3}')"
           [[ "$(printf '%s\n' 2.70.0 "$gh_version" | sort -V | head -n 1)" == "2.70.0" ]]
           echo "gh-version=$gh_version" >> "$GITHUB_OUTPUT"
+      - name: Install browser CLI
+        if: matrix.golem != ''
+        id: browser
+        timeout-minutes: 5
+        run: |
+          browser_dir="$RUNNER_TEMP/agent-browser"
+          npm install --prefix "$browser_dir" --no-save --no-package-lock --no-audit --no-fund agent-browser@0.38.2
+          echo "$browser_dir/node_modules/.bin" >> "$GITHUB_PATH"
+          browser="$browser_dir/node_modules/.bin/agent-browser"
+          "$browser" --version
+          test -s "$("$browser" skills path core)/SKILL.md"
+          trap '"$browser" --session ci-bootstrap close' EXIT
+          "$browser" --session ci-bootstrap open about:blank
       - name: Mint repository GitHub App token
         if: matrix.golem != ''
         id: app-token
@@ -125,7 +138,7 @@ jobs:
           permission-actions: read
           permission-checks: read
           permission-contents: write
-          permission-issues: read
+          permission-issues: write
           permission-pull-requests: write
           permission-statuses: read
       - name: Configure bot Git identity
@@ -163,6 +176,10 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         # mise run activates task-scoped Pi, Codex, and Claude binaries for the child JVM.
         run: mise run golem "${{ matrix.golem }}"
+      - name: Close browser sessions
+        if: always() && steps.browser.outcome == 'success'
+        timeout-minutes: 1
+        run: agent-browser close --all
       - name: Encrypt rotated authentication
         if: always() && (matrix.harness == 'pi' || matrix.harness == 'codex')
         id: encrypt

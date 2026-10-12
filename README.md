@@ -149,9 +149,9 @@ pinned harness on GitHub-hosted Ubuntu, validates runner `gh >= 2.70.0`, and
 delegates the full lifecycle to `tools/golem.mjs`. Each task job stops after 45
 minutes.
 
-Install a repository-scoped GitHub App with write access to contents and pull
-requests, read access to actions, checks, commit statuses, and issues, and no
-workflow permission. Store its client ID as the `TOKTRAK_AGENT_APP_CLIENT_ID`
+Install a repository-scoped GitHub App with write access to contents, pull
+requests, and issues, read access to actions, checks, and commit statuses, and
+no workflow permission. Store its client ID as the `TOKTRAK_AGENT_APP_CLIENT_ID`
 repository variable and its private key as the `TOKTRAK_AGENT_APP_PRIVATE_KEY`
 repository secret. The workflow mints a short-lived token and derives the bot
 Git identity.

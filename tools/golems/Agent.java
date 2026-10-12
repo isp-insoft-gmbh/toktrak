@@ -5,14 +5,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/// Launches Claude Code and reads back what it did.
+/// Launches the configured coding harness and reads back what it did.
 ///
 /// The agent is given the repository toolchain and its own credential, and nothing about
 /// publication. It writes files, commits, and text; the orchestrator decides what leaves the
 /// machine.
 ///
-/// No result envelope is required from the agent. The CLI's own result object already distinguishes
-/// success, an exhausted turn limit, and a failed run, which is everything the outcome table needs.
+/// Claude returns a structured result. Pi and Codex return text without structured usage counters;
+/// a blank response cannot establish successful agent activity.
 final class Agent {
   /// Settings that make a run the same run everywhere.
   ///
@@ -117,6 +117,10 @@ final class Agent {
       return exit == 0 && stopped == Proc.Stop.NONE && SUCCESS.equals(subtype);
     }
 
+    boolean hasUsage(Golem.Harness harness) {
+      return harness == Golem.Harness.CLAUDE && !NO_RESULT.equals(subtype);
+    }
+
     /// A run that produced no readable result.
     ///
     /// Every counter is zero because nothing was counted, not because nothing happened. What it
@@ -172,21 +176,7 @@ final class Agent {
     var process =
         Proc.run(command, workspace, environment(golem, run, workspace), golem.timeout(), prompt);
     var result =
-        golem.harness() == Golem.Harness.CLAUDE
-            ? interpret(process, run)
-            : new Result(
-                process.exit(),
-                process.stopped(),
-                process.ok() ? SUCCESS : NO_RESULT,
-                !process.ok(),
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                process.out(),
-                process.out());
+        golem.harness() == Golem.Harness.CLAUDE ? interpret(process, run) : interpretPlain(process);
 
     assert result.stopped() == process.stopped() : "the stop reason is carried through";
     return result;
@@ -271,7 +261,7 @@ final class Agent {
     command.add(settings(run));
     command.add("--strict-mcp-config");
     command.add("--mcp-config");
-    command.add("{}");
+    command.add("{\"mcpServers\":{}}");
     command.add("--debug-file");
     command.add(run.directory().resolve(DEBUG_FILE).toString());
     golem
@@ -385,6 +375,28 @@ final class Agent {
     return Map.copyOf(environment);
   }
 
+  /// A text-only harness must return a readable response before it can claim success.
+  ///
+  /// These CLIs do not supply Claude's structured usage counters. An empty response cannot prove
+  /// that an agent actually ran, even when the process itself exited successfully.
+  static Result interpretPlain(Proc.Result process) {
+    if (!process.ok() || process.out().isBlank())
+      return Result.none(process, "agent returned no successful response", process.out());
+    return new Result(
+        process.exit(),
+        process.stopped(),
+        SUCCESS,
+        false,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        process.out(),
+        process.out());
+  }
+
   /// Reads the CLI result object, tolerating a run that produced none.
   ///
   /// A missing or unreadable result is not fatal here: the outcome table decides what it means,
@@ -392,7 +404,7 @@ final class Agent {
   static Result interpret(Proc.Result process, Run run) {
     var raw = resultLine(process.out());
     if (raw.isEmpty()) {
-      return Result.none(process, process.err().strip(), process.out());
+      return Result.none(process, "agent returned no result (stderr withheld)", process.out());
     }
 
     Text.write(run.directory().resolve(RESULT_FILE), raw);
