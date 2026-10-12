@@ -290,14 +290,20 @@ final class ProjectionTest {
                     Thread.currentThread().interrupt();
                   }
                 });
-    assertTrue(awaitTimedWaiting(waiter), "waiter must block on the projection monitor");
-    assertEquals(-1, observed.get());
+    try {
+      assertTrue(awaitTimedWaiting(waiter), "waiter must block on the projection monitor");
+      assertEquals(-1, observed.get());
 
-    projection.apply(EventEnvelope.create("second", at, "system", Map.of()));
-    waiter.join(Duration.ofSeconds(2).toMillis());
+      projection.apply(EventEnvelope.create("second", at, "system", Map.of()));
+      waiter.join(Duration.ofSeconds(2).toMillis());
 
-    assertFalse(waiter.isAlive(), "commit must wake the waiter");
-    assertEquals(2, observed.get());
+      assertFalse(waiter.isAlive(), "commit must wake the waiter");
+      assertEquals(2, observed.get());
+    } finally {
+      waiter.interrupt();
+      waiter.join(Duration.ofSeconds(2).toMillis());
+      assertFalse(waiter.isAlive(), "waiter must terminate after cleanup");
+    }
   }
 
   @Test
@@ -376,15 +382,28 @@ final class ProjectionTest {
 
     Map<String, Object> snapshot = projection.snapshotData();
     assertEquals(13, snapshot.get("eventCount"));
-    @SuppressWarnings("unchecked")
-    var snapshotUsers = (List<Map<String, Object>>) snapshot.get("users");
-    assertEquals(subjects, snapshotUsers.stream().map(user -> user.get("subject")).toList());
-    assertEquals(false, snapshotUsers.get(1).get("active"));
-    @SuppressWarnings("unchecked")
-    var snapshotTokens = (List<Map<String, Object>>) snapshot.get("trackerTokens");
+    List<?> snapshotUsers = assertInstanceOf(List.class, snapshot.get("users"));
+    assertEquals(
+        subjects,
+        snapshotUsers.stream()
+            .map(
+                value -> {
+                  Map<?, ?> user = assertInstanceOf(Map.class, value);
+                  return user.get("subject");
+                })
+            .toList());
+    Map<?, ?> inactiveSnapshotUser = assertInstanceOf(Map.class, snapshotUsers.get(1));
+    assertEquals(false, inactiveSnapshotUser.get("active"));
+    List<?> snapshotTokens = assertInstanceOf(List.class, snapshot.get("trackerTokens"));
     assertEquals(
         tokenIds.stream().map(UUID::toString).toList(),
-        snapshotTokens.stream().map(token -> token.get("tokenId")).toList());
+        snapshotTokens.stream()
+            .map(
+                value -> {
+                  Map<?, ?> token = assertInstanceOf(Map.class, value);
+                  return token.get("tokenId");
+                })
+            .toList());
 
     var restored = Projection.empty();
     restored.apply(EventEnvelope.create(PROJECTION_SNAPSHOT, at, "system", snapshot));
