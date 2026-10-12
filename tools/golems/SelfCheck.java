@@ -619,6 +619,14 @@ public final class SelfCheck {
     var weekly = parse("---\nschedule: [mon]\n---\nwork");
     check("weekday match", weekly.due("schedule", monday()));
     check("weekday mismatch", !weekly.due("schedule", thursday()));
+    var mondayInPlusFourteen = ZonedDateTime.parse("2026-10-05T00:30:00+14:00");
+    check(
+        "given_offsetMonday_when_selectingUtcSunday_then_skipMonday",
+        !weekly.due("schedule", mondayInPlusFourteen)
+            && weekly.reason("schedule", mondayInPlusFourteen).contains("sun"));
+    check(
+        "given_offsetMonday_when_selectingUtcSunday_then_runSunday",
+        parse("---\nschedule: [sun]\n---\nwork").due("schedule", mondayInPlusFourteen));
     check("a schedule is not an event", !weekly.due("pull_request_review", monday()));
 
     var daily = parse("---\nschedule: daily\n---\nwork");
@@ -787,6 +795,42 @@ public final class SelfCheck {
     check(
         "oversized JSON rejected", throwsRuntime(() -> Json.parse(" ".repeat(Json.BYTES_MAX + 1))));
 
+    // Adapted from nst/JSONTestSuite/test_parsing (MIT): y_string_u+2028_line_sep,
+    // n_number_0.3e+, and n_string_escaped_ctrl_char_tab. Escaped-key aliases and
+    // the depth boundary exercise TokTrak's stricter local limits.
+    var separator = "\u2028";
+    check(
+        "line separator inside JSON string accepted",
+        Json.parse("[\"" + separator + "\"]")
+            .equals(new Json.ArrayValue(List.of(new Json.StringValue(separator)))));
+    check("exponent sign needs a digit", throwsRuntime(() -> Json.parse("[0.3e+]")));
+    check(
+        "escaped literal tab rejected",
+        throwsRuntime(() -> Json.parse("[\"" + "\\" + "\t" + "\"]")));
+    check(
+        "escaped duplicate key rejected",
+        throwsRuntime(() -> Json.parse("{\"a\":0,\"\\u0061\":1}")));
+    var deepest = "[".repeat(Json.DEPTH_MAX) + "0" + "]".repeat(Json.DEPTH_MAX);
+    check("exact nesting limit accepted", Json.parse(deepest) instanceof Json.ArrayValue);
+    check("excess nesting rejected", throwsRuntime(() -> Json.parse("[" + deepest + "]")));
+
+    // A three-byte character, as in JSONTestSuite's y_string_three-byte-utf-8,
+    // distinguishes the byte budget from Java's UTF-16 String.length().
+    var nearLimit = "€".repeat(Json.BYTES_MAX / 3 - 1);
+    var overLimit = nearLimit + "€";
+    check(
+        "multibyte input within byte budget accepted",
+        Json.parse("\"" + nearLimit + "\"").equals(new Json.StringValue(nearLimit)));
+    check(
+        "multibyte output within byte budget accepted",
+        Json.encode(new Json.StringValue(nearLimit)).equals("\"" + nearLimit + "\""));
+    check(
+        "multibyte input over byte budget rejected",
+        throwsRuntime(() -> Json.parse("\"" + overLimit + "\"")));
+    check(
+        "multibyte output over byte budget rejected",
+        throwsRuntime(() -> Json.encode(new Json.StringValue(overLimit))));
+
     var silent =
         Agent.interpret(
             new Proc.Result(1, "nothing useful", "private-token-value", Proc.Stop.NONE), local);
@@ -832,9 +876,25 @@ public final class SelfCheck {
         new Report("claude", new Outcome.Changed()).usage(Golem.Harness.CLAUDE, measured);
     check("Claude reports measured turns", claudeUsage.markdown().contains("| turns | 3 |"));
     check("Claude reports measured cost", claudeUsage.markdown().contains("$0.25"));
+    check(
+        "Claude console reports measured usage",
+        Golems.agentSummary(Golem.Harness.CLAUDE, measured).contains("3 turns, $0.25"));
+    var failed = Agent.Result.none(new Proc.Result(1, "", "", Proc.Stop.NONE), "", "");
+    check(
+        "failed Claude run reports no usage",
+        new Report("qa", new Outcome.Blocked("agent failed"))
+            .usage(Golem.Harness.CLAUDE, failed)
+            .markdown()
+            .contains("not reported by harness"));
+    check(
+        "failed Claude console reports no usage",
+        Golems.agentSummary(Golem.Harness.CLAUDE, failed).endsWith("usage not reported"));
     var piUsage = new Report("pi", new Outcome.Changed()).usage(Golem.Harness.PI, measured);
     check("Pi does not claim measured turns", !piUsage.markdown().contains("| turns |"));
     check("Pi states usage unavailable", piUsage.markdown().contains("not reported by harness"));
+    check(
+        "Pi console omits fake counters",
+        Golems.agentSummary(Golem.Harness.PI, measured).endsWith("usage not reported"));
     var codexUsage =
         new Report("codex", new Outcome.Changed()).usage(Golem.Harness.CODEX, measured);
     check("Codex does not claim measured cost", !codexUsage.markdown().contains("| cost |"));
@@ -1032,10 +1092,16 @@ public final class SelfCheck {
     check("candidate starts at pinned base", staged.git().head().equals(staged.prepared().base()));
     check("creation is explained", staged.prepared().note().contains("created from"));
     shell(source, "git", "branch", "golem/x");
+    shell(source, "git", "checkout", "-q", "golem/x");
+    commit(source, "A different local base", "local.txt", "local");
+    var localHead = branched.head();
+    shell(source, "git", "checkout", "-q", original.branch());
     var again =
         branched.stage(
             "golem/x", Git.Remote.SKIP, source.resolveSibling(source.getFileName() + "-second"));
     check("existing branch reused", again.prepared().note().contains("local branch"));
+    check("existing local head pinned", again.prepared().base().equals(localHead));
+    check("original checkout still pinned", branched.position().equals(original));
 
     check(
         "a non-repository is rejected",
@@ -1075,6 +1141,17 @@ public final class SelfCheck {
     check(
         "foreign commit preserved",
         candidate.git("log", "--format=%s", "-1").contains("Work from the first clone"));
+
+    shell(second, "git", "branch", "golem/probe", "origin/golem/probe");
+    shell(second, "git", "checkout", "-q", "golem/probe");
+    commit(second, "An unpublished local commit", "local.txt", "local");
+    var localHead = secondGit.head();
+    var refused = second.resolveSibling(second.getFileName() + "-refused");
+    check(
+        "unpublished local commit blocks staging",
+        throwsRuntime(() -> secondGit.stage("golem/probe", Git.Remote.USE, refused))
+            && !Files.exists(refused));
+    check("rejected staging leaves local head intact", secondGit.head().equals(localHead));
 
     commit(first, "A commit the second clone never saw", "third.txt", "three");
     firstGit.push("golem/probe");

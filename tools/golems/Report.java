@@ -52,10 +52,10 @@ final class Report {
     return this;
   }
 
-  /// Only Claude returns structured usage. Zero-valued placeholders from other CLIs are not facts.
+  /// Only a completed Claude result supplies structured usage; zeros without one are not facts.
   Report usage(Golem.Harness harness, Agent.Result agent) {
     assert harness != null && agent != null : "usage needs its harness and result";
-    if (harness != Golem.Harness.CLAUDE) return fact("usage", "not reported by harness");
+    if (!agent.hasUsage(harness)) return fact("usage", "not reported by harness");
     return fact("turns", Integer.toString(agent.turns()))
         .fact(
             "tokens", Report.tokens(agent.inputTokens(), agent.outputTokens(), agent.cacheTokens()))

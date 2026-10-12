@@ -86,6 +86,7 @@ public final class BuildTest {
     given_artifactFailpoints_when_rebuilding_then_nextRunPublishesCompleteTree();
     given_generatedSymbolicLinks_when_checkingInventory_then_preservesInternalTargetsAndRejectsEscapes();
     given_outputArtifacts_when_cleaning_then_deletesEverythingExceptHeldLock();
+    given_outputSymbolicLinks_when_cleaning_then_removesLinksWithoutTouchingExternalTargets();
     given_runningBuildCommand_when_acquiringBuildLock_then_rejectsCommand();
     given_runningDevelopmentServer_when_requiringExclusiveBuild_then_rejectsCommand();
     given_validRuntimeAssets_when_buildingBundle_then_returnsCanonicalIndex();
@@ -1081,6 +1082,34 @@ public final class BuildTest {
       }
     } finally {
       deleteTestTree(output);
+    }
+  }
+
+  private static void
+      given_outputSymbolicLinks_when_cleaning_then_removesLinksWithoutTouchingExternalTargets()
+          throws Exception {
+    Path output = Files.createTempDirectory("toktrak-clean-links-");
+    Path external = Files.createTempDirectory("toktrak-clean-external-");
+    try {
+      Path lock = Files.writeString(output.resolve(".build.lock"), "");
+      Path retained = Files.writeString(external.resolve("retained.txt"), "user-owned");
+      Files.createSymbolicLink(output.resolve("external-file"), retained);
+      Files.createSymbolicLink(output.resolve("external-directory"), external);
+      Files.createSymbolicLink(output.resolve("dangling"), Path.of("missing-target"));
+      Files.createDirectories(output.resolve("nested"));
+      Files.createSymbolicLink(output.resolve("nested/dangling"), Path.of("missing-target"));
+
+      Build.cleanOutputForTest(output, lock);
+      if (!Build.treePathsForTest(output, 10).equals(List.of(output, lock))) {
+        throw new AssertionError("clean left symbolic links or removed its lock");
+      }
+      if (!Build.treePathsForTest(external, 10).equals(List.of(external, retained))
+          || !Files.readString(retained).equals("user-owned")) {
+        throw new AssertionError("clean touched an external symbolic link target");
+      }
+    } finally {
+      deleteTestTree(output);
+      deleteTestTree(external);
     }
   }
 
