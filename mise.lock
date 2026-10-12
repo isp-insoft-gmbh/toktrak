@@ -3,24 +3,24 @@
 lockfile_version = 3
 
 [[tools."aqua:anthropics/claude-code"]]
-version = "2.1.285"
+version = "2.1.296"
 backend = "aqua:anthropics/claude-code"
 specifiers = ["latest"]
 
 [tools."aqua:anthropics/claude-code"."platforms.linux-x64"]
-checksum = "sha256:0cde844749a50c0f717a2b123d5771629d5c9a270c9203c81ac120a716444b36"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.285/claude-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/anthropics/claude-code/releases/assets/598796905"
+checksum = "sha256:45fe2b33f5cbdd114309618970bcd90b8b163e34252d66cf100d7e068d9b831d"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.296/claude-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/anthropics/claude-code/releases/assets/625598991"
 
 [tools."aqua:anthropics/claude-code"."platforms.macos-arm64"]
-checksum = "sha256:3b1c9984a63193c7758b66c8769781428139935200c38e6462339cf4da463d78"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.285/claude-darwin-arm64.tar.gz"
-url_api = "https://api.github.com/repos/anthropics/claude-code/releases/assets/598796737"
+checksum = "sha256:60f97cde7f7e078b424138e34ecf1ad620bd81ac3866984fb8996623a36a052e"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.296/claude-darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/anthropics/claude-code/releases/assets/625598716"
 
 [tools."aqua:anthropics/claude-code"."platforms.windows-x64"]
-checksum = "sha256:f2763c6b50f479cda3748d38af6fa7a5512b592d72dd24631bc99d307e5f343f"
-url = "https://github.com/anthropics/claude-code/releases/download/v2.1.285/claude-win32-x64.zip"
-url_api = "https://api.github.com/repos/anthropics/claude-code/releases/assets/598796929"
+checksum = "sha256:bfdc634f3de0f1579180f7fcde0477610450420fe9f44d7c836812cf7ae7c0de"
+url = "https://github.com/anthropics/claude-code/releases/download/v2.1.296/claude-win32-x64.zip"
+url_api = "https://api.github.com/repos/anthropics/claude-code/releases/assets/625599016"
 
 [[tools."aqua:cli/cli"]]
 version = "2.102.0"
@@ -46,66 +46,66 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854760"
 provenance = "github-attestations"
 
 [[tools."aqua:earendil-works/pi"]]
-version = "0.99.1"
+version = "1.1.0"
 backend = "aqua:earendil-works/pi"
 specifiers = ["latest"]
 
 [tools."aqua:earendil-works/pi"."platforms.linux-x64"]
-checksum = "sha256:c81b9a367bb2985fa45a2c0d4f12b147acc43655683910a5abf937fe22208425"
-url = "https://github.com/earendil-works/pi/releases/download/v0.99.1/pi-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/earendil-works/pi/releases/assets/598875655"
+checksum = "sha256:3faa94666cd3849d37af320ff749407d0271b07a9b94f420c87e30866e10e289"
+url = "https://github.com/earendil-works/pi/releases/download/v1.1.0/pi-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/earendil-works/pi/releases/assets/619962805"
 
 [tools."aqua:earendil-works/pi"."platforms.macos-arm64"]
-checksum = "sha256:4692aba1dcd48219b61edb4ecebc3c33f6199ebe65299228fce5ba69c31a23a6"
-url = "https://github.com/earendil-works/pi/releases/download/v0.99.1/pi-darwin-arm64.tar.gz"
-url_api = "https://api.github.com/repos/earendil-works/pi/releases/assets/598875653"
+checksum = "sha256:3455b13de35c15a5893cdebc922678199e90a7ce99b06cbc23f37860e90d63c7"
+url = "https://github.com/earendil-works/pi/releases/download/v1.1.0/pi-darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/earendil-works/pi/releases/assets/619962801"
 
 [tools."aqua:earendil-works/pi"."platforms.windows-x64"]
-checksum = "sha256:7e5c2971c0be6019a8b89edc5e3f0efb4cbdeb0ac236fd3a3307c1f62057528f"
-url = "https://github.com/earendil-works/pi/releases/download/v0.99.1/pi-windows-x64.zip"
-url_api = "https://api.github.com/repos/earendil-works/pi/releases/assets/598875680"
+checksum = "sha256:98e3a14e13685a4836a10865bd7887bdc2fcfa1086120313420dc935a401d3d6"
+url = "https://github.com/earendil-works/pi/releases/download/v1.1.0/pi-windows-x64.zip"
+url_api = "https://api.github.com/repos/earendil-works/pi/releases/assets/619962903"
 
 [[tools."aqua:openai/codex"]]
-version = "0.159.2"
+version = "0.162.1"
 backend = "aqua:openai/codex"
 specifiers = ["latest"]
 
 [tools."aqua:openai/codex"."platforms.linux-x64"]
-checksum = "sha256:9e2d29a713b94478b240dec2f10e11324cd05fad76dc43e7c639bdf8a1337a6b"
-url = "https://github.com/openai/codex/releases/download/rust-v0.159.2/codex-package-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/openai/codex/releases/assets/599522399"
+checksum = "sha256:a676f5722aae0d86cbe3764332f08eab1fdd89dc0a300b3ad4ffbf48611fa3e3"
+url = "https://github.com/openai/codex/releases/download/rust-v0.162.1/codex-package-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/openai/codex/releases/assets/625965833"
 
 [tools."aqua:openai/codex"."platforms.macos-arm64"]
-checksum = "sha256:38aaf6dce63099fd10988948d03bbc6c0474253aef6961fcbe60f8d154b39101"
-url = "https://github.com/openai/codex/releases/download/rust-v0.159.2/codex-package-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/openai/codex/releases/assets/599532693"
+checksum = "sha256:88e37ccddf5a0f4ea9dc1be13c66a2a94f9c2d1a04f3ace9053d71b3939e885d"
+url = "https://github.com/openai/codex/releases/download/rust-v0.162.1/codex-package-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/openai/codex/releases/assets/625989262"
 
 [tools."aqua:openai/codex"."platforms.windows-x64"]
-checksum = "sha256:a7ab591043d99e8a88d0c2bebf15f810b15599a71148c4af944a755af3c71eef"
-url = "https://github.com/openai/codex/releases/download/rust-v0.159.2/codex-package-x86_64-pc-windows-msvc.tar.gz"
-url_api = "https://api.github.com/repos/openai/codex/releases/assets/599523828"
+checksum = "sha256:3e993a82ff393f4530558dcaadb36bb4f0fd1ea7243e621348e40b469f900f6a"
+url = "https://github.com/openai/codex/releases/download/rust-v0.162.1/codex-package-x86_64-pc-windows-msvc.tar.gz"
+url_api = "https://api.github.com/repos/openai/codex/releases/assets/625969756"
 
 [[tools.dprint]]
-version = "0.58.0"
+version = "0.63.0"
 backend = "aqua:dprint/dprint"
 specifiers = ["latest"]
 
 [tools.dprint."platforms.linux-x64"]
-checksum = "sha256:3047dcabe684fe32868d1959f7fad4ccbc2996a393d639bbb6634668fa08dc49"
-url = "https://github.com/dprint/dprint/releases/download/0.58.0/dprint-x86_64-unknown-linux-gnu.zip"
-url_api = "https://api.github.com/repos/dprint/dprint/releases/assets/598660522"
+checksum = "sha256:f58b5d7c13ccd613cfa264f1ae82d4e5db1373f8fe20462bc1126051d111b0ce"
+url = "https://github.com/dprint/dprint/releases/download/0.63.0/dprint-x86_64-unknown-linux-gnu.zip"
+url_api = "https://api.github.com/repos/dprint/dprint/releases/assets/632125303"
 provenance = "github-attestations"
 
 [tools.dprint."platforms.macos-arm64"]
-checksum = "sha256:06a7ea017e4d7da296f8a44fabb2f3d6ffafa91bbd5fddd4830bdc418bacb46d"
-url = "https://github.com/dprint/dprint/releases/download/0.58.0/dprint-aarch64-apple-darwin.zip"
-url_api = "https://api.github.com/repos/dprint/dprint/releases/assets/598660526"
+checksum = "sha256:5c0a4a695f9a17754eec0039f28435aedb61e1e1a6b5f448eb098a64e039c857"
+url = "https://github.com/dprint/dprint/releases/download/0.63.0/dprint-aarch64-apple-darwin.zip"
+url_api = "https://api.github.com/repos/dprint/dprint/releases/assets/632125306"
 provenance = "github-attestations"
 
 [tools.dprint."platforms.windows-x64"]
-checksum = "sha256:6ab827fba525918670ff666edb5fc50917157c803c9abdc463131f75b5df0840"
-url = "https://github.com/dprint/dprint/releases/download/0.58.0/dprint-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/dprint/dprint/releases/assets/598660521"
+checksum = "sha256:a9f6d1146bd2a01585f845086df248297d0e958ede700557c13a5b49ec11f552"
+url = "https://github.com/dprint/dprint/releases/download/0.63.0/dprint-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/dprint/dprint/releases/assets/632125309"
 provenance = "github-attestations"
 
 [[tools.google-java-format]]
@@ -129,24 +129,24 @@ url = "https://github.com/google/google-java-format/releases/download/v1.37.0/go
 url_api = "https://api.github.com/repos/google/google-java-format/releases/assets/603148681"
 
 [[tools.hyperfine]]
-version = "1.20.0"
+version = "2.0.0"
 backend = "github:sharkdp/hyperfine"
 specifiers = ["latest"]
 
 [tools.hyperfine."platforms.linux-x64"]
-checksum = "sha256:63ad53934062118f5b0be11785e0bb1603d4b91667d1921f2fd8df9a8712040a"
-url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317831911"
+checksum = "sha256:ae2beda2ac99c098427e4f755244552daf20e514422889cca6d44421e2d93c87"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v2.0.0/hyperfine-v2.0.0-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/619831673"
 
 [tools.hyperfine."platforms.macos-arm64"]
-checksum = "sha256:8ee7067016620447c9d2d6234ec9a4680f958b7ad983549b56334668f63075b5"
-url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317831785"
+checksum = "sha256:590b839cfea386b384ce0b42d16daf2910277cf30950656194bb3a5f20dea81e"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v2.0.0/hyperfine-v2.0.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/619831330"
 
 [tools.hyperfine."platforms.windows-x64"]
-checksum = "sha256:2508c549b049b1d4342d08edc1cb42bfac169082b6e3069431b5bab9822dbb32"
-url = "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/317832313"
+checksum = "sha256:3dec51acee1060908e67948838d6bc0a7aacde0774acebfa4afb220dcf0bc078"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v2.0.0/hyperfine-v2.0.0-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/619834237"
 
 [[tools.java]]
 version = "temurin-27.0.0+35"
@@ -169,21 +169,21 @@ checksum = "sha256:2031c9c5c624737ed29a0624caaf5bcc25e74235834c28b4bfa88f7ba7a40
 url = "https://github.com/adoptium/temurin27-binaries/releases/download/jdk-27%2B35/OpenJDK27U-jdk_x64_windows_hotspot_27_35.zip"
 
 [[tools.node]]
-version = "26.10.0"
+version = "26.11.1"
 backend = "core:node"
 specifiers = ["latest"]
 
 [tools.node."platforms.linux-x64"]
-checksum = "sha256:cb5c9ce9c80d7b8821e3a258543c71b939138cf17c74d5cc44bbe85d6dbc5ad8"
-url = "https://nodejs.org/dist/v26.10.0/node-v26.10.0-linux-x64.tar.gz"
+checksum = "sha256:15fc043a51a5783f2f4b634561091658f5a7f0e3db03f997dca3a8033a33e45b"
+url = "https://nodejs.org/dist/v26.11.1/node-v26.11.1-linux-x64.tar.gz"
 
 [tools.node."platforms.macos-arm64"]
-checksum = "sha256:751fdf7439f115d87ee2a8f3f18c065b6151852068e3e666ac60ac2996f75ac9"
-url = "https://nodejs.org/dist/v26.10.0/node-v26.10.0-darwin-arm64.tar.gz"
+checksum = "sha256:d916511b55965e91be7a88e17f88d895b6793ceaba3e6c9b194aefe51c2c65ac"
+url = "https://nodejs.org/dist/v26.11.1/node-v26.11.1-darwin-arm64.tar.gz"
 
 [tools.node."platforms.windows-x64"]
-checksum = "sha256:9fef7eca6743a6b910989cd8e78712376b394fcb9b6e1e9c44a0799a287f90c5"
-url = "https://nodejs.org/dist/v26.10.0/node-v26.10.0-win-x64.zip"
+checksum = "sha256:97f36a8a9684ff0d3e35758b4610fef5b628a5880e96f2ccc11240e5daf9934e"
+url = "https://nodejs.org/dist/v26.11.1/node-v26.11.1-win-x64.zip"
 
 [[tools.oxlint]]
 version = "1.84.0"
@@ -206,24 +206,24 @@ url = "https://github.com/oxc-project/oxc/releases/download/apps_v1.84.0/oxlint-
 url_api = "https://api.github.com/repos/oxc-project/oxc/releases/assets/579056588"
 
 [[tools.rumdl]]
-version = "0.2.78"
+version = "0.2.79"
 backend = "aqua:rvben/rumdl"
 specifiers = ["latest"]
 
 [tools.rumdl."platforms.linux-x64"]
-checksum = "sha256:5597ecab62c6cd50e63f85451fe4e763abc58195a3e7eff9186b6dfae890ca24"
-url = "https://github.com/rvben/rumdl/releases/download/v0.2.78/rumdl-v0.2.78-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/598548740"
+checksum = "sha256:82618d7c79c83b83781f7a30930402384fbf31d8b7ac071a63a3abccb0dbdef9"
+url = "https://github.com/rvben/rumdl/releases/download/v0.2.79/rumdl-v0.2.79-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/625384609"
 provenance = "github-attestations"
 
 [tools.rumdl."platforms.macos-arm64"]
-checksum = "sha256:450f00cdbf1da3bc3fbdf56c52dc9e6b2ab08bfd1ee6a26b44848e52a180dba5"
-url = "https://github.com/rvben/rumdl/releases/download/v0.2.78/rumdl-v0.2.78-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/598548745"
+checksum = "sha256:8c0ecf93a61bf612df5f6c6f22813d066a6f51a5680f3c12da49b93ed892aebb"
+url = "https://github.com/rvben/rumdl/releases/download/v0.2.79/rumdl-v0.2.79-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/625384611"
 provenance = "github-attestations"
 
 [tools.rumdl."platforms.windows-x64"]
-checksum = "sha256:fb8f475e68e754fdddc1c7c7d85914df984465ce6a8a9e9fe5fcc434782b5f7d"
-url = "https://github.com/rvben/rumdl/releases/download/v0.2.78/rumdl-v0.2.78-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/598548749"
+checksum = "sha256:07d12118c143976fadaaf7d053ac6be328798ce3b59b3f774572ac946b123672"
+url = "https://github.com/rvben/rumdl/releases/download/v0.2.79/rumdl-v0.2.79-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/625384622"
 provenance = "github-attestations"

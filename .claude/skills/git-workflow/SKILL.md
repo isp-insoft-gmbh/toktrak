@@ -86,8 +86,8 @@ Goal: fast-forward target/default branch to current branch tip and push target.
    → target has commits not in current branch; tell user to run `ff` first.
 4. Warn if branch commits lack `closes #<N>` but conversation mentions an issue.
 5. Test: run provided command or infer cheap checks.
-6. Fast-forward target:
-   `git update-ref refs/heads/<target> HEAD <old-target-sha>`.
+6. Fast-forward target: `git update-ref refs/heads/<target> HEAD
+   <old-target-sha>`.
 7. Push: `git push <remote> <target>`. If rejected: fetch, verify ancestor,
    retry once.
 8. Offer to delete landed branch.

@@ -51,6 +51,11 @@ tests must prove the complete development corpus still replays without loss,
 corruption, or reinterpretation. Never add production data or separate release
 fixtures.
 
+New usage uploads accept numbers with at most 256 integer digits and 256
+fractional digits after exponent expansion. This admission limit also covers
+nested report fields. It applies only to incoming uploads; replay preserves
+previously stored numbers without changing the v1 event schema or rounding data.
+
 ## Generated code
 
 JStachio generates renderers from `sources/toktrak/templates` during
@@ -80,8 +85,8 @@ mise run verify
 mise run ci
 ```
 
-`test` includes checks, Java tests, golem tests, and tracker tests; use
-`mise run test --only [test paths...]` for focused tests without repository-wide
+`test` includes checks, Java tests, golem tests, and tracker tests; use `mise
+run test --only [test paths...]` for focused tests without repository-wide
 checks. `verify` also links and checks the production runtime. `ci` also checks
 Refaster conformance and coverage floors, and requires a clean Git tree. `check`
 already includes Markdown lint, tracker JavaScript lint, and offline golem
