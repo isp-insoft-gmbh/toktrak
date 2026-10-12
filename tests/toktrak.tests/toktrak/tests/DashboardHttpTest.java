@@ -50,6 +50,13 @@ final class DashboardHttpTest {
       assertTrue(
           overview.body().contains("<span class=\"status status-warn\">Partial</span>"),
           overview.body());
+      int ingestionStart = overview.body().indexOf("<ul class=\"ingestion-list\">");
+      int ingestionEnd = overview.body().indexOf("</ul>", ingestionStart);
+      String ingestion = overview.body().substring(ingestionStart, ingestionEnd);
+      assertTrue(
+          ingestion.indexOf("<strong>Synthetic User 5</strong>")
+              < ingestion.indexOf("<strong>Synthetic User 1</strong>"),
+          ingestion);
       assertTrue(overview.body().contains(">██████████</span>"), overview.body());
       assertFalse(overview.body().contains("datastar-patch-signals"), overview.body());
       assertTrue(
@@ -128,6 +135,37 @@ final class DashboardHttpTest {
       String body = send(client, base.resolve("/"), session).body();
       assertTrue(body.contains("READ-ONLY MODE"), body);
       assertTrue(body.contains("$1,068.19"), body);
+    }
+  }
+
+  @Test
+  void given_completeSnapshot_when_moreThanFiveWorkdaysOld_then_marksItStaleAndItsDate()
+      throws Exception {
+    String atLimit = corpusOverview("2026-07-21T23:59:59Z", "five-workdays");
+    assertTrue(atLimit.contains("<span class=\"status status-ok\">Complete</span>"), atLimit);
+    assertFalse(atLimit.contains("<span class=\"status status-warn\">Stale</span>"), atLimit);
+
+    String stale = corpusOverview("2026-07-22T00:00:00Z", "six-workdays");
+    assertTrue(stale.contains("<span class=\"status status-warn\">Stale</span>"), stale);
+    assertTrue(stale.contains("No reports for more than 5 workdays"), stale);
+    assertTrue(
+        stale.contains(
+            "<time class=\"ingestion-date ingestion-date-warn\""
+                + " datetime=\"2026-07-14T14:14:39Z\">2026-07-14T14:14:39Z</time>"),
+        stale);
+  }
+
+  private String corpusOverview(String clock, String dataName) throws Exception {
+    try (var app =
+        App.start(
+            new String[] {"--corpus", "tests/corpus/dev.jsonl", "--clock", clock},
+            Map.of(
+                "TOKTRAK_DEV_AUTH", "true",
+                "TOKTRAK_PORT", "0",
+                "TOKTRAK_DATA_DIR", directory.resolve(dataName).toString()))) {
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      return send(client, base.resolve("/"), login(client, base)).body();
     }
   }
 

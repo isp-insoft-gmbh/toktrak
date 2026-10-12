@@ -31,6 +31,10 @@ final class AssetsTest {
     assertTrue(css.contains("@media (prefers-reduced-motion: reduce)"));
     assertTrue(css.contains("@media (max-width: 44rem)"));
     assertTrue(css.contains(":focus-visible"));
+    assertTrue(
+        css.matches(
+            "(?s).*\\.ingestion-date-warn \\{[^}]*background: var\\(--warning-surface\\);"
+                + "[^}]*color: var\\(--warning-text\\);[^}]*\\}.*"));
     Set<String> themeColors = baseColors(css, "theme");
     assertFalse(themeColors.isEmpty());
     assertEquals("/assets/main." + sha256(expected).substring(0, 32) + ".css", url);

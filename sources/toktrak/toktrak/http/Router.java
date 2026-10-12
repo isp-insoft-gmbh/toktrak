@@ -15,6 +15,7 @@ import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import toktrak.BuildInfo;
+import toktrak.ClockSource;
 import toktrak.auth.AuthService;
 import toktrak.auth.AuthService.Session;
 import toktrak.health.HealthState;
@@ -58,6 +59,7 @@ public final class Router implements HttpHandler {
   private final AuthService auth;
   private final UsageService usage;
   private final Projection projection;
+  private final ClockSource clock;
   private final TrackerScript trackerScript;
   private final BuildInfo buildInfo;
   private final Changelog changelog;
@@ -71,6 +73,7 @@ public final class Router implements HttpHandler {
       AuthService auth,
       UsageService usage,
       Projection projection,
+      ClockSource clock,
       URI baseUri,
       BuildInfo buildInfo) {
     assert health != null;
@@ -82,6 +85,7 @@ public final class Router implements HttpHandler {
     this.auth = Objects.requireNonNull(auth, "auth");
     this.usage = Objects.requireNonNull(usage, "usage");
     this.projection = Objects.requireNonNull(projection, "projection");
+    this.clock = Objects.requireNonNull(clock, "clock");
     this.buildInfo = Objects.requireNonNull(buildInfo, "buildInfo");
     this.changelog = Changelog.load(buildInfo.version());
     this.developmentPort = devAuth ? developmentPort(baseUri) : -1;
@@ -604,7 +608,7 @@ public final class Router implements HttpHandler {
             dashboardBase("Overview · TokTrak", "/", CurrentPage.OVERVIEW, effective),
             projection.revision(),
             session.user().displayName(),
-            DashboardFactory.create(projection, health, effective));
+            DashboardFactory.create(projection, health, effective, clock.instant()));
     HttpSupport.encodedHtml(
         exchange,
         200,
@@ -631,7 +635,7 @@ public final class Router implements HttpHandler {
                 effective),
             projection.revision(),
             session.user().displayName(),
-            DashboardFactory.create(projection, health, effective));
+            DashboardFactory.create(projection, health, effective, clock.instant()));
     HttpSupport.encodedHtml(
         exchange,
         200,

@@ -9,6 +9,7 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -44,6 +45,7 @@ import toktrak.usage.UsageUpload.Report;
 final class DashboardFactory {
   private static final int DETAIL_ROWS_MAX = 20;
   private static final int NESTED_ENTRIES_MAX = 100;
+  private static final int INGESTION_FRESH_WORKDAYS = 5;
   private static final Map<String, String> COLOR_CLASSES =
       Map.of(
           "#f4a6a6", "color-1",
@@ -58,10 +60,11 @@ final class DashboardFactory {
   private DashboardFactory() {}
 
   static DashboardSnapshot create(
-      Projection projection, HealthState health, DashboardCurrency currency) {
+      Projection projection, HealthState health, DashboardCurrency currency, Instant now) {
     assert projection != null;
     assert health != null;
     assert currency != null;
+    Objects.requireNonNull(now, "now");
     List<Row> daily = projection.usageRows(Report.DAILY);
     List<Row> sessions = projection.usageRows(Report.SESSION);
     List<Row> blocks = projection.usageRows(Report.BLOCKS);
@@ -108,7 +111,7 @@ final class DashboardFactory {
     List<DashboardSpikeRow> spikes = spikes(daily, usersByKey, currency, rate);
     List<DashboardSessionRow> sessionRows = sessions(sessions, usersByKey, currency, rate);
     List<DashboardBlockRow> blockRows = blocks(blocks, currency, rate);
-    List<DashboardIngestionRow> ingestion = ingestion(projection.ingestion(), usersByKey);
+    List<DashboardIngestionRow> ingestion = ingestion(projection.ingestion(), usersByKey, now);
     boolean partial = projection.ingestion().stream().anyMatch(Ingestion::partial);
 
     return new DashboardSnapshot(
@@ -410,27 +413,54 @@ final class DashboardFactory {
   }
 
   private static List<DashboardIngestionRow> ingestion(
-      List<Ingestion> rows, Map<UserKey, User> users) {
+      List<Ingestion> rows, Map<UserKey, User> users, Instant now) {
     return rows.stream()
+        .sorted(
+            Comparator.comparing((Ingestion row) -> !unhealthy(row, now))
+                .thenComparing(Ingestion::generatedAt)
+                .thenComparing(row -> row.owner().toString()))
         .map(
             row -> {
               User user = users.get(row.owner());
               assert user != null;
               String name = user.displayName();
+              boolean stale = stale(row, now);
               String detail =
                   row.partial()
                       ? "Missing: " + String.join(", ", row.failedReports())
                       : "All reports · Tracker v" + row.trackerVersion();
+              if (stale) detail = "No reports for more than 5 workdays · " + detail;
+              String status = row.partial() ? "Partial" : stale ? "Stale" : "Complete";
               return new DashboardIngestionRow(
                   initials(name),
                   name,
                   colorClass(user.color()),
-                  row.partial() ? "Partial" : "Complete",
-                  row.partial() ? "status-warn" : "status-ok",
+                  status,
+                  row.partial() || stale ? "status-warn" : "status-ok",
                   row.generatedAt().toString(),
+                  stale,
                   detail);
             })
         .toList();
+  }
+
+  private static boolean unhealthy(Ingestion row, Instant now) {
+    return row.partial() || stale(row, now);
+  }
+
+  private static boolean stale(Ingestion row, Instant now) {
+    ZoneId timeZone = ZoneId.of(row.clientTimeZone());
+    LocalDate cursor = row.generatedAt().atZone(timeZone).toLocalDate();
+    LocalDate today = now.atZone(timeZone).toLocalDate();
+    int workdays = 0;
+    while (cursor.isBefore(today) && workdays <= INGESTION_FRESH_WORKDAYS) {
+      cursor = cursor.plusDays(1);
+      if (cursor.getDayOfWeek() != DayOfWeek.SATURDAY
+          && cursor.getDayOfWeek() != DayOfWeek.SUNDAY) {
+        workdays = Math.addExact(workdays, 1);
+      }
+    }
+    return workdays > INGESTION_FRESH_WORKDAYS;
   }
 
   private static Totals totals(Row row) {

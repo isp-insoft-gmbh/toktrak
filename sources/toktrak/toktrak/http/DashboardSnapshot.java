@@ -88,6 +88,7 @@ record DashboardSnapshot(
       String status,
       String statusClass,
       String generatedAt,
+      boolean stale,
       String detail) {
     DashboardIngestionRow {
       if (!colorClass.matches("color-[1-8]") || !statusClass.matches("status-(?:ok|warn)")) {

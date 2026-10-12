@@ -72,7 +72,7 @@
 {{#dashboard.ingestion}}
           <li>
             <span class="avatar {{colorClass}}" aria-hidden="true">{{initials}}</span>
-            <span><strong>{{name}}</strong><small>{{generatedAt}}</small><small>{{detail}}</small></span>
+            <span><strong>{{name}}</strong><time class="ingestion-date{{#stale}} ingestion-date-warn{{/stale}}" datetime="{{generatedAt}}">{{generatedAt}}</time><small>{{detail}}</small></span>
             <span class="status {{statusClass}}">{{status}}</span>
           </li>
 {{/dashboard.ingestion}}
