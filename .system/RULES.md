@@ -2,13 +2,13 @@
 
 ## Commands
 
-- Install tools with `mise install`; establish baseline health with
-  `mise run check`.
+- Install tools with `mise install`; establish baseline health with `mise run
+  check`.
 - Format Markdown and Java with `mise run fmt [paths...]`.
 - Run focused tests with `mise run test --only [test paths...]` while iterating.
-- Use the source-preserving ladder `mise run check`, `mise run test`, then
-  `mise run verify` as needed; each rung includes the preceding guarantees.
-  Tracker tests exercise temporary native user schedulers on the host.
+- Use the source-preserving ladder `mise run check`, `mise run test`, then `mise
+  run verify` as needed; each rung includes the preceding guarantees. Tracker
+  tests exercise temporary native user schedulers on the host.
 - Run `mise run verify` before completion; it also verifies the linked
   production runtime.
 - Run `mise run runtime-build` when production runtime behavior or packaging can
@@ -20,8 +20,8 @@
 - Run the seeded server with `mise run dev`; use `mise run dev --fail-writes`
   for degraded-write behavior.
 - Reproduce CI with `mise run ci` from a clean tree; it checks Refaster
-  conformance without rewriting source and enforces coverage floors. Use
-  `mise run refactor --check` while iterating and `mise run refactor` to apply
+  conformance without rewriting source and enforces coverage floors. Use `mise
+  run refactor --check` while iterating and `mise run refactor` to apply
   required rewrites.
 
 ## Quality gates
@@ -31,10 +31,10 @@
 - Name every test case
   `given_<camelCaseContext>_when_<camelCaseBehavior>_then_<camelCaseExpectation>`;
   helpers are exempt.
-- After editing unit tests, iterate with
-  `mise run pit --history -- [production source paths...]`, inspect survivors,
-  and strengthen useful tests. If history errors or looks inconsistent, delete
-  `output/pit.history` and rerun without `--history`.
+- After editing unit tests, iterate with `mise run pit --history -- [production
+  source paths...]`, inspect survivors, and strengthen useful tests. If history
+  errors or looks inconsistent, delete `output/pit.history` and rerun without
+  `--history`.
 - Add meaningful coverage rather than weakening coverage floors.
 - Use Selfie only for stable, reviewable HTML, JSON, text, or protocol output.
   Inspect every `.ss` diff and trace each changed fragment to production code.
@@ -71,8 +71,8 @@
 - Separate control and data planes; batch I/O and computation.
 - Follow Java naming conventions. Use precise nouns and verbs, suffix qualifiers
   such as `latencyMillisMax`, and avoid abbreviations.
-- Write Javadoc only with `///` Markdown documentation comments; never use
-  `/** ... */`.
+- Write Javadoc only with `///` Markdown documentation comments; never use `/**
+  ... */`.
 - Keep the tracker one plain Node `.mjs` using the standard library and native
   user schedulers. Do not add a JavaScript build system.
 - Keep production runtime configuration in environment variables.

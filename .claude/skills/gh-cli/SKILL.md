@@ -47,8 +47,8 @@ node scripts/gh_failed_run.mjs --repo owner/repo --pretty
 node scripts/gh_pages_deploy.mjs status owner/repo --json
 ```
 
-Helpers are cross-platform Node `.mjs`; no other runtime required. Use
-`npm test` for helper tests.
+Helpers are cross-platform Node `.mjs`; no other runtime required. Use `npm
+test` for helper tests.
 
 ## Patterns
 

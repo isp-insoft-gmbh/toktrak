@@ -6,13 +6,12 @@ encryption and decryption. Both are JDK source launchers with no application
 libraries, `jq`, or Node dependency. Git and gh are required orchestration
 executables; the selected harness CLI is also required.
 
-`mise run golem <name> --local` runs a task without publishing.
-`mise run golem <name>` allows publication and requires `GH_TOKEN`.
-`mise run golem-auth-check <name>` probes the task's subscription and model
-without tools. `java -ea tools/golems/Golems.java select --event schedule`
-explains the UTC schedule and prints the GitHub Actions matrix on the final
-line. `mise run verify` runs `SelfCheck.java` with isolated scratch repositories
-and fake authentication.
+`mise run golem <name> --local` runs a task without publishing. `mise run golem
+<name>` allows publication and requires `GH_TOKEN`. `mise run golem-auth-check
+<name>` probes the task's subscription and model without tools. `java -ea
+tools/golems/Golems.java select --event schedule` explains the UTC schedule and
+prints the GitHub Actions matrix on the final line. `mise run verify` runs
+`SelfCheck.java` with isolated scratch repositories and fake authentication.
 
 Branch-writing tasks start at a pinned remote or local base in a detached
 worktree under the run directory. The original checkout, its branch, and its

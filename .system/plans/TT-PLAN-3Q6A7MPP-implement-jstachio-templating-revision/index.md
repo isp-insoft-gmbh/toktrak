@@ -47,10 +47,9 @@ This plan supersedes `TT-PLAN-AJUX9158` after its blocking critique.
 - Compile from a `target/classes`-shaped staging layout to remove JStachio's
   custom-output warning without suppression. Keep module classes and bounded
   `target/generated-sources/annotations` beneath one compilation artifact.
-- Invoke the pinned processor explicitly with Error Prone and retain
-  `-Xlint:all -Werror`. Validate generated paths, counts, sizes,
-  renderer/source/ class counterparts, service-file absence, and stale or
-  unexpected files.
+- Invoke the pinned processor explicitly with Error Prone and retain `-Xlint:all
+  -Werror`. Validate generated paths, counts, sizes, renderer/source/ class
+  counterparts, service-file absence, and stale or unexpected files.
 - Keep two distinct integrity layers:
   - an input key over authored Java, canonical template bytes, processor
     options, tool/platform identity, and all dependency JAR bytes;
@@ -194,9 +193,9 @@ This plan supersedes `TT-PLAN-AJUX9158` after its blocking critique.
 - For the clean CI gate, create an alternate Git index from `HEAD`, add only an
   explicit implementation-path allowlist, write a temporary detached commit, and
   attach a temporary worktree to that commit. Assert its changed-path list
-  equals the allowlist and excludes all unrelated `.system` files; run
-  `mise run ci`, then remove the worktree, alternate index, and dangling commit
-  reference without touching the user's branch, index, or worktree.
+  equals the allowlist and excludes all unrelated `.system` files; run `mise run
+  ci`, then remove the worktree, alternate index, and dangling commit reference
+  without touching the user's branch, index, or worktree.
 
 No runtime template files, custom Mustache parser, unescaped output, dynamic
 partials, generated service registry, reflective lookup, committed generated

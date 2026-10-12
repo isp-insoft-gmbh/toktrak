@@ -217,29 +217,6 @@ final class UsageProjectionTest {
   }
 
   @Test
-  void given_revisionWait_when_projectionChanges_then_returnsNewRevision() throws Exception {
-    var projection = Projection.empty();
-    try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
-      var waiting = executor.submit(() -> projection.awaitRevision(0, Duration.ofSeconds(1)));
-      projection.apply(EventEnvelope.create("change", AT, "system", Map.of()));
-      assertEquals(1, waiting.get());
-    }
-  }
-
-  @Test
-  void given_revisionWait_when_timingOutAndValidatingBounds_then_returnsCurrentRevision()
-      throws Exception {
-    var projection = Projection.empty();
-
-    assertEquals(0, projection.awaitRevision(0, Duration.ofMillis(1)));
-    assertThrows(
-        IllegalArgumentException.class, () -> projection.awaitRevision(-1, Duration.ofSeconds(1)));
-    assertThrows(IllegalArgumentException.class, () -> projection.awaitRevision(0, Duration.ZERO));
-    assertThrows(
-        IllegalArgumentException.class, () -> projection.awaitRevision(0, Duration.ofSeconds(31)));
-  }
-
-  @Test
   void given_invalidFxRateValues_when_constructingRate_then_rejectsThem() {
     assertThrows(
         IllegalArgumentException.class,

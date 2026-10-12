@@ -30,10 +30,10 @@ preferences, not CLI mechanics.
   rules. No AI attribution.
 - Bad → good:
   - `ci: fix GitHub Actions janitor run` → `Restore reliable Janitor runs`
-  - `Use @earendil-works Pi packages` →
-    `Keep the harness on maintained Pi packages`
-  - `fix agent patrol: format before commit` →
-    `Stop Agent Patrol opening unformatted PRs`
+  - `Use @earendil-works Pi packages` → `Keep the harness on maintained Pi
+    packages`
+  - `fix agent patrol: format before commit` → `Stop Agent Patrol opening
+    unformatted PRs`
   - `🔥 trouble-maker: bugfixes` → name the human-visible problem.
 - Use forge-native closing links only when the PR fully resolves an issue;
   otherwise reference it.
