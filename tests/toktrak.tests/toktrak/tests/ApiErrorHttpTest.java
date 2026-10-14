@@ -80,6 +80,12 @@ final class ApiErrorHttpTest {
               token);
       assertEquals(413, tooLarge.statusCode(), tooLarge.body());
       assertApiError(tooLarge, "payload_too_large", "usage upload is too large");
+      for (String body : new String[] {"{", "null", "[]"}) {
+        HttpResponse<String> unparsable =
+            send(client, base.resolve("/api/usage"), "POST", "application/json", null, body, token);
+        assertEquals(400, unparsable.statusCode(), unparsable.body());
+        assertApiError(unparsable, "invalid_usage", "usage upload is invalid");
+      }
       HttpResponse<String> accepted =
           send(client, base.resolve("/api/usage"), "POST", "application/json", null, USAGE, token);
       assertEquals(200, accepted.statusCode(), accepted.body());
