@@ -199,7 +199,8 @@ final class EventEnvelopeTest {
   void given_nestedDataAtValueLimit_when_serializingAndParsingJson_then_roundTripsEnvelope() {
     // Field name plus empty container start and end is the most tokens one data value can cost.
     var rows = new LinkedHashMap<String, Object>();
-    for (int index = 0; index < 99_998; index++) rows.put(Integer.toString(index), new ArrayList<>());
+    for (int index = 0; index < 99_998; index++)
+      rows.put(Integer.toString(index), new ArrayList<>());
     var event = EventEnvelope.create("event", AT, "system", Map.of("rows", rows));
 
     String json = Json.write(event);
