@@ -54,6 +54,19 @@ final class UsageUploadTest {
   }
 
   @Test
+  void given_unparsableUploadBytes_when_parsing_then_rejectsUploadAsInvalid() {
+    for (String body : List.of("{", "null", "[]", "\"usage\"")) {
+      var failure =
+          assertThrows(
+              IllegalArgumentException.class,
+              () -> UsageUpload.parse(body.getBytes(UTF_8), AT),
+              body);
+
+      assertEquals("usage upload is not valid JSON", failure.getMessage(), body);
+    }
+  }
+
+  @Test
   void given_decimalDigitBoundaries_when_parsingUploadBytes_then_preservesExactValues() {
     for (String number : List.of("1E+255", "1E-256", "-9.9E+255", "0E-256", "0E+255")) {
       BigDecimal decimal = new BigDecimal(number);

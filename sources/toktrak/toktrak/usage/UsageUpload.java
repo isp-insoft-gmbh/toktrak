@@ -71,7 +71,13 @@ public final class UsageUpload {
 
   public static UsageUpload parse(byte[] input, Instant receivedAt) {
     Objects.requireNonNull(input, "input");
-    UsageUpload upload = parse(Json.read(input, Map.class), receivedAt);
+    Map<?, ?> document;
+    try {
+      document = Json.read(input, Map.class);
+    } catch (IllegalStateException exception) {
+      throw new IllegalArgumentException("usage upload is not valid JSON", exception);
+    }
+    UsageUpload upload = parse(document, receivedAt);
     requireUploadDecimalBounds(upload.data);
     return upload;
   }
