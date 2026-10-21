@@ -58,6 +58,21 @@ final class EventLogTest {
   }
 
   @Test
+  void given_eventDataAtNestingLimit_when_replayingLog_then_returnsEvent() {
+    var log = EventLog.open(dir.resolve("events.ndjson"));
+    Object value = Map.of("leaf", 1);
+    for (int depth = 0; depth < 30; depth++) value = List.of(value);
+    var event =
+        EventEnvelope.create(
+            "event", Instant.parse("2026-07-10T00:00:00Z"), "system", Map.of("nested", value));
+    log.appendAndFsync(event);
+
+    var replayed = new ArrayList<EventEnvelope>();
+    assertEquals(1, log.replay(replayed::add));
+    assertEquals(List.of(event), replayed);
+  }
+
+  @Test
   void given_replayLimitMatchingEventCount_when_replayingLog_then_returnsAllEvents() {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var at = Instant.parse("2026-07-10T00:00:00Z");
