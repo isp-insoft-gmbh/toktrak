@@ -33,7 +33,7 @@ const SOURCE_COMMANDS = new Set([
   "gemini",
   "grok",
 ]);
-const JITTER_MILLIS_MAX = 30 * 60 * 1_000;
+const JITTER_MILLIS_MAX = 5 * 60 * 1_000;
 const COMMAND_TIMEOUT_MILLIS = 2 * 60 * 1_000;
 const HTTP_TIMEOUT_MILLIS = 30 * 1_000;
 const COMMAND_OUTPUT_BYTES_MAX = 1_500_000;
