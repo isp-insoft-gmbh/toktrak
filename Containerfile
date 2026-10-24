@@ -1,4 +1,4 @@
-FROM docker.io/library/amazoncorretto:27-jdk@sha256:3bca6d83fb33e63fe5386c7f8e290e4f70ecb2a406ae59eaf5cfd6fddca01563 AS build
+FROM docker.io/library/amazoncorretto:27-jdk@sha256:28968a0f0aa594bca7bce6f8bc2e4f2fd3da24fac75b22c6549a88cf1d74b964 AS build
 RUN dnf install -y binutils && dnf clean all
 WORKDIR /src
 COPY CHANGELOG.md CHANGELOG.md
