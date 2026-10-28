@@ -16,10 +16,16 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 
 public final class Json {
-  private static final int NESTING_DEPTH_MAX = 32;
+  // Every valid EventEnvelope must stay readable after it is written: its data may nest 32 levels
+  // inside the envelope object, and its 100,000 data values may each cost up to three tokens
+  // (field name, container start, container end) inside the envelope's own 13 tokens.
+  private static final int EVENT_DATA_NESTING_DEPTH_MAX = 32;
+  private static final int EVENT_DATA_VALUES_MAX = 100_000;
+  private static final int EVENT_TOKENS = 13;
+  private static final int NESTING_DEPTH_MAX = EVENT_DATA_NESTING_DEPTH_MAX + 1;
   private static final int DOCUMENT_BYTES_MAX = 10 * 1024 * 1024 - 1;
   private static final long DOCUMENT_CHARACTERS_MAX = DOCUMENT_BYTES_MAX;
-  private static final long TOKENS_MAX = 100_000;
+  private static final long TOKENS_MAX = EVENT_TOKENS + 3L * EVENT_DATA_VALUES_MAX;
   private static final int NUMBER_CHARACTERS_MAX = 256;
   private static final int STRING_CHARACTERS_MAX = 1024 * 1024;
   private static final ObjectMapper MAPPER = mapper();
@@ -83,9 +89,7 @@ public final class Json {
     assert value != null;
     assert type != null;
     try {
-      T result = MAPPER.readValue(value, type);
-      assert result != null;
-      return result;
+      return requireValue(MAPPER.readValue(value, type));
     } catch (IOException | DateTimeParseException exception) {
       throw new IllegalStateException("cannot parse JSON", exception);
     }
@@ -98,11 +102,15 @@ public final class Json {
       throw new IllegalArgumentException("JSON document exceeds " + DOCUMENT_BYTES_MAX + " bytes");
     }
     try {
-      T result = MAPPER.readValue(value, type);
-      assert result != null;
-      return result;
+      return requireValue(MAPPER.readValue(value, type));
     } catch (IOException | DateTimeParseException exception) {
       throw new IllegalStateException("cannot parse JSON", exception);
     }
+  }
+
+  // A document that is only the literal null is well-formed but carries no value to return.
+  private static <T> T requireValue(T value) {
+    if (value == null) throw new IllegalStateException("JSON document has no value");
+    return value;
   }
 }

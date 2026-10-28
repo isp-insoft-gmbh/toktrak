@@ -3,13 +3,16 @@ package toktrak.tests;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import toktrak.json.Json;
 import toktrak.store.EventEnvelope;
 
 final class EventEnvelopeTest {
@@ -178,6 +181,38 @@ final class EventEnvelopeTest {
             IllegalArgumentException.class,
             () -> EventEnvelope.create("event", AT, "system", data));
     assertEquals("event data exceeds 32 nesting levels", exception.getMessage());
+  }
+
+  @Test
+  void given_nestedDataAtDepthLimit_when_serializingAndParsingJson_then_roundTripsEnvelope() {
+    Object value = 0;
+    for (int depth = 0; depth < 31; depth++) value = new ArrayList<>(List.of(value));
+    var event = EventEnvelope.create("event", AT, "system", Map.of("nested", value));
+
+    String json = Json.write(event);
+
+    assertEquals(event, Json.read(json, EventEnvelope.class));
+    assertEquals(event, Json.read(json.getBytes(StandardCharsets.UTF_8), EventEnvelope.class));
+  }
+
+  @Test
+  void given_nestedDataAtValueLimit_when_serializingAndParsingJson_then_roundTripsEnvelope() {
+    // Field name plus empty container start and end is the most tokens one data value can cost.
+    var rows = new LinkedHashMap<String, Object>();
+    for (int index = 0; index < 99_998; index++)
+      rows.put(Integer.toString(index), new ArrayList<>());
+    var event = EventEnvelope.create("event", AT, "system", Map.of("rows", rows));
+
+    String json = Json.write(event);
+
+    assertEquals(event, Json.read(json, EventEnvelope.class));
+    assertEquals(event, Json.read(json.getBytes(StandardCharsets.UTF_8), EventEnvelope.class));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> {
+          rows.put("overflow", new ArrayList<>());
+          EventEnvelope.create("event", AT, "system", Map.of("rows", rows));
+        });
   }
 
   @Test
