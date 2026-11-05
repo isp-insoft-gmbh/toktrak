@@ -6,7 +6,7 @@ hyperfine = "github:sharkdp/hyperfine"
 [tools]
 dprint = "latest"
 google-java-format = "latest"
-java = "temurin"
+java = "corretto"
 node = "latest"
 oxlint = "latest"
 rumdl = "latest"
