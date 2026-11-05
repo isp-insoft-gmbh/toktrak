@@ -7,8 +7,8 @@
 - Windows, Apple Silicon macOS, or Linux.
 
 Run `mise install`; mise installs the versions committed in `mise.lock` for
-Java, Node.js, hyperfine, and formatters. Temurin 27 no longer ships macOS Intel
-binaries. No Maven, Gradle, npm install, or JavaScript build is used.
+Java, Node.js, hyperfine, and formatters. Corretto matches the container build
+JDK. No Maven, Gradle, npm install, or JavaScript build is used.
 
 Local checks and `mise run release` require no container runtime or registry
 credentials. CI alone builds, verifies, and publishes OCI images using rootless

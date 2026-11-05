@@ -1,4 +1,4 @@
-min_version = "2026.10.8"
+min_version = "2026.11.1"
 
 [tool_alias]
 hyperfine = "github:sharkdp/hyperfine"
@@ -6,7 +6,7 @@ hyperfine = "github:sharkdp/hyperfine"
 [tools]
 dprint = "latest"
 google-java-format = "latest"
-java = "temurin"
+java = "corretto"
 node = "latest"
 oxlint = "latest"
 rumdl = "latest"

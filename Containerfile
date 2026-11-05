@@ -1,4 +1,4 @@
-FROM docker.io/library/amazoncorretto:27-jdk@sha256:3bca6d83fb33e63fe5386c7f8e290e4f70ecb2a406ae59eaf5cfd6fddca01563 AS build
+FROM docker.io/library/amazoncorretto:27-jdk@sha256:366fb38a3aa6b89ca528b8e85d4b8596e3f39b5a9901997b457477a9a5987ffb AS build
 RUN dnf install -y binutils && dnf clean all
 WORKDIR /src
 COPY CHANGELOG.md CHANGELOG.md
@@ -10,7 +10,7 @@ COPY tools tools
 COPY vendored vendored
 RUN java -ea tools/Build.java prod
 
-FROM docker.io/library/debian@sha256:bcf83fd8af414eda0c0a99d25a4e61dedd88e7aac7f7bc519d04555ff0c40ec5
+FROM docker.io/library/debian@sha256:e2914ec98e08b24b4cee3cefcb9f90dfb5519f8d215a2ccf0c9a49b10b6e43de
 ARG VERSION
 ARG REVISION
 ARG DISPLAY_VERSION=dev
