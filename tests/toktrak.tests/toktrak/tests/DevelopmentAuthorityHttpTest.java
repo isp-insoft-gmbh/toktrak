@@ -101,17 +101,28 @@ final class DevelopmentAuthorityHttpTest {
   }
 
   @Test
-  void given_developmentAuthority_when_hostHeaderIsMissingRepeatedOrBlank_then_rejectsRequest()
+  void given_developmentAuthority_when_hostHeaderIsMissingOrBlank_then_rejectsRequest()
       throws Exception {
     try (var fixture = Fixture.start(directory, true, Fixture::loopbackBase)) {
       String host = "Host: 127.0.0.1:" + fixture.port();
       assertEquals(200, fixture.get("/health", host).status());
       assertRejected(fixture.send("GET /health HTTP/1.0\r\nConnection: close\r\n\r\n"));
-      assertRejected(fixture.get("/health", host, host));
-      assertRejected(fixture.get("/health", host, "Host: evil.example"));
-      assertRejected(fixture.get("/health", "Host: evil.example", host));
       assertRejected(fixture.get("/health", "Host:"));
       assertRejected(fixture.get("/health", "Host:   "));
+    }
+  }
+
+  @Test
+  void given_eitherAuthorityMode_when_hostHeaderIsRepeated_then_transportRejectsRequest()
+      throws Exception {
+    for (boolean development : List.of(true, false)) {
+      try (var fixture = Fixture.start(directory, development, Fixture::loopbackBase)) {
+        String host = "Host: 127.0.0.1:" + fixture.port();
+        // The JDK rejects duplicate Host headers before invoking the router.
+        assertEquals(400, fixture.get("/health", host, host).status());
+        assertEquals(400, fixture.get("/health", host, "Host: evil.example").status());
+        assertEquals(400, fixture.get("/health", "Host: evil.example", host).status());
+      }
     }
   }
 
@@ -152,8 +163,6 @@ final class DevelopmentAuthorityHttpTest {
     try (var fixture =
         Fixture.start(directory, false, port -> URI.create("https://toktrak.test"))) {
       assertEquals(200, fixture.get("/health", "Host: evil.example").status());
-      assertEquals(
-          200, fixture.get("/health", "Host: toktrak.test", "Host: evil.example").status());
       assertEquals(200, fixture.send("GET /health HTTP/1.0\r\nConnection: close\r\n\r\n").status());
     }
   }
