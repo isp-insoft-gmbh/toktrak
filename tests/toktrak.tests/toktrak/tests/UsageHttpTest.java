@@ -291,6 +291,47 @@ final class UsageHttpTest {
   }
 
   @Test
+  void given_uploadNestedToStoredDepthLimit_when_restarting_then_replaysUsage() throws Exception {
+    try (var app = start()) {
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      String cookie = login(client, base);
+      String token = createTrackerToken(client, base, cookie);
+
+      HttpResponse<String> deepest =
+          send(
+              client,
+              base.resolve("/api/usage"),
+              "POST",
+              "application/json",
+              null,
+              usageWithNestedUnknownField(25),
+              token);
+      assertEquals(200, deepest.statusCode(), deepest.body());
+      HttpResponse<String> tooDeep =
+          send(
+              client,
+              base.resolve("/api/usage"),
+              "POST",
+              "application/json",
+              null,
+              usageWithNestedUnknownField(26),
+              token);
+      assertEquals(400, tooDeep.statusCode(), tooDeep.body());
+      assertTrue(tooDeep.body().contains("\"code\":\"invalid_usage\""), tooDeep.body());
+      assertEquals(1, app.projection().usageRows(toktrak.usage.UsageUpload.Report.DAILY).size());
+    }
+
+    try (var app = start()) {
+      assertEquals(1, app.projection().usageRows(toktrak.usage.UsageUpload.Report.DAILY).size());
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      String cookie = login(client, base);
+      assertEquals(200, send(client, base.resolve("/"), "GET", null, cookie, null).statusCode());
+    }
+  }
+
+  @Test
   void given_trackerUploadWithExtremeExponent_when_uploading_then_keepsAnalyticsAvailable()
       throws Exception {
     try (var app = start()) {
@@ -378,6 +419,14 @@ final class UsageHttpTest {
         + "\",\"reports\":{\"daily\":"
         + daily
         + ",\"session\":{\"ok\":true,\"json\":{\"session\":[{\"period\":\"codex-session\",\"agent\":\"codex\",\"modelsUsed\":[\"gpt-test\"],\"totalCost\":0.2,\"totalTokens\":12,\"metadata\":{\"lastActivity\":\"2026-07-14T22:00:00Z\"}}]}},\"blocks\":{\"ok\":true,\"json\":{\"blocks\":[]}},\"sourceReports\":{\"codex\":{\"daily\":{\"ok\":true,\"json\":{\"daily\":[{\"futureDailyField\":\"preserved\"}],\"totals\":{}}},\"session\":{\"ok\":true,\"json\":{\"sessions\":[{\"sessionId\":\"codex-session\",\"futureSourceField\":\"preserved\"}],\"totals\":{}}}}}}}";
+  }
+
+  // The upload row sits six levels deep, so 25 arrays reach the 31 wire levels that the stored
+  // envelope, which adds two object levels, can still replay through the 33-level JSON parser.
+  private static String usageWithNestedUnknownField(int arrays) {
+    String nested = "[".repeat(arrays) + "1" + "]".repeat(arrays);
+    return usage("2026-07-14T23:00:00Z", "1", true)
+        .replace("\"unknownField\":\"preserved\"", "\"unknownField\":" + nested);
   }
 
   private static String usageWithAgentBreakdowns() {
