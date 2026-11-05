@@ -1,11 +1,6 @@
 {
   "lineWidth": 80,
-  "excludes": [
-    "sources/toktrak/assets/public/datastar.js",
-    "**/*.d2",
-    "**/*.svg",
-    "**/*.mustache"
-  ],
+  "excludes": ["sources/toktrak/assets/public/datastar.js", "**/*.d2", "**/*.svg", "**/*.mustache"],
   "biome": {
     "indentStyle": "space",
     "indentWidth": 2,
@@ -15,21 +10,15 @@
     "textWrap": "always"
   },
   "dockerfile": {
-    "associations": [
-      "Containerfile"
-    ]
+    "associations": ["Containerfile"]
   },
   "exec": {
     "cwd": "${configDir}",
     "commands": [
       {
         "command": "google-java-format -",
-        "exts": [
-          "java"
-        ],
-        "cacheKeyFiles": [
-          "mise.lock"
-        ]
+        "exts": ["java"],
+        "cacheKeyFiles": ["mise.lock"]
       }
     ]
   },
