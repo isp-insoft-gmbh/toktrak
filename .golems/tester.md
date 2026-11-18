@@ -1,10 +1,12 @@
 ---
 harness: claude
+provider: anthropic
 model: fable
-effort: med
+effort: medium
+owner: bugabinga
 schedule: [fri]
-os: ubuntu-26.04
-timeout: 45m
+runner: ubuntu-26.04
+timeout: "45m"
 verify: mise run verify
 ---
 
@@ -23,14 +25,8 @@ step in the doc:
 
 in case that any expectation was not met:
 
-Search existing open issues before creating a new issue in the TokTrak repo. Use
-the file-upload skill for sanitized screenshot evidence. For a new issue:
-
-- upload screenshots
-- create very short summary of issue
-- create a table of manual testing steps taken with:
-  - step name
-  - step instruction
-  - step expectation
-  - use 🗸 if expectation was met or 𝗫
-  - embedded screenshot after step
+Report each failure through the runner's final result, not by creating issues or
+uploading files yourself. Include a short issue summary and a table of step
+name, instruction, expectation, and observed pass/fail result. Describe
+sanitized screenshot evidence when available; do not claim local images were
+uploaded.

@@ -43,9 +43,9 @@ maintenance, and those workflow filters include the lockfile. The Mise bootstrap
 version remains pinned outside the lockfile. `hyperfine` uses Mise's GitHub
 backend because the Aqua recipe selects an Intel binary for Apple Silicon
 despite an available native release.
-[Maintenance golem instructions](../../../.github/golems/_golem.md) forbid
-workflow changes and merging PRs; a breaking update to its own Pi/model
-combination can prevent self-repair.
+[Maintenance golem instructions](../../../.golems/_golems.md) forbid workflow
+changes and merging PRs; a breaking update to its own Pi/model combination can
+prevent self-repair.
 
 ## Conclusion
 

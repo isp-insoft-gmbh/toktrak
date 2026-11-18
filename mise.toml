@@ -23,7 +23,7 @@ lockfile_platforms = ["linux-x64", "macos-arm64", "windows-x64"]
 
 # Main read-only ladder: each gate includes the guarantees above it.
 [tasks.check]
-description = "Base gate: formatting, definitions, compilation, and static analysis"
+description = "Base gate: formatting, compilation, and static analysis"
 run = "java -ea tools/Build.java check"
 
 [tasks.test]
@@ -84,25 +84,10 @@ run = "java -ea tools/Build.java ide"
 description = "Delete disposable output"
 run = "java -ea tools/Build.java clean"
 
-# Focused tracker tests and golem workflows.
+# Focused tracker tests.
 [tasks.tracker-test]
 description = "Run tracker and scheduler tests through Build.java (also in test, verify, and ci)"
 run = "java -ea tools/Build.java test --only tests/tracker"
-
-[task_templates.golem-tools]
-tools = { "aqua:earendil-works/pi" = "latest", "aqua:anthropics/claude-code" = "latest", "aqua:openai/codex" = "latest", "aqua:cli/cli" = "latest" }
-
-[tasks.golem-auth-check]
-extends = "golem-tools"
-description = "Probe live harness authentication; separate from repository checks"
-raw_args = true
-run = "java -ea tools/Build.java golem-auth-check"
-
-[tasks.golem]
-extends = "golem-tools"
-description = "Run one complete local golem lifecycle"
-raw_args = true
-run = "java -ea tools/Build.java golem"
 
 # Production packaging and release.
 [tasks.runtime-build]

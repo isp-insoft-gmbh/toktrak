@@ -99,52 +99,6 @@ test("given_pullRequest_when_measuringPerformance_then_comparesOnSameRunnerWithG
   assert.match(perf, /if: github\.event_name != 'pull_request'\n        run: mise run perf/u);
 });
 
-test("given_golemDispatch_when_running_then_javaOwnsLifecycleAndAuthRotation", () => {
-  const golem = workflow("golem");
-  assert.match(golem, /java -ea tools\/golems\/Golems\.java select --event schedule/u);
-  assert.match(golem, /run: mise run golem "\$\{\{ matrix\.golem \}\}"/u);
-  assert.doesNotMatch(golem, /run: java -ea tools\/golems\/Golems\.java run --golem/u);
-  const mise = readFileSync(join(process.cwd(), "mise.toml"), "utf8");
-  assert.match(
-    mise,
-    /\[task_templates\.golem-tools\]\ntools = \{[^\n]*aqua:earendil-works\/pi[^\n]*aqua:openai\/codex[^\n]*\}/u,
-  );
-  assert.match(mise, /\[tasks\.golem\]\nextends = "golem-tools"/u);
-  assert.match(golem, /java -ea tools\/golems\/Auth\.java decrypt/u);
-  assert.match(golem, /java -ea tools\/golems\/Auth\.java encrypt/u);
-  assert.match(golem, /java -ea tools\/golems\/Auth\.java seed/u);
-  assert.match(golem, /matrix:\n        include: \$\{\{ fromJSON\(needs\.select\.outputs\.tasks\) \}\}/u);
-  assert.doesNotMatch(golem, /node tools\/golem\.mjs|matrix\.task|matrix\.thinking/u);
-  assert.match(golem, /persist-credentials: false/u);
-  assert.match(golem, /permission-issues: write/u);
-  assert.match(golem, /CUTOVER: \$\{\{ vars\.GOLEM_JAVA_CUTOVER \}\}/u);
-  assert.match(golem, /"\$CUTOVER" != "enabled" && "\$TASK" != "canary"/u);
-});
-
-test("given_golemRunner_when_preparingBrowser_then_allTasksUsePinnedCliAndExistingChromium", () => {
-  const golem = workflow("golem");
-  const setup = golem.match(/      - name: Install browser CLI\n[\s\S]*?(?=      - name:)/u)?.[0];
-  assert.ok(setup, "all golems need browser setup before launch");
-  assert.match(setup, /if: matrix\.golem != ''/u);
-  assert.doesNotMatch(setup, /matrix\.golem ==|actions\/cache|agent-browser install/u);
-  assert.match(
-    setup,
-    /npm install --prefix "\$browser_dir" --no-save --no-package-lock --no-audit --no-fund agent-browser@\d+\.\d+\.\d+/u,
-  );
-  assert.match(setup, /browser_dir="\$RUNNER_TEMP\/agent-browser"/u);
-  assert.match(setup, /echo "\$browser_dir\/node_modules\/\.bin" >> "\$GITHUB_PATH"/u);
-  assert.match(setup, /skills path core/u);
-  assert.match(setup, /--session ci-bootstrap open about:blank/u);
-  assert.ok(golem.indexOf(setup) < golem.indexOf("name: Mint repository GitHub App token"));
-  assert.match(
-    golem,
-    /if: always\(\) && steps\.browser\.outcome == 'success'\n        timeout-minutes: 1\n        run: agent-browser close --all/u,
-  );
-  const instructions = readFileSync(join(process.cwd(), ".golems", "_golems.md"), "utf8");
-  assert.match(instructions, /agent-browser skills get core/u);
-  assert.doesNotMatch(readFileSync(join(process.cwd(), "mise.toml"), "utf8"), /agent-browser/u);
-});
-
 test("given_releaseIntentTag_when_publishing_then_ciOwnsContainerAndSerializesPromotion", () => {
   const release = workflow("release");
   const prod = workflow("prod");
@@ -210,10 +164,7 @@ test("given_linuxWorkflows_when_choosingRunners_then_usesGithubHostedUbuntu", ()
     const source = readFileSync(join(workflowDirectory, file), "utf8");
     const runners = [...source.matchAll(/^\s+runs-on: ([^\n#]+)$/gmu)].map((match) => match[1].trim());
     assert.ok(runners.length > 0, file);
-    if (file === "golem.yml") {
-      assert.deepEqual(runners, ["ubuntu-26.04", "${{ matrix.os }}", "ubuntu-26.04"]);
-      assert.match(source, /matrix:\n        include: \$\{\{ fromJSON\(needs\.select\.outputs\.tasks\) \}\}/u);
-    } else if (file === "tracker.yml") {
+    if (file === "tracker.yml") {
       assert.deepEqual(runners, ["${{ matrix.runner }}"]);
       const matrixRunners = [...source.matchAll(/^\s+runner: (\S+)$/gmu)].map((match) => match[1]);
       assert.ok(

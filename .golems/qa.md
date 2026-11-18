@@ -1,11 +1,13 @@
 ---
 harness: claude
+provider: anthropic
 model: fable
 effort: high
+owner: bugabinga
 schedule: [wed]
 branch: golem/qa
-os: ubuntu-26.04
-timeout: 45m
+runner: ubuntu-26.04
+timeout: "45m"
 verify: mise run verify
 ---
 

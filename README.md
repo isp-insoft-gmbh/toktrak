@@ -94,138 +94,28 @@ revoke it and create another.
 
 ## Maintain with golems
 
-Local golems run one bounded maintenance task through Pi, Claude Code, or Codex
-CLI. Task definitions live in `.golems/`; `_golems.md` supplies shared
-instructions. Each task explicitly declares its harness, model, thinking level,
-and weekday. `mise run check` validates their strict structure offline.
+The organization GitHub App
+[isp-golem-xiv](https://github.com/isp-insoft-gmbh/isp-golem-xiv) runs
+maintenance tasks defined in `.golems/`. Shared instructions live in
+`.golems/_golems.md`; native `.claude`, `.agents`, `.codex`, and `.pi` project
+configs remain in use. The installed App plus these Markdown files are the
+integration; TokTrak has no local golem engine or workflow.
 
-Mise installs pinned CLI versions for the golem tasks. Authenticate each harness
-with its provider subscription:
+Tasks retain their harness, model, effort, runner, schedule, and timeout
+preferences. Scheduled tasks use `owner: bugabinga` and Oliver's registered
+provider seats in the central ops repository. No TokTrak-specific authentication
+cache or repository secret is required.
 
-- Pi and Codex CLI use ChatGPT Pro authentication. Pi models must use the
-  `openai-codex/` provider; metered API fallback is forbidden.
-- Claude Code uses Claude subscription authentication, not a metered API key.
-- `gh` uses an account authorized for this repository.
+Ask with `@isp-golem-xiv <task>` on an issue or pull request, or use the App's
+Golems dashboard. `canary` is manual-only and read-only: it inspects build
+instructions and reports findings without making a change. The App validates
+definitions and reports invalid tasks; `mise run check` checks TokTrak, not the
+external router's frontmatter contract.
 
-Then validate definitions through the base gate, probe one authenticated task
-per configured harness, and run one task:
-
-```sh
-mise run check
-mise run golem-auth-check
-mise run golem bugs
-```
-
-A run uses the exact branch `golem/<task-id>`. It resumes one matching open pull
-request or removes a stale dedicated branch before fresh work. No useful change
-creates no remote state. Useful work is committed, checked for protected paths,
-published with guarded branch updates, and labeled. CI runs independently;
-Golems inspect failures and review comments when they next run, while merging
-remains manual. Harness sessions are always ephemeral.
-
-Run from the clean, current default branch. On failure, inspect the printed
-error, the ignored `output/golems/<task-id>` worktree, its dedicated remote
-branch, and any open pull request. Resolve concurrent branch changes or review
-threads, then rerun the same task. Never repair failure by pushing `trunk`,
-merging the pull request, or editing `.system`, `.github/golems`, `.claude`,
-`.agents`, `.codex`, or `.pi` from a golem branch.
-
-Optional public review evidence uses only the seeded development corpus. The
-harness may place small safe diagrams, screenshots, or videos under
-`output/golem-evidence` and reference them in pull-request prose as
-`[evidence:<filename>]`; the parent uploads them after the harness exits.
-
-To change or add a task, edit one lowercase kebab-case `.md` file, then run
-`mise run check` for offline validation. `golem-auth-check` probes live harness
-credentials separately. Tracked `.claude/skills` are canonical; Pi points to
-them through `.pi/settings.json`, Claude discovers them directly, and Codex
-follows the tracked `.agents/skills` bridge.
-
-### Golem CI
-
-`.github/workflows/golem.yml` dispatches due tasks daily at `09:17 UTC` and
-serializes every scheduled, manual, and reseed run. It installs the selected
-pinned harness on GitHub-hosted Ubuntu, validates runner `gh >= 2.70.0`, and
-delegates the full lifecycle to `tools/golem.mjs`. Each task job stops after 45
-minutes.
-
-Install a repository-scoped GitHub App with write access to contents, pull
-requests, and issues, read access to actions, checks, and commit statuses, and
-no workflow permission. Store its client ID as the `TOKTRAK_AGENT_APP_CLIENT_ID`
-repository variable and its private key as the `TOKTRAK_AGENT_APP_PRIVATE_KEY`
-repository secret. The workflow mints a short-lived token and derives the bot
-Git identity.
-
-Create the AES-256 cache key once:
-
-```sh
-node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64"))' | gh secret set GOLEM_AUTH_CACHE_KEY
-```
-
-Pi and Codex use separate encrypted rotating caches.
-
-Pi must be seeded from a dedicated one-use profile. OpenAI refresh tokens are
-single-use, so copying the normal Pi auth file creates two competing instances.
-Whichever instance refreshes first invalidates the other copy.
-
-Create an empty profile and authenticate its OpenAI Codex provider:
-
-```nushell
-let profile = "/path/to/empty/golem-pi-profile"
-mkdir $profile
-with-env { PI_CODING_AGENT_DIR: $profile } { cd $profile; pi }
-```
-
-Inside Pi, run `/login`, choose OpenAI Codex, then run `/quit`. Seed the
-workflow from that profile:
-
-```nushell
-open --raw ($profile | path join auth.json)
-| encode base64
-| gh secret set GOLEM_PI_AUTH_SEED
-
-gh workflow run golem.yml --ref trunk -f operation=reseed-pi -f task=bugs
-```
-
-After the reseed workflow succeeds, delete the bootstrap secret and dedicated
-profile. Never launch Pi with that profile again:
-
-```nushell
-gh secret delete GOLEM_PI_AUTH_SEED
-rm --recursive $profile
-```
-
-Seed Codex from a trusted authenticated machine, confirm success, then delete
-the bootstrap secret:
-
-```sh
-node -e 'process.stdout.write(require("node:fs").readFileSync(require("node:path").join(require("node:os").homedir(), ".codex/auth.json")).toString("base64"))' | gh secret set GOLEM_CODEX_AUTH_SEED
-gh workflow run golem.yml --ref trunk -f operation=reseed-codex -f task=bugs
-gh secret delete GOLEM_CODEX_AUTH_SEED
-```
-
-Generate Claude's one-year subscription token with `claude setup-token`, then
-store it as `GOLEM_CLAUDE_OAUTH_TOKEN`. Renew it before expiry. Metered API keys
-are neither required nor permitted.
-
-Gatebridge evidence is optional. To enable it, store
-`GATEBRIDGE_R2_ACCESS_KEY_ID`, `GATEBRIDGE_R2_SECRET_ACCESS_KEY`, and
-`GATEBRIDGE_R2_ENDPOINT`. These credentials enter only the parent lifecycle; the
-harness environment removes them.
-
-Run an explicit task only from `trunk`:
-
-```sh
-gh workflow run golem.yml --ref trunk -f operation=run -f task=bugs
-```
-
-Use the job summary for selection, effective parameters, tool version, result,
-and run URL. A missing, stale, revoked, or corrupt Pi or Codex cache fails
-closed; create a fresh seed and dispatch the matching reseed operation. A Claude
-renewal error requires a new setup token. For branch, protected-path, review, or
-check failures, inspect the dedicated branch and pull request, repair the
-violation as a human, then rerun the same task. Never bypass the lifecycle by
-pushing `trunk` or merging the pull request.
+Agents edit the supplied snapshot and report results; the external runner owns
+verification, commits, branch publication, and pull requests. Existing explicit
+task branches are retained; tasks without one use the App's default
+`golems/<name>` branch. CI and human review remain independent of the run.
 
 ## Operate
 

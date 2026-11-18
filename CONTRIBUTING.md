@@ -85,15 +85,16 @@ mise run verify
 mise run ci
 ```
 
-`test` includes checks, Java tests, golem tests, and tracker tests; use `mise
-run test --only [test paths...]` for focused tests without repository-wide
-checks. `verify` also links and checks the production runtime. `ci` also checks
-Refaster conformance and coverage floors, and requires a clean Git tree. `check`
-already includes Markdown lint, tracker JavaScript lint, and offline golem
-definition validation. Live golem authentication remains separate from the
-ladder. Tracker tests exercise the host's native scheduler on Linux, macOS, and
-Windows; all three matrix jobs must pass before the required `CI / ci` gate
-succeeds. Format changes explicitly with `mise run fmt [paths...]`.
+`test` includes checks, Java tests, build/workflow JavaScript tests, and tracker
+tests; use `mise run test --only [test paths...]` for focused tests without
+repository-wide checks. `verify` also links and checks the production runtime.
+`ci` also checks Refaster conformance and coverage floors, and requires a clean
+Git tree. `check` already includes Markdown lint and tracker JavaScript lint.
+The external `isp-golem-xiv` App validates `.golems/` definitions and owns
+harness authentication. Tracker tests exercise the host's native scheduler on
+Linux, macOS, and Windows; all three matrix jobs must pass before the required
+`CI / ci` gate succeeds. Format changes explicitly with `mise run fmt
+[paths...]`.
 
 Dprint plugins in `dprint.json` are versioned and SHA-256 pinned. The weekly
 `.github/workflows/dprint.yml` workflow (also manually dispatchable) checks for
@@ -110,7 +111,6 @@ Additional gates:
 | Unit tests               | `mise run pit --history -- [production paths...]` |
 | Coverage-sensitive code  | `mise run coverage`                               |
 | Tracker scheduler        | `mise run tracker-test`                           |
-| Golem authentication     | `mise run golem-auth-check`                       |
 | Runtime or packaging     | `mise run runtime-build`                          |
 | Performance evidence     | `mise run perf`                                   |
 | Container build/behavior | GitHub Actions production verification            |
