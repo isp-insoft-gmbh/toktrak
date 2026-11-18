@@ -309,22 +309,21 @@ final class RenderingTest {
 
   @Test
   void given_unvalidatedUrls_when_constructingViews_then_rejectsThem() {
-    assertDoesNotThrow(
-        () ->
-            new BaseView(
-                "x".repeat(128),
-                STYLESHEET,
-                DATASTAR,
-                DASHBOARD,
-                FAVICON,
-                LOGO_WORDMARK,
-                LOGO_WORDMARK_DARK,
-                LOGO_LOCKUP,
-                LOGO_LOCKUP_DARK,
-                RuntimeMode.PRODUCTION,
-                CurrentPage.NONE,
-                CurrencySwitch.disabled(),
-                "v2"));
+    assertDoesNotThrow(() ->
+        new BaseView(
+            "x".repeat(128),
+            STYLESHEET,
+            DATASTAR,
+            DASHBOARD,
+            FAVICON,
+            LOGO_WORDMARK,
+            LOGO_WORDMARK_DARK,
+            LOGO_LOCKUP,
+            LOGO_LOCKUP_DARK,
+            RuntimeMode.PRODUCTION,
+            CurrentPage.NONE,
+            CurrencySwitch.disabled(),
+            "v2"));
     assertThrows(
         IllegalArgumentException.class,
         () ->

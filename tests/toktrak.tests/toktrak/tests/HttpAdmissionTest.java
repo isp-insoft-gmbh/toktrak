@@ -77,15 +77,14 @@ final class HttpAdmissionTest {
               BuildInfo.from(java.util.Map.of())));
       server.setExecutor(Runnable::run);
       for (int index = 0; index < WORKER_COUNT; index++) {
-        workers.execute(
-            () -> {
-              workersStarted.countDown();
-              try {
-                releaseWorkers.await();
-              } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-              }
-            });
+        workers.execute(() -> {
+          workersStarted.countDown();
+          try {
+            releaseWorkers.await();
+          } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+          }
+        });
       }
       assertTrue(workersStarted.await(2, TimeUnit.SECONDS));
       for (int index = 0; index < QUEUE_CAPACITY; index++) workers.execute(() -> {});

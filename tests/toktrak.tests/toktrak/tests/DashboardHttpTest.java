@@ -214,12 +214,11 @@ final class DashboardHttpTest {
     Path corpus = directory.resolve("monthly-ingestion.jsonl");
     var events =
         Files.readAllLines(Path.of("tests/corpus/dev.jsonl")).stream()
-            .map(
-                line ->
-                    line.contains("\"type\":\"usage-uploaded\"")
-                            && !line.contains("\"subject\":\"viewer\"")
-                        ? line.replace("\"period\":\"2026-07", "\"period\":\"2025-07")
-                        : line)
+            .map(line ->
+                line.contains("\"type\":\"usage-uploaded\"")
+                        && !line.contains("\"subject\":\"viewer\"")
+                    ? line.replace("\"period\":\"2026-07", "\"period\":\"2025-07")
+                    : line)
             .toList();
     Files.write(corpus, events);
     try (var app =
@@ -253,16 +252,15 @@ final class DashboardHttpTest {
     Path corpus = directory.resolve("client-clock-behind.jsonl");
     var events =
         Files.readAllLines(Path.of("tests/corpus/dev.jsonl")).stream()
-            .map(
-                line ->
-                    line.contains("\"type\":\"usage-uploaded\"")
-                        ? line.replace(
-                                "\"generatedAt\":\"2026-07-14T14:14:39Z\"",
-                                "\"generatedAt\":\"2026-06-01T00:00:00Z\"")
-                            .replace(
-                                "\"clientTimeZone\":\"UTC\"",
-                                "\"clientTimeZone\":\"Pacific/Kiritimati\"")
-                        : line)
+            .map(line ->
+                line.contains("\"type\":\"usage-uploaded\"")
+                    ? line.replace(
+                            "\"generatedAt\":\"2026-07-14T14:14:39Z\"",
+                            "\"generatedAt\":\"2026-06-01T00:00:00Z\"")
+                        .replace(
+                            "\"clientTimeZone\":\"UTC\"",
+                            "\"clientTimeZone\":\"Pacific/Kiritimati\"")
+                    : line)
             .toList();
     Files.write(corpus, events);
     String body = corpusOverview(corpus, "2026-07-21T23:59:59Z", "client-clock-behind");
@@ -281,13 +279,12 @@ final class DashboardHttpTest {
     Path corpus = directory.resolve("mixed-receipt-ages.jsonl");
     var events =
         Files.readAllLines(Path.of("tests/corpus/dev.jsonl")).stream()
-            .map(
-                line ->
-                    line.contains("\"type\":\"usage-uploaded\"")
-                            && !line.contains("\"subject\":\"viewer\"")
-                        ? line.replace(
-                            "\"at\":\"2026-07-14T14:14:39Z\"", "\"at\":\"2026-07-21T14:14:39Z\"")
-                        : line)
+            .map(line ->
+                line.contains("\"type\":\"usage-uploaded\"")
+                        && !line.contains("\"subject\":\"viewer\"")
+                    ? line.replace(
+                        "\"at\":\"2026-07-14T14:14:39Z\"", "\"at\":\"2026-07-21T14:14:39Z\"")
+                    : line)
             .toList();
     Files.write(corpus, events);
     String body = corpusOverview(corpus, "2026-07-22T00:00:00Z", "mixed-receipt-ages");

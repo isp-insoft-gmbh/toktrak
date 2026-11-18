@@ -348,20 +348,19 @@ public final class Perf {
     markdown.append("| --- | --- | ---: | ---: | ---: |\n");
     results.stream()
         .sorted(Comparator.comparing(result -> result.benchmark().id()))
-        .forEach(
-            result ->
-                markdown
-                    .append("| `")
-                    .append(result.benchmark().id())
-                    .append("` | ")
-                    .append(result.benchmark().purpose())
-                    .append(" | ")
-                    .append(result.measurement().map(Measurement::display).orElse("unavailable"))
-                    .append(" | ")
-                    .append(result.exitCode())
-                    .append(" | ")
-                    .append(formatDuration(result.elapsedNanos()))
-                    .append(" |\n"));
+        .forEach(result ->
+            markdown
+                .append("| `")
+                .append(result.benchmark().id())
+                .append("` | ")
+                .append(result.benchmark().purpose())
+                .append(" | ")
+                .append(result.measurement().map(Measurement::display).orElse("unavailable"))
+                .append(" | ")
+                .append(result.exitCode())
+                .append(" | ")
+                .append(formatDuration(result.elapsedNanos()))
+                .append(" |\n"));
     return markdown.toString();
   }
 

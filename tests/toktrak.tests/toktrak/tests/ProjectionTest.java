@@ -314,14 +314,13 @@ final class ProjectionTest {
     var observed = new AtomicLong(-1);
     Thread waiter =
         Thread.ofPlatform()
-            .start(
-                () -> {
-                  try {
-                    observed.set(projection.awaitRevision(1, Duration.ofSeconds(30)));
-                  } catch (InterruptedException exception) {
-                    Thread.currentThread().interrupt();
-                  }
-                });
+            .start(() -> {
+              try {
+                observed.set(projection.awaitRevision(1, Duration.ofSeconds(30)));
+              } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+              }
+            });
     try {
       assertTrue(awaitTimedWaiting(waiter), "waiter must block on the projection monitor");
       assertEquals(-1, observed.get());
@@ -418,11 +417,10 @@ final class ProjectionTest {
     assertEquals(
         subjects,
         snapshotUsers.stream()
-            .map(
-                value -> {
-                  Map<?, ?> user = assertInstanceOf(Map.class, value);
-                  return user.get("subject");
-                })
+            .map(value -> {
+              Map<?, ?> user = assertInstanceOf(Map.class, value);
+              return user.get("subject");
+            })
             .toList());
     Map<?, ?> inactiveSnapshotUser = assertInstanceOf(Map.class, snapshotUsers.get(1));
     assertEquals(false, inactiveSnapshotUser.get("active"));
@@ -430,11 +428,10 @@ final class ProjectionTest {
     assertEquals(
         tokenIds.stream().map(UUID::toString).toList(),
         snapshotTokens.stream()
-            .map(
-                value -> {
-                  Map<?, ?> token = assertInstanceOf(Map.class, value);
-                  return token.get("tokenId");
-                })
+            .map(value -> {
+              Map<?, ?> token = assertInstanceOf(Map.class, value);
+              return token.get("tokenId");
+            })
             .toList());
 
     var restored = Projection.empty();

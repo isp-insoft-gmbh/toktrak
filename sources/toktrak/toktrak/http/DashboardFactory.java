@@ -206,13 +206,12 @@ final class DashboardFactory {
             .max(BigDecimal::compareTo)
             .orElse(BigDecimal.ZERO);
     return rows.stream()
-        .map(
-            entry ->
-                new DashboardTrendRow(
-                    entry.getKey().toString(),
-                    money(entry.getValue().cost, currency, rate),
-                    integer(entry.getValue().tokens),
-                    bar(entry.getValue().cost, maximum)))
+        .map(entry ->
+            new DashboardTrendRow(
+                entry.getKey().toString(),
+                money(entry.getValue().cost, currency, rate),
+                integer(entry.getValue().tokens),
+                bar(entry.getValue().cost, maximum)))
         .toList();
   }
 
@@ -306,13 +305,12 @@ final class DashboardFactory {
                 .reversed()
                 .thenComparing(Map.Entry.comparingByKey()))
         .limit(DETAIL_ROWS_MAX)
-        .map(
-            entry ->
-                new DashboardMetricRow(
-                    entry.getKey(),
-                    money(entry.getValue().cost, currency, rate),
-                    integer(entry.getValue().tokens) + " tokens",
-                    bar(entry.getValue().cost, maximum)))
+        .map(entry ->
+            new DashboardMetricRow(
+                entry.getKey(),
+                money(entry.getValue().cost, currency, rate),
+                integer(entry.getValue().tokens) + " tokens",
+                bar(entry.getValue().cost, maximum)))
         .toList();
   }
 
@@ -342,13 +340,12 @@ final class DashboardFactory {
             .max(BigDecimal::compareTo)
             .orElse(BigDecimal.ZERO);
     return totals.entrySet().stream()
-        .map(
-            entry ->
-                new DashboardMetricRow(
-                    title(entry.getKey().name()),
-                    money(entry.getValue().cost, currency, rate),
-                    integer(entry.getValue().tokens) + " tokens",
-                    bar(entry.getValue().cost, maximum)))
+        .map(entry ->
+            new DashboardMetricRow(
+                title(entry.getKey().name()),
+                money(entry.getValue().cost, currency, rate),
+                integer(entry.getValue().tokens) + " tokens",
+                bar(entry.getValue().cost, maximum)))
         .toList();
   }
 
@@ -362,16 +359,15 @@ final class DashboardFactory {
                 .thenComparing(Row::firstKey)
                 .thenComparing(row -> row.owner().toString()))
         .limit(DETAIL_ROWS_MAX)
-        .map(
-            row -> {
-              User user = users.get(row.owner());
-              assert user != null;
-              return new DashboardSpikeRow(
-                  row.firstKey(),
-                  user.displayName(),
-                  money(UsageUpload.nonnegativeDecimal(row.data(), "totalCost"), currency, rate),
-                  integer(UsageUpload.nonnegativeLong(row.data(), "totalTokens")));
-            })
+        .map(row -> {
+          User user = users.get(row.owner());
+          assert user != null;
+          return new DashboardSpikeRow(
+              row.firstKey(),
+              user.displayName(),
+              money(UsageUpload.nonnegativeDecimal(row.data(), "totalCost"), currency, rate),
+              integer(UsageUpload.nonnegativeLong(row.data(), "totalTokens")));
+        })
         .toList();
   }
 
@@ -383,21 +379,20 @@ final class DashboardFactory {
                 .reversed()
                 .thenComparing(Row::firstKey))
         .limit(DETAIL_ROWS_MAX)
-        .map(
-            row -> {
-              User user = users.get(row.owner());
-              assert user != null;
-              Map<?, ?> metadata =
-                  row.data().get("metadata") instanceof Map<?, ?> value ? value : Map.of();
-              return new DashboardSessionRow(
-                  user.displayName(),
-                  row.secondKey(),
-                  project(text(metadata.get("projectPath"), "Not reported", 2_048)),
-                  String.join(", ", strings(row.data().get("modelsUsed"), 3)),
-                  money(decimal(row.data().get("totalCost")), currency, rate),
-                  integer(whole(row.data().get("totalTokens"))),
-                  text(metadata.get("lastActivity"), "Unknown", 64));
-            })
+        .map(row -> {
+          User user = users.get(row.owner());
+          assert user != null;
+          Map<?, ?> metadata =
+              row.data().get("metadata") instanceof Map<?, ?> value ? value : Map.of();
+          return new DashboardSessionRow(
+              user.displayName(),
+              row.secondKey(),
+              project(text(metadata.get("projectPath"), "Not reported", 2_048)),
+              String.join(", ", strings(row.data().get("modelsUsed"), 3)),
+              money(decimal(row.data().get("totalCost")), currency, rate),
+              integer(whole(row.data().get("totalTokens"))),
+              text(metadata.get("lastActivity"), "Unknown", 64));
+        })
         .toList();
   }
 
@@ -410,14 +405,13 @@ final class DashboardFactory {
                     Comparator.reverseOrder())
                 .thenComparing(Row::firstKey))
         .limit(DETAIL_ROWS_MAX)
-        .map(
-            row ->
-                new DashboardBlockRow(
-                    text(row.data().get("startTime"), "Unknown", 64),
-                    String.join(", ", strings(row.data().get("models"), 3)),
-                    money(decimal(row.data().get("costUSD")), currency, rate),
-                    integer(whole(row.data().get("totalTokens"))),
-                    integer(whole(row.data().get("entries")))))
+        .map(row ->
+            new DashboardBlockRow(
+                text(row.data().get("startTime"), "Unknown", 64),
+                String.join(", ", strings(row.data().get("models"), 3)),
+                money(decimal(row.data().get("costUSD")), currency, rate),
+                integer(whole(row.data().get("totalTokens"))),
+                integer(whole(row.data().get("entries")))))
         .toList();
   }
 
@@ -428,31 +422,30 @@ final class DashboardFactory {
             Comparator.comparing((Ingestion row) -> !unhealthy(row, now))
                 .thenComparing(Ingestion::receivedAt)
                 .thenComparing(row -> row.owner().toString()))
-        .map(
-            row -> {
-              User user = users.get(row.owner());
-              assert user != null;
-              String name = user.displayName();
-              boolean stale = stale(row, now);
-              String detail =
-                  row.partial()
-                      ? "Missing: "
-                          + String.join(", ", row.failedReports())
-                          + " · Tracker v"
-                          + row.trackerVersion()
-                      : "Tracker v" + row.trackerVersion();
-              if (stale) detail = "No uploads for more than 5 weekdays (UTC) · " + detail;
-              String status = row.partial() ? "Partial" : stale ? "Stale" : "Complete";
-              return new DashboardIngestionRow(
-                  initials(name),
-                  name,
-                  colorClass(user.color()),
-                  status,
-                  row.partial() || stale ? "status-warn" : "status-ok",
-                  row.receivedAt().toString(),
-                  stale ? IngestionFreshness.STALE : IngestionFreshness.FRESH,
-                  detail);
-            })
+        .map(row -> {
+          User user = users.get(row.owner());
+          assert user != null;
+          String name = user.displayName();
+          boolean stale = stale(row, now);
+          String detail =
+              row.partial()
+                  ? "Missing: "
+                      + String.join(", ", row.failedReports())
+                      + " · Tracker v"
+                      + row.trackerVersion()
+                  : "Tracker v" + row.trackerVersion();
+          if (stale) detail = "No uploads for more than 5 weekdays (UTC) · " + detail;
+          String status = row.partial() ? "Partial" : stale ? "Stale" : "Complete";
+          return new DashboardIngestionRow(
+              initials(name),
+              name,
+              colorClass(user.color()),
+              status,
+              row.partial() || stale ? "status-warn" : "status-ok",
+              row.receivedAt().toString(),
+              stale ? IngestionFreshness.STALE : IngestionFreshness.FRESH,
+              detail);
+        })
         .toList();
   }
 

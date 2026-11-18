@@ -90,14 +90,13 @@ public final class Main {
     var hook =
         Thread.ofPlatform()
             .name("toktrak-shutdown")
-            .unstarted(
-                () -> {
-                  try {
-                    app.close();
-                  } finally {
-                    stopped.countDown();
-                  }
-                });
+            .unstarted(() -> {
+              try {
+                app.close();
+              } finally {
+                stopped.countDown();
+              }
+            });
     Runtime.getRuntime().addShutdownHook(hook);
     try {
       stopped.await();

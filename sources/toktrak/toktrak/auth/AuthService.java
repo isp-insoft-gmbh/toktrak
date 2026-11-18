@@ -130,13 +130,12 @@ public final class AuthService {
     User user =
         projection
             .activeUser(key)
-            .orElseGet(
-                () -> {
-                  if (dev && DEVELOPMENT_KEY.equals(key) && projection.user(key).isEmpty()) {
-                    return developmentUser();
-                  }
-                  throw new IllegalArgumentException("login required");
-                });
+            .orElseGet(() -> {
+              if (dev && DEVELOPMENT_KEY.equals(key) && projection.user(key).isEmpty()) {
+                return developmentUser();
+              }
+              throw new IllegalArgumentException("login required");
+            });
     return new Session(user, required(fields.get("csrf")));
   }
 
@@ -144,10 +143,9 @@ public final class AuthService {
     assert dev;
     return projection
         .activeUser(DEVELOPMENT_KEY)
-        .orElseGet(
-            () ->
-                identities.authenticateUser(
-                    DEVELOPMENT_KEY, DEVELOPMENT_EMAIL, DEVELOPMENT_NAME, DEVELOPMENT_COLOR));
+        .orElseGet(() ->
+            identities.authenticateUser(
+                DEVELOPMENT_KEY, DEVELOPMENT_EMAIL, DEVELOPMENT_NAME, DEVELOPMENT_COLOR));
   }
 
   public void requireCsrf(Session session, String supplied) {
