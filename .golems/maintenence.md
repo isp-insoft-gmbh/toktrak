@@ -1,11 +1,13 @@
 ---
 harness: pi
-model: openai-codex/gpt-6.1-sol
+provider: openai-codex
+model: gpt-6.1-sol
 effort: high
+owner: bugabinga
 schedule: [sun]
 branch: golem/maintenence
-os: ubuntu-26.04
-timeout: 45m
+runner: ubuntu-26.04
+timeout: "45m"
 verify: mise run verify
 ---
 
@@ -19,5 +21,6 @@ Maintain overall project health.
 - build system
 - ci workflows
 
-For each task, pick one scope, vertically sliced and improve. If project health
-is fine, review and merge dependabot PRs.
+Pick one scope and improve it with a small vertical slice. If project health is
+fine, report no change. Workflow or control-plane changes need human action; do
+not merge dependency PRs.

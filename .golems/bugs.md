@@ -1,11 +1,13 @@
 ---
 harness: pi
-model: openai-codex/gpt-6.1-sol
+provider: openai-codex
+model: gpt-6.1-sol
 effort: max
+owner: bugabinga
 schedule: [mon]
 branch: golem/bugs
-os: ubuntu-26.04
-timeout: 45m
+runner: ubuntu-26.04
+timeout: "45m"
 verify: mise run verify
 ---
 

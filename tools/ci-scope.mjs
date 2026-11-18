@@ -75,13 +75,11 @@ export function relevantChecks(paths) {
     } else if (
       path.startsWith(".system/") ||
       path.startsWith(".claude/") ||
-      path.startsWith(".github/golems/") ||
       path.startsWith("tools/") ||
       path.endsWith(".md") ||
       path === "renovate.json" ||
       path === "dprint.json" ||
       path === ".rumdl.toml" ||
-      path === ".github/workflows/golem.yml" ||
       path === ".github/workflows/dprint.yml" ||
       path === "sources/pmd-deps.txt" ||
       path === "sources/pmd.xml" ||

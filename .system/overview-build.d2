@@ -74,7 +74,7 @@ repo: |md
   ## Repository map
   - `sources`: production Java, templates, runtime assets.
   - `tests`: JUnit tests, snapshots, anonymized dev corpus.
-  - `tools`: Build.java, golems, perf, Refaster.
+  - `tools`: Build.java, perf, Refaster.
   - `vendored`: pinned build bootstrap artifacts.
   - `output`: disposable generated artifacts, never source.
   - `.system`: mission, rules, specs, plans.
@@ -95,8 +95,8 @@ dev: "Development mode" {
 
 golems: |md
   ## Agentic maintenance
-  `.github/golems` defines bounded maintenance tasks for Pi, Claude Code, and Codex CLI.
-  Runs use dedicated `golem/<task-id>` branches and PRs, never direct `trunk` repair.
+  `.golems` defines maintenance tasks for the organization's `isp-golem-xiv` App.
+  The central runner publishes task branches and PRs; TokTrak has no golem engine or workflow.
 |
 golems.shape: callout
 

@@ -100,7 +100,6 @@ public final class BuildTest {
     given_completedProcess_when_waitingForExit_then_returnsExitCode();
     given_completedProcess_when_waitingWithoutTimeout_then_returnsExitCode();
     given_argumentsContainingSpaces_when_buildingCommand_then_preservesArguments();
-    given_golemTask_when_buildingInvocation_then_preservesArgumentsAndRejectsUnknownTask();
     given_markdownPath_when_selectingJavaFormatSources_then_ignoresIt();
     given_manyFormatterSources_when_batchingSources_then_preservesSourceCount();
     given_commandAboveLengthLimit_when_buildingCommand_then_rejectsInput();
@@ -541,8 +540,8 @@ public final class BuildTest {
 
   private static void given_javascriptTestPaths_when_selecting_then_runsOnlyRequestedFiles()
       throws Exception {
-    Path expected = Path.of("tools/golem.test.mjs").toAbsolutePath();
-    List<Path> selected = Build.javascriptTestPathsForTest(List.of("./tools/golem.test.mjs"));
+    Path expected = Path.of("tools/workflows.test.mjs").toAbsolutePath();
+    List<Path> selected = Build.javascriptTestPathsForTest(List.of("./tools/workflows.test.mjs"));
     if (!selected.equals(List.of(expected))) {
       throw new AssertionError("unexpected JavaScript tests: " + selected);
     }
@@ -585,7 +584,7 @@ public final class BuildTest {
     }
     for (List<String> invalid :
         List.of(
-            List.of("tests/tools", "tools/golem.test.mjs"),
+            List.of("tests/tools", "tools/workflows.test.mjs"),
             List.of("tests/tools", "tests/tracker"),
             List.of("tests"))) {
       try {
@@ -1548,39 +1547,6 @@ public final class BuildTest {
     List<String> command = Build.commandForTest("tool", List.of("path with spaces/Source.java"));
     if (!command.equals(List.of("tool", "path with spaces/Source.java"))) {
       throw new AssertionError("unexpected command: " + command);
-    }
-  }
-
-  private static void
-      given_golemTask_when_buildingInvocation_then_preservesArgumentsAndRejectsUnknownTask() {
-    String script = Path.of("tools/golems/Golems.java").toAbsolutePath().normalize().toString();
-    String java =
-        Path.of(
-                System.getProperty("java.home"),
-                "bin",
-                System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java")
-            .toString();
-    if (!Build.golemInvocation("golem", List.of("path with spaces", "--local"))
-        .equals(List.of(java, "-ea", script, "run", "--golem", "path with spaces", "--local"))) {
-      throw new AssertionError("golem task arguments were not preserved");
-    }
-    if (!Build.golemInvocation("golem-auth-check", List.of("bugs"))
-        .equals(List.of(java, "-ea", script, "auth-check", "--golem", "bugs"))) {
-      throw new AssertionError("golem authentication arguments were not preserved");
-    }
-    try {
-      Build.golemInvocation("golem", List.of());
-      throw new AssertionError("expected rejection of missing golem name");
-    } catch (IllegalArgumentException expected) {
-      if (!expected.getMessage().contains("required")) throw expected;
-    }
-    try {
-      Build.golemInvocation("unknown", List.of());
-      throw new AssertionError("expected rejection of unknown golem task");
-    } catch (IllegalArgumentException ex) {
-      if (!ex.getMessage().equals("unknown golem task: unknown")) {
-        throw new AssertionError("unexpected rejection: " + ex.getMessage(), ex);
-      }
     }
   }
 
