@@ -109,6 +109,38 @@ final class ProjectionTest {
   }
 
   @Test
+  void given_activeTrackerToken_when_replayingUse_then_updatesTimestampAndPreservesIdentity() {
+    var at = Instant.parse("2026-07-10T00:00:00Z");
+    var projection = Projection.empty();
+    var owner = new Projection.UserKey("https://issuer.example", "subject-1");
+    var id = new UUID(0, 1);
+    projection.apply(
+        EventEnvelope.create(IDENTITY_USER_AUTHENTICATED, at, "actor", user("subject-1")));
+    projection.apply(
+        EventEnvelope.create(
+            IDENTITY_TRACKER_TOKEN_CREATED,
+            at.plusSeconds(1),
+            "actor",
+            token("subject-1", id, (byte) 1)));
+    var created = projection.trackerToken(id).orElseThrow();
+    var user = projection.activeUser(owner).orElseThrow();
+    assertNull(created.lastUsedAt());
+
+    var usedAt = at.plusSeconds(2);
+    projection.apply(
+        EventEnvelope.create(
+            IDENTITY_TRACKER_TOKEN_USED, usedAt, "actor", Map.of("tokenId", id.toString())));
+
+    assertEquals(
+        new Projection.TrackerToken(
+            id, owner, "Laptop", created.digest(), at.plusSeconds(1), usedAt, null),
+        projection.trackerToken(id).orElseThrow());
+    assertEquals(user, projection.activeUser(owner).orElseThrow());
+    assertEquals(3, projection.eventCount());
+    assertEquals(3, projection.revision());
+  }
+
+  @Test
   void given_invalidIdentityEvents_when_applyingProjection_then_rejectsBrokenInvariants() {
     var at = Instant.parse("2026-07-10T00:00:00Z");
     var projection = Projection.empty();

@@ -2526,6 +2526,7 @@ public final class Build {
   }
 
   private static void validateRepositorySkills() throws IOException {
+    validateSkillMirror(ROOT.resolve(".claude/skills"), ROOT.resolve(".agents/skills"));
     for (Path skill : REPOSITORY_SKILLS) {
       String name = skill.getFileName().toString();
       Path instructions = skill.resolve("SKILL.md");
@@ -2561,6 +2562,43 @@ public final class Build {
         throw new IllegalStateException("skill official reference is missing: " + required);
       }
     }
+  }
+
+  static void validateSkillMirror(Path canonical, Path mirror) throws IOException {
+    assert canonical != null && mirror != null;
+    List<String> expected = skillTreePaths(canonical);
+    if (!expected.equals(skillTreePaths(mirror))) {
+      throw new IllegalStateException("skill mirror inventory differs: " + mirror);
+    }
+    for (String relative : expected) {
+      Path source = canonical.resolve(relative);
+      Path target = mirror.resolve(relative);
+      boolean file = Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS);
+      if (file != Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)
+          || (file && Files.mismatch(source, target) != -1)) {
+        throw new IllegalStateException("skill mirror differs: " + target);
+      }
+    }
+  }
+
+  private static List<String> skillTreePaths(Path root) throws IOException {
+    if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) {
+      throw new IllegalStateException("skill root is not a regular directory: " + root);
+    }
+    var relative = new ArrayList<String>();
+    for (Path path : treePaths(root, 256)) {
+      if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)
+          && !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+        throw new IllegalStateException("skill tree contains a link or special file: " + path);
+      }
+      if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+          && Files.size(path) > FILE_BYTES_MAX) {
+        throw new IllegalStateException("skill file exceeds " + FILE_BYTES_MAX + " bytes: " + path);
+      }
+      relative.add(root.relativize(path).toString().replace('\\', '/'));
+    }
+    relative.sort(String::compareTo);
+    return List.copyOf(relative);
   }
 
   static List<Path> templateSourcesForTest(Path root) throws IOException {

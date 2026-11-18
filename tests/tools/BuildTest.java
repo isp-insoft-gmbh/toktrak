@@ -61,6 +61,9 @@ public final class BuildTest {
     if (args.length != 0) throw new IllegalArgumentException("unexpected arguments");
     requireTestNames(BuildTest.class.getDeclaredMethods());
     given_repositoryAttributes_when_readingTextPolicy_then_forcesLfAndPinsCorpusBytes();
+    given_nativeSkillTrees_when_validatingMirror_then_requiresExactPathsTypesAndBytes();
+    given_nativeSkillLinks_when_validatingMirror_then_rejectsRootsAndEntries();
+    given_oversizedSkillTree_when_validatingMirror_then_rejectsInput();
     given_oversizedFile_when_hashing_then_rejectsInput();
     given_oversizedTree_when_listingPaths_then_rejectsInput();
     given_invalidArguments_when_writingArgumentFile_then_rejectsInput();
@@ -135,6 +138,74 @@ public final class BuildTest {
     if (!attributes.contains("* text=auto eol=lf")
         || !attributes.contains("tests/corpus/*.jsonl -text")) {
       throw new AssertionError("repository line-ending policy is incomplete");
+    }
+  }
+
+  private static void
+      given_nativeSkillTrees_when_validatingMirror_then_requiresExactPathsTypesAndBytes()
+          throws Exception {
+    Path root = Files.createTempDirectory("toktrak-skill-mirror-");
+    try {
+      Path canonical = Files.createDirectories(root.resolve("canonical/skill"));
+      Path mirror = Files.createDirectories(root.resolve("mirror/skill"));
+      Path source = Files.writeString(canonical.resolve("SKILL.md"), "same\n");
+      Path target = Files.writeString(mirror.resolve("SKILL.md"), "same\n");
+      Build.validateSkillMirror(canonical.getParent(), mirror.getParent());
+      Files.writeString(target, "changed\n");
+      expectFailure(
+          () -> Build.validateSkillMirror(canonical.getParent(), mirror.getParent()),
+          "skill mirror differs");
+      Files.delete(target);
+      expectFailure(
+          () -> Build.validateSkillMirror(canonical.getParent(), mirror.getParent()),
+          "skill mirror inventory differs");
+      Files.copy(source, target);
+      Path extra = Files.writeString(mirror.resolve("extra.md"), "extra");
+      expectFailure(
+          () -> Build.validateSkillMirror(canonical.getParent(), mirror.getParent()),
+          "skill mirror inventory differs");
+      Files.delete(extra);
+      Files.delete(target);
+      Files.createDirectory(target);
+      expectFailure(
+          () -> Build.validateSkillMirror(canonical.getParent(), mirror.getParent()),
+          "skill mirror differs");
+    } finally {
+      deleteTestTree(root);
+    }
+  }
+
+  private static void given_nativeSkillLinks_when_validatingMirror_then_rejectsRootsAndEntries()
+      throws Exception {
+    Path root = Files.createTempDirectory("toktrak-skill-links-");
+    try {
+      Path canonical = Files.createDirectory(root.resolve("canonical"));
+      Path mirror = Files.createDirectory(root.resolve("mirror"));
+      Path file = Files.writeString(root.resolve("source.md"), "source");
+      Path alias = Files.createSymbolicLink(root.resolve("alias"), canonical);
+      expectFailure(() -> Build.validateSkillMirror(canonical, alias), "not a regular directory");
+      for (Path tree : List.of(canonical, mirror)) {
+        Path link = Files.createSymbolicLink(tree.resolve("link.md"), file);
+        expectFailure(() -> Build.validateSkillMirror(canonical, mirror), "link or special file");
+        Files.delete(link);
+      }
+    } finally {
+      deleteTestTree(root);
+    }
+  }
+
+  private static void given_oversizedSkillTree_when_validatingMirror_then_rejectsInput()
+      throws Exception {
+    Path root = Files.createTempDirectory("toktrak-skill-limit-");
+    try {
+      Path canonical = Files.createDirectory(root.resolve("canonical"));
+      Path mirror = Files.createDirectory(root.resolve("mirror"));
+      for (int index = 0; index < 256; index++) {
+        Files.createFile(canonical.resolve(Integer.toString(index)));
+      }
+      expectFailure(() -> Build.validateSkillMirror(canonical, mirror), "tree exceeds 256 entries");
+    } finally {
+      deleteTestTree(root);
     }
   }
 
