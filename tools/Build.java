@@ -115,13 +115,9 @@ public final class Build {
       Pattern.compile("[a-z0-9][a-z0-9-]*(?:/[a-z0-9][a-z0-9-]*)*\\.mustache");
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
-  private static final Path GOLEM_SCRIPT = ROOT.resolve("tools/golem.mjs");
-  private static final Path JAVA_GOLEM = ROOT.resolve("tools/golems/Golems.java");
-  private static final Path JAVA_GOLEM_CHECK = ROOT.resolve("tools/golems/SelfCheck.java");
   private static final Path TRACKER_TEST_SOURCES = ROOT.resolve("tests/tracker");
-  private static final List<Path> GOLEM_TEST_SOURCES =
+  private static final List<Path> JAVASCRIPT_TEST_SOURCES =
       List.of(
-          ROOT.resolve("tools/golem.test.mjs"),
           ROOT.resolve("tools/dashboard-presentation.test.mjs"),
           ROOT.resolve("tools/perf-compare.test.mjs"),
           ROOT.resolve("tools/java-runtime-version.test.mjs"),
@@ -314,7 +310,7 @@ public final class Build {
       if (args.length == 0) {
         throw new IllegalStateException(
             "command required: clean, fmt, check, test, pit, refactor, ci, verify, ide, dev, prod,"
-                + " coverage, perf, image, container-verify, release, golem, or golem-auth-check");
+                + " coverage, perf, image, container-verify, or release");
       }
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
@@ -325,12 +321,6 @@ public final class Build {
       }
       if (args[0].equals("pit") && commandArguments.equals(List.of("--help"))) {
         pitCommand(commandArguments);
-        return;
-      }
-      if (args[0].equals("golem") || args[0].equals("golem-auth-check")) {
-        runProcessUntilExit(
-            new ProcessBuilder(golemInvocation(args[0], commandArguments))
-                .directory(ROOT.toFile()));
         return;
       }
       Files.createDirectories(OUTPUT);
@@ -2482,7 +2472,6 @@ public final class Build {
         ROOT,
         PROCESS_TIMEOUT);
     validateRepositorySkills();
-    runGolemDefinitionCheck();
     compile();
     runPmd();
   }
@@ -2518,51 +2507,6 @@ public final class Build {
     arguments.add("--no-cache");
     arguments.add("--no-progress");
     runArgFile(javaExecutable(), "run-pmd", arguments);
-  }
-
-  private static void runGolemDefinitionCheck() throws Exception {
-    runProcess(
-        new ProcessBuilder("node", GOLEM_SCRIPT.toString(), "check").directory(ROOT.toFile()));
-    runProcess(
-        new ProcessBuilder(
-                javaExecutable(), "-ea", JAVA_GOLEM.toString(), "select", "--event", "schedule")
-            .directory(ROOT.toFile()));
-  }
-
-  static List<String> golemInvocation(String name, List<String> arguments) {
-    assert name != null;
-    assert arguments != null;
-    String operation =
-        switch (name) {
-          case "golem" -> "run";
-          case "golem-auth-check" -> "auth-check";
-          default -> throw new IllegalArgumentException("unknown golem task: " + name);
-        };
-    if (arguments.isEmpty()) throw new IllegalArgumentException("golem task name is required");
-    var parameters =
-        new ArrayList<>(
-            List.of("-ea", JAVA_GOLEM.toString(), operation, "--golem", arguments.getFirst()));
-    parameters.addAll(arguments.subList(1, arguments.size()));
-    return command(javaExecutable(), parameters);
-  }
-
-  private static void runGolemTests() throws Exception {
-    runGolemTests(GOLEM_TEST_SOURCES);
-    Path temporary = ROOT.resolve("output/golem-selfcheck-tmp");
-    Files.createDirectories(temporary);
-    ProcessBuilder check =
-        new ProcessBuilder(
-                javaExecutable(),
-                "-Djava.io.tmpdir=" + temporary,
-                "-ea",
-                JAVA_GOLEM_CHECK.toString())
-            .directory(ROOT.toFile());
-    check.environment().put("RUNNER_TEMP", temporary.toString());
-    runProcess(check);
-  }
-
-  private static void runGolemTests(List<Path> sources) throws Exception {
-    runNodeTests(sources);
   }
 
   private static void runTrackerTests() throws Exception {
@@ -3072,7 +3016,7 @@ public final class Build {
     boolean otherPaths = false;
     for (String requested : paths) {
       Path path = resolveProjectPath(requested);
-      if (GOLEM_TEST_SOURCES.contains(path)) {
+      if (JAVASCRIPT_TEST_SOURCES.contains(path)) {
         sources.add(path);
       } else if (path.startsWith(TRACKER_TEST_SOURCES)) {
         sources.addAll(
@@ -3089,7 +3033,7 @@ public final class Build {
                 List.of(requested),
                 List.of(),
                 candidate ->
-                    GOLEM_TEST_SOURCES.contains(candidate)
+                    JAVASCRIPT_TEST_SOURCES.contains(candidate)
                         || (candidate.startsWith(TRACKER_TEST_SOURCES)
                             && candidate.getFileName().toString().endsWith(".test.mjs"))
                         || (candidate.startsWith(ROOT.resolve("tests"))
@@ -3113,7 +3057,7 @@ public final class Build {
 
   private static void testAll() throws Exception {
     check();
-    runGolemTests();
+    runNodeTests(JAVASCRIPT_TEST_SOURCES);
     runTrackerTests();
     runTests(testSelection(List.of()), SnapshotMode.READ_ONLY);
   }
@@ -3237,7 +3181,7 @@ public final class Build {
     }
     check();
     checkRefaster();
-    runGolemTests();
+    runNodeTests(JAVASCRIPT_TEST_SOURCES);
     runTrackerTests();
     testBuildTool();
     verifyLinkedProductionRuntime();

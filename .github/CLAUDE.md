@@ -15,10 +15,9 @@
 - Keep artifact retention no longer than its demonstrated review window.
 - Cache only data with a bounded key space and measured reuse. Caches and
   artifacts have separate quotas.
-- The encrypted rotating authentication in `golem.yml` is deliberate persistent
-  state. Do not delete, disable, or change its restore/save behavior without an
-  approved migration and reseed plan.
-- This is a private repository. GitHub-hosted runners consume organization
-  budget. Do not change runner providers without explicit approval.
+- Golem execution and provider seats belong to the external `isp-golem-xiv` App
+  and central ops repository, not a TokTrak workflow.
+- GitHub-hosted runners consume organization budget. Do not change runner
+  providers without explicit approval.
 - Preserve trust boundaries: untrusted pull-request code gets read-only
   credentials and cannot consume privileged secrets.

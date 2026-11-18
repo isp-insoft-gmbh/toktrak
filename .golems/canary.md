@@ -1,22 +1,20 @@
 ---
 branch: golem/java-canary
 harness: pi
-os: ubuntu-26.04
-model: openai-codex/gpt-6.1-sol
+runner: ubuntu-26.04
+provider: openai-codex
+model: gpt-6.1-sol
 effort: low
-timeout: 10m
+timeout: "10m"
 verify: mise run check
 ---
 
-# Java Golem canary
+# Runner canary
 
-This manual-only task tests the Java Golem publication path without changing
-product behavior.
-
-README.md names `.github/golems` and `_golem.md` as the current task policy.
-Current tasks live in `.golems/`, with shared policy in `_golems.md`. Verify the
-paths, then correct only that README.md sentence. Run the declared check and
-commit the change. Write `$GOLEM_PR_FILE` identifying this as a canary requiring
-human review. If README.md is already correct, make no change and explain why.
-Never merge a PR, release, change runtime code, or edit CI or control-plane
-files.
+Manual-only, read-only check of the external runner's repository snapshot and
+reporting path. Do not edit files, start services, install tools, or publish
+anything. Read `CONTRIBUTING.md`, `mise.toml`, and `tools/Build.java`. Report
+the repository's purpose, the check/test/verify ladder, and whether those files
+agree about build ownership. Cite the relevant paths and identify any missing
+prerequisites without exposing credentials or raw provider logs. Finish through
+the runner's reporting protocol; a useful answer with no changes is success.
