@@ -41,6 +41,11 @@ tasks; `mise run fmt` remains available.
 Read `.system/SYSTEM.md`, `.system/MISSION.md`, and `.system/RULES.md` before
 changing product behavior.
 
+`.claude/skills` is canonical; `.agents/skills` is its committed, byte-identical
+mirror for native Codex discovery. Keep both trees in sync when editing skills.
+Use regular files, not a directory symlink, so repository snapshots retain all
+native skills. `mise run check` rejects mirror drift, extra files, and links.
+
 ## Persisted schema compatibility
 
 Assume every TokTrak deployment already contains durable production data. Every
