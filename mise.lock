@@ -69,7 +69,7 @@ url = "https://github.com/sharkdp/hyperfine/releases/download/v2.0.0/hyperfine-v
 url_api = "https://api.github.com/repos/sharkdp/hyperfine/releases/assets/619834237"
 
 [[tools.java]]
-version = "corretto-27.0.1.0.11"
+version = "corretto-27.0.1.1.4"
 backend = "core:java"
 specifiers = ["corretto"]
 
@@ -77,16 +77,16 @@ specifiers = ["corretto"]
 shorthand_vendor = "openjdk"
 
 [tools.java."platforms.linux-x64"]
-checksum = "sha256:2a8a5a833ec1b2e6e66bcf8a530438f471ebbbc928be90ab153b2985cdeac8e8"
-url = "https://corretto.aws/downloads/resources/27.0.1.0.11/amazon-corretto-27.0.1.0.11-linux-x64.tar.gz"
+checksum = "sha256:af53e33189cc40d1ac571855534d6faa055760488810a81a926c0c05b8aa3ff3"
+url = "https://corretto.aws/downloads/resources/27.0.1.1.4/amazon-corretto-27.0.1.1.4-linux-x64.tar.gz"
 
 [tools.java."platforms.macos-arm64"]
-checksum = "sha256:6001774fcb01aa85d8fedca380c8330e91705963dd6e0f3d5e695a623e914c34"
-url = "https://corretto.aws/downloads/resources/27.0.1.0.11/amazon-corretto-27.0.1.0.11-macosx-aarch64.tar.gz"
+checksum = "sha256:45d64c5886d5636e3ef06e434f5b79d1e4cb10769c5ea050d9700dfb177c4bf3"
+url = "https://corretto.aws/downloads/resources/27.0.1.1.4/amazon-corretto-27.0.1.1.4-macosx-aarch64.tar.gz"
 
 [tools.java."platforms.windows-x64"]
-checksum = "sha256:794bd394e2adb7c20e33c909b12e858220e69501b6124f1da9930af75579f135"
-url = "https://corretto.aws/downloads/resources/27.0.1.0.11/amazon-corretto-27.0.1.0.11-windows-x64-jdk.zip"
+checksum = "sha256:9d3edd9e4ad1136bb2c18b4a23f073516e9c4308b2188787880e29693e958df2"
+url = "https://corretto.aws/downloads/resources/27.0.1.1.4/amazon-corretto-27.0.1.1.4-windows-x64-jdk.zip"
 
 [[tools.node]]
 version = "26.13.1"
