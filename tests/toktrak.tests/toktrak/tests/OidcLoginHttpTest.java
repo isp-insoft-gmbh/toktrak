@@ -83,11 +83,10 @@ final class OidcLoginHttpTest {
         var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
         List<CompletableFuture<HttpResponse<String>>> responses =
             java.util.stream.IntStream.range(0, 5)
-                .mapToObj(
-                    _ ->
-                        client.sendAsync(
-                            HttpRequest.newBuilder(login).GET().build(),
-                            HttpResponse.BodyHandlers.ofString()))
+                .mapToObj(_ ->
+                    client.sendAsync(
+                        HttpRequest.newBuilder(login).GET().build(),
+                        HttpResponse.BodyHandlers.ofString()))
                 .toList();
         try {
           assertTrue(fourRequestsStarted.await(3, TimeUnit.SECONDS));
@@ -182,10 +181,9 @@ final class OidcLoginHttpTest {
       List<String> cookies = completed.headers().allValues("Set-Cookie");
       assertTrue(
           cookies.stream()
-              .anyMatch(
-                  value ->
-                      value.startsWith(AuthService.TRANSACTION_COOKIE + "=;")
-                          && value.contains("Max-Age=0")),
+              .anyMatch(value ->
+                  value.startsWith(AuthService.TRANSACTION_COOKIE + "=;")
+                      && value.contains("Max-Age=0")),
           cookies.toString());
       String sessionCookie =
           cookies.stream()

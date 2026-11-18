@@ -713,14 +713,13 @@ public final class Router implements HttpHandler {
       }
     }
     return AuthService.cookie(exchange.getRequestHeaders().getFirst("Cookie"), CURRENCY_COOKIE)
-        .map(
-            value -> {
-              try {
-                return DashboardCurrency.valueOf(value);
-              } catch (IllegalArgumentException exception) {
-                return DashboardCurrency.USD;
-              }
-            })
+        .map(value -> {
+          try {
+            return DashboardCurrency.valueOf(value);
+          } catch (IllegalArgumentException exception) {
+            return DashboardCurrency.USD;
+          }
+        })
         .orElse(DashboardCurrency.USD);
   }
 

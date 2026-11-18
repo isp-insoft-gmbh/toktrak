@@ -225,11 +225,10 @@ final class IdentityHttpTest {
 
   private static String form(Map<String, String> fields) {
     return fields.entrySet().stream()
-        .map(
-            entry ->
-                URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8)
-                    + "="
-                    + URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8))
+        .map(entry ->
+            URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8)
+                + "="
+                + URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8))
         .collect(java.util.stream.Collectors.joining("&"));
   }
 

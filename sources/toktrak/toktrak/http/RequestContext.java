@@ -41,14 +41,13 @@ public record RequestContext(
     var result = new Result<T>();
     try {
       ScopedValue.where(CURRENT, context)
-          .run(
-              () -> {
-                try {
-                  result.value = action.get();
-                } catch (IOException exception) {
-                  throw new RequestIOException(exception);
-                }
-              });
+          .run(() -> {
+            try {
+              result.value = action.get();
+            } catch (IOException exception) {
+              throw new RequestIOException(exception);
+            }
+          });
     } catch (RequestIOException exception) {
       throw new IOException(exception.getCause().getMessage(), exception);
     }

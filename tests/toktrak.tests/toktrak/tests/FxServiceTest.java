@@ -60,9 +60,8 @@ final class FxServiceTest {
                 log, projection, health, ClockSource.fixed(Instant.parse("2026-07-15T00:00:00Z")));
         var service = FxService.start(writer, client, Duration.ZERO, Duration.ofMillis(100))) {
       assertNotNull(service);
-      assertDoesNotThrow(
-          () ->
-              new FxClient.Rate(java.time.LocalDate.parse("2026-07-14"), java.math.BigDecimal.TEN));
+      assertDoesNotThrow(() ->
+          new FxClient.Rate(java.time.LocalDate.parse("2026-07-14"), java.math.BigDecimal.TEN));
       assertThrows(
           IllegalArgumentException.class,
           () ->
