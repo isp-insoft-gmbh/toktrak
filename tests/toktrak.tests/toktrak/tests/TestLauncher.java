@@ -159,9 +159,8 @@ public final class TestLauncher {
         if (!test.isTest()) continue;
         var source =
             test.getSource()
-                .orElseThrow(
-                    () ->
-                        new IllegalStateException("test has no source: " + test.getDisplayName()));
+                .orElseThrow(() ->
+                    new IllegalStateException("test has no source: " + test.getDisplayName()));
         if (!(source instanceof MethodSource methodSource)) {
           throw new IllegalStateException("test has no method source: " + test.getDisplayName());
         }

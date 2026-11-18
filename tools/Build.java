@@ -832,12 +832,11 @@ public final class Build {
   private static boolean hasExplicitVerbosity(List<String> arguments) {
     assert arguments != null;
     return arguments.stream()
-        .anyMatch(
-            argument ->
-                argument.equals("--verbosity")
-                    || argument.startsWith("--verbosity=")
-                    || argument.equals("--verbose")
-                    || argument.startsWith("--verbose="));
+        .anyMatch(argument ->
+            argument.equals("--verbosity")
+                || argument.startsWith("--verbosity=")
+                || argument.equals("--verbose")
+                || argument.startsWith("--verbose="));
   }
 
   static void validatePitReportForTest(Path reportDirectory) throws Exception {
@@ -3452,9 +3451,8 @@ public final class Build {
     List<Path> matches =
         jarPaths(List.of(COVERAGE_DEPS)).stream()
             .filter(path -> path.getFileName().toString().startsWith(prefix))
-            .filter(
-                path ->
-                    path.getFileName().toString().contains("nodeps") || prefix.contains("agent"))
+            .filter(path ->
+                path.getFileName().toString().contains("nodeps") || prefix.contains("agent"))
             .toList();
     if (matches.size() != 1) {
       throw new IllegalStateException("expected one coverage JAR with prefix " + prefix);
@@ -4347,19 +4345,18 @@ public final class Build {
     Thread reader =
         Thread.ofVirtual()
             .name("toktrak-tool-output-reader")
-            .start(
-                () -> {
-                  try {
-                    byte[] bytes = process.getInputStream().readNBytes(TOOL_OUTPUT_BYTES_MAX + 1);
-                    output.set(bytes);
-                    if (bytes.length > TOOL_OUTPUT_BYTES_MAX) {
-                      terminateFromReader(process, readFailure);
-                    }
-                  } catch (IOException exception) {
-                    readFailure.set(exception);
-                    terminateFromReader(process, readFailure);
-                  }
-                });
+            .start(() -> {
+              try {
+                byte[] bytes = process.getInputStream().readNBytes(TOOL_OUTPUT_BYTES_MAX + 1);
+                output.set(bytes);
+                if (bytes.length > TOOL_OUTPUT_BYTES_MAX) {
+                  terminateFromReader(process, readFailure);
+                }
+              } catch (IOException exception) {
+                readFailure.set(exception);
+                terminateFromReader(process, readFailure);
+              }
+            });
     int exitCode;
     try {
       exitCode = waitForProcess(process, timeout, PROCESS_KILL_TIMEOUT, false);

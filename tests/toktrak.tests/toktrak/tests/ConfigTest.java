@@ -120,10 +120,8 @@ final class ConfigTest {
   @Test
   void given_portBoundaries_when_parsingConfig_then_acceptsPorts() {
     for (String port : new String[] {"0", "65535"}) {
-      assertDoesNotThrow(
-          () ->
-              Config.from(
-                  new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", port)));
+      assertDoesNotThrow(() ->
+          Config.from(new String[] {}, Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", port)));
     }
   }
 
