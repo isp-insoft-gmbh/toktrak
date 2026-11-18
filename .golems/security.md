@@ -1,11 +1,13 @@
 ---
 harness: codex
+provider: openai-codex
 model: gpt-6-astra
 effort: max
+owner: bugabinga
 schedule: [tue]
 branch: golem/security
-os: ubuntu-26.04
-timeout: 45m
+runner: ubuntu-26.04
+timeout: "45m"
 verify: mise run verify
 ---
 
