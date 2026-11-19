@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,7 +34,8 @@ const noteText = (value) => {
 };
 
 const command = (arguments_, root) => {
-  const result = spawnSync("git", arguments_, {
+  // Never discover an enclosing repository, even when local metadata is corrupt.
+  const result = spawnSync("git", ["--git-dir", resolve(root, ".git"), ...arguments_], {
     cwd: root,
     encoding: "utf8",
     maxBuffer: 1024 * 1024,
@@ -154,14 +155,27 @@ const baseline = (root) => {
   return source.replace(/^# Changelog\n\n/u, "").trimEnd();
 };
 
+const changelogText = (rendered) => {
+  const changelog = `${rendered.join("\n").trimEnd()}\n`;
+  if (Buffer.byteLength(changelog) > BYTES_MAX) fail("generated changelog exceeds 65536 bytes");
+  return changelog;
+};
+
 export async function generate(mode, version, root = ROOT, options = {}) {
+  if (mode === "dev" && version !== undefined) fail("usage: release-notes.mjs dev <output-path>");
+  if (mode === "dev" && !lstatSync(resolve(root, ".git"), { throwIfNoEntry: false })) {
+    const frozen = baseline(root).replace(
+      "## v2\n",
+      "## v2\n\n- Development source archive: Git history is unavailable; only frozen v2, v1, and v0 notes follow.\n",
+    );
+    return changelogText(["# Changelog\n", frozen]);
+  }
   const execute = options.execute ?? command;
   const request = options.request ?? fetch;
   const releaseTags = tags(execute, root);
   const shallow = execute(["rev-parse", "--is-shallow-repository"], root).trim() === "true";
   let current;
   if (mode === "dev") {
-    if (version !== undefined) fail("usage: release-notes.mjs dev <output-path>");
     const latest = releaseTags.at(0);
     if (!latest && !shallow) fail("development changelog requires release tags");
     current = `v${latest ? versionNumber(latest) + 1 : 3}`;
@@ -238,9 +252,7 @@ export async function generate(mode, version, root = ROOT, options = {}) {
     rendered.push(section(tag, notes, mode === "release" ? tagHighlight(tag, execute, root) : ""));
   }
   rendered.push(baseline(root));
-  const changelog = `${rendered.join("\n").trimEnd()}\n`;
-  if (Buffer.byteLength(changelog) > BYTES_MAX) fail("generated changelog exceeds 65536 bytes");
-  return changelog;
+  return changelogText(rendered);
 }
 
 export async function main(arguments_ = process.argv.slice(2)) {
