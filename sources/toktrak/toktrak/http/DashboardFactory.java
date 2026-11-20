@@ -123,6 +123,7 @@ final class DashboardFactory {
         period,
         money(monthly.cost, currency, rate),
         counter(monthly.cost, currency, rate),
+        monthly.cost.stripTrailingZeros().toPlainString(),
         integer(monthly.tokens),
         monthly.tokens.toString(),
         activeUsers,

@@ -18,7 +18,8 @@ final class VisualizationsHttpTest {
       Pattern.compile(
           "<span class=\"swatch series-\\d\" aria-hidden=\"true\"></span>([^<]+)"
               + " <strong>([^<]+)</strong>");
-  private static final Pattern KPI = Pattern.compile("<dt>([^<]+)</dt><dd>([^<]+)</dd>");
+  private static final Pattern KPI =
+      Pattern.compile("<dt>([^<]+)</dt><dd data-usd=\"[^\"]*\">([^<]+)</dd>");
   private static final Pattern TICK = Pattern.compile("text-anchor=\"end\">([^<]+)</text>");
 
   @TempDir Path directory;
@@ -93,8 +94,8 @@ final class VisualizationsHttpTest {
       assertEquals("10 of 15", kpis.get("Days with usage"), page);
       assertEquals("$1.00", kpis.get("Typical person-day"), page);
       assertEquals("1", kpis.get("People with usage"), page);
-      assertTrue(page.contains("<tr><td>2 Jul 2026</td><td>$0.30</td></tr>"), page);
-      assertTrue(page.contains("<tr><td>31 Jul 2026</td><td>$0.00</td></tr>"), page);
+      assertTrue(page.contains("<td>2 Jul 2026</td><td>$0.30</td>"), page);
+      assertTrue(page.contains("<td>31 Jul 2026</td><td>$0.00</td>"), page);
       // 31 daily buckets label every fourth day.
       assertTrue(page.contains(">5 Jul</text>"), page);
       assertFalse(page.contains(">4 Jul</text>"), page);
@@ -145,13 +146,13 @@ final class VisualizationsHttpTest {
 
       assertTrue(
           page.contains(
-              "<rect class=\"series-1\" x=\"64.5\" y=\"94.8\" width=\"110\" height=\"113\"><title>1"
-                  + " Jul 2026 · alpha · $10.00</title></rect>"),
+              "<rect class=\"series-1\" x=\"64.5\" y=\"94.8\" width=\"110\" height=\"113\""
+                  + " data-usd=\"10\"><title>1 Jul 2026 · alpha · $10.00</title></rect>"),
           page);
       assertTrue(
           page.contains(
-              "<rect class=\"series-2\" x=\"286.5\" y=\"190.8\" width=\"110\""
-                  + " height=\"45.2\"><title>3 Jul 2026 · beta · $4.00</title></rect>"),
+              "<rect class=\"series-2\" x=\"286.5\" y=\"190.8\" width=\"110\" height=\"45.2\""
+                  + " data-usd=\"4\"><title>3 Jul 2026 · beta · $4.00</title></rect>"),
           page);
       assertEquals(List.of("$0.00", "$5.00", "$10", "$15", "$20"), ticks(page), page);
       assertTrue(page.contains("d=\"M785.5 209.4L896.5 227.9\""), page);
@@ -168,8 +169,10 @@ final class VisualizationsHttpTest {
               "<text class=\"chart-axis\" x=\"896.5\" y=\"254\" text-anchor=\"middle\">8"
                   + " Jul</text>"),
           page);
-      assertTrue(page.contains("<dt>Peak day</dt><dd>$12.50 · 1 Jul 2026</dd>"), page);
-      assertTrue(page.contains("<dt>Typical day with usage</dt><dd>$4.00</dd>"), page);
+      assertTrue(
+          page.contains("<dt>Peak day</dt><dd data-usd=\"12.5\">$12.50 · 1 Jul 2026</dd>"), page);
+      assertTrue(
+          page.contains("<dt>Typical day with usage</dt><dd data-usd=\"4\">$4.00</dd>"), page);
 
       String week = usage.visualizations("range=custom&from=2026-07-01&to=2026-07-07");
       assertFalse(week.contains("chart-average"), week);
@@ -192,7 +195,8 @@ final class VisualizationsHttpTest {
       assertEquals(List.of("$0.00", "$500", "$1k", "$1.5k", "$2k"), ticks(thousands), thousands);
 
       String tied = usage.visualizations("range=custom&from=2026-07-04&to=2026-07-06");
-      assertTrue(tied.contains("<dt>Peak day</dt><dd>$5.00 · 5 Jul 2026</dd>"), tied);
+      assertTrue(
+          tied.contains("<dt>Peak day</dt><dd data-usd=\"5\">$5.00 · 5 Jul 2026</dd>"), tied);
       assertEquals(List.of("$0.00", "$1.25", "$2.50", "$3.75", "$5.00"), ticks(tied), tied);
     }
   }
@@ -217,8 +221,8 @@ final class VisualizationsHttpTest {
       String year = usage.visualizations("range=year&year=2026");
       assertEquals("$3.00", kpis(year).get("Estimated cost"));
       assertTrue(year.contains("Cost per week by tool"), year);
-      assertTrue(year.contains("<tr><td>29 Jun 2026 – 5 Jul 2026</td><td>$3.00</td></tr>"), year);
-      assertTrue(year.contains("<tr><td>1 Jan 2026 – 4 Jan 2026</td><td>$0.00</td></tr>"), year);
+      assertTrue(year.contains("<td>29 Jun 2026 – 5 Jul 2026</td><td>$3.00</td>"), year);
+      assertTrue(year.contains("<td>1 Jan 2026 – 4 Jan 2026</td><td>$0.00</td>"), year);
       assertEquals(1, year.split("aria-current=\"page\">").length - 2, year);
       assertTrue(year.contains("aria-current=\"page\">Year</a>"), year);
 
@@ -315,8 +319,8 @@ final class VisualizationsHttpTest {
 
       String page = usage.visualizations("range=custom&from=2020-01-01&to=2026-07-01");
       assertTrue(page.contains("Cost per month by tool"), page);
-      assertTrue(page.contains("<tr><td>Mar 2020</td><td>$1.00</td></tr>"), page);
-      assertTrue(page.contains("<tr><td>Jul 2026</td><td>$2,800.00</td></tr>"), page);
+      assertTrue(page.contains("<td>Mar 2020</td><td>$1.00</td>"), page);
+      assertTrue(page.contains("<td>Jul 2026</td><td>$2,800.00</td>"), page);
       assertEquals(
           List.of(
               "tool-7=$700.00",

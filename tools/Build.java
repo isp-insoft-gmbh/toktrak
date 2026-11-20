@@ -116,10 +116,16 @@ public final class Build {
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
   private static final Path TRACKER_TEST_SOURCES = ROOT.resolve("tests/tracker");
+  private static final Map<String, String> NODE_DATA_TOOLS =
+      Map.of(
+          "corpus-import", "tools/corpus-anonymize.mjs",
+          "corpus-shapes", "tools/corpus-shapes.mjs",
+          "viz-oracle", "tools/visualizations-oracle.mjs");
   private static final List<Path> JAVASCRIPT_TEST_SOURCES =
       List.of(
           ROOT.resolve("tools/corpus-anonymize.test.mjs"),
           ROOT.resolve("tools/corpus-shapes.test.mjs"),
+          ROOT.resolve("tools/visualizations-oracle.test.mjs"),
           ROOT.resolve("tools/dashboard-presentation.test.mjs"),
           ROOT.resolve("tools/perf-compare.test.mjs"),
           ROOT.resolve("tools/java-runtime-version.test.mjs"),
@@ -312,8 +318,8 @@ public final class Build {
       if (args.length == 0) {
         throw new IllegalStateException(
             "command required: clean, fmt, check, test, pit, refactor, ci, verify, ide, dev, prod,"
-                + " coverage, perf, corpus-import, corpus-shapes, image, container-verify, or"
-                + " release");
+                + " coverage, perf, corpus-import, corpus-shapes, viz-oracle, image,"
+                + " container-verify, or release");
       }
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
@@ -322,8 +328,8 @@ public final class Build {
         formatCommand(commandArguments);
         return;
       }
-      if (args[0].equals("corpus-import") || args[0].equals("corpus-shapes")) {
-        corpusCommand(args[0], commandArguments);
+      if (NODE_DATA_TOOLS.containsKey(args[0])) {
+        nodeDataToolCommand(args[0], commandArguments);
         return;
       }
       if (args[0].equals("pit") && commandArguments.equals(List.of("--help"))) {
@@ -2409,14 +2415,14 @@ public final class Build {
         + System.getProperty("os.arch");
   }
 
-  /// Pseudonymizes a production snapshot or adds its missing shapes to the development corpus.
-  /// Neither needs the build lock: each writes only its own data file.
-  private static void corpusCommand(String name, List<String> arguments) throws Exception {
-    assert name.equals("corpus-import") || name.equals("corpus-shapes");
+  /// Runs a Node data tool: corpus pseudonymization, corpus shape synthesis, or the visualizations
+  /// oracle, which reads a running development server. None needs the build lock because none
+  /// compiles or touches build output.
+  private static void nodeDataToolCommand(String name, List<String> arguments) throws Exception {
+    assert NODE_DATA_TOOLS.containsKey(name);
     assert arguments != null;
     var command = new ArrayList<String>();
-    command.add(
-        name.equals("corpus-import") ? "tools/corpus-anonymize.mjs" : "tools/corpus-shapes.mjs");
+    command.add(NODE_DATA_TOOLS.get(name));
     command.addAll(arguments);
     System.out.println(runTool("node", name, command, ROOT, PROCESS_TIMEOUT).output());
   }

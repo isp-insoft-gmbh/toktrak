@@ -40,7 +40,8 @@ record UsageCharts(
     }
   }
 
-  record Kpi(String label, String value) {}
+  /// `usd` is the exact canonical value behind a money figure, or empty for counts.
+  record Kpi(String label, String value, String usd) {}
 
   /// Stacked columns over time buckets with optional trailing-average line.
   record ColumnChart(
@@ -67,7 +68,13 @@ record UsageCharts(
   }
 
   record SvgRect(
-      String x, String y, String width, String height, String seriesClass, String title) {
+      String x,
+      String y,
+      String width,
+      String height,
+      String seriesClass,
+      String title,
+      String usd) {
     SvgRect {
       if (!seriesClass.matches("series-[1-6]")) {
         throw new IllegalArgumentException("seriesClass is invalid");
@@ -81,7 +88,7 @@ record UsageCharts(
 
   record SvgPath(String path, String label) {}
 
-  record LegendItem(String seriesClass, String label, String value) {
+  record LegendItem(String seriesClass, String label, String value, String usd) {
     LegendItem {
       if (!seriesClass.matches("series-[1-6]")) {
         throw new IllegalArgumentException("seriesClass is invalid");
@@ -89,5 +96,5 @@ record UsageCharts(
     }
   }
 
-  record DataRow(String bucket, String value) {}
+  record DataRow(String bucket, String value, String usd) {}
 }

@@ -58,6 +58,11 @@ description = "Pseudonymize a production events.ndjson snapshot into output/corp
 raw_args = true
 run = "java -ea tools/Build.java corpus-import"
 
+[tasks.viz-oracle]
+description = "Recompute visualizations from events.ndjson independently and diff against a running dev server"
+raw_args = true
+run = "java -ea tools/Build.java viz-oracle"
+
 [tasks.corpus-shapes]
 description = "Append synthetic events for field shapes the pseudonymized data has but tests/corpus/dev.jsonl lacks"
 raw_args = true

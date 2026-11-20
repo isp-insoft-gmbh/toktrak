@@ -129,6 +129,22 @@ and `$XDG_CONFIG_HOME/toktrak/corpus-anonymization.key` (falling back to
 `~/.config`) elsewhere. `--key <path>` overrides both. Without a key the import
 stops and explains these steps instead of silently creating a new one.
 
+## Visualization correctness
+
+Every money figure on the visualizations page carries its exact canonical USD
+value in a `data-usd` attribute next to the rounded, possibly converted display.
+
+- `VisualizationsConsistencyTest` checks, for many ranges of the development
+  corpus and of seeded random uploads, that figures agree with each other. Tool
+  totals, period totals, and bars each sum to the range total. Adjacent ranges
+  add up to their union, and months add up to their year. Each display is its
+  exact value rounded half-up to cents. Every new chart adds its own identities
+  to this test.
+- `mise run viz-oracle <events.ndjson> [server-url] [random-ranges]` recomputes
+  every figure independently from raw events and compares it with a running
+  `mise run dev --corpus` server. Run it against pseudonymized production data
+  before changing how figures are computed.
+
 ## Generated code
 
 JStachio generates renderers from `sources/toktrak/templates` during

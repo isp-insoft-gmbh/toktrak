@@ -294,11 +294,21 @@ final class UsageChartsFactory {
             : total.divide(BigDecimal.valueOf(elapsedDays), 8, RoundingMode.HALF_UP);
     BigDecimal typical = dayCosts.isEmpty() ? BigDecimal.ZERO : median(dayCosts);
     return List.of(
-        new Kpi("Estimated cost", DashboardFactory.money(total, currency, rate)),
-        new Kpi("Per calendar day", DashboardFactory.money(perDay, currency, rate)),
-        new Kpi("Days with usage", daysWithUsage + " of " + elapsedDays),
-        new Kpi("People with usage", Long.toString(people)),
-        new Kpi("Typical person-day", DashboardFactory.money(typical, currency, rate)));
+        money("Estimated cost", total, currency, rate),
+        money("Per calendar day", perDay, currency, rate),
+        new Kpi("Days with usage", daysWithUsage + " of " + elapsedDays, ""),
+        new Kpi("People with usage", Long.toString(people), ""),
+        money("Typical person-day", typical, currency, rate));
+  }
+
+  private static Kpi money(String label, BigDecimal usd, DashboardCurrency currency, FxRate rate) {
+    return new Kpi(label, DashboardFactory.money(usd, currency, rate), exact(usd));
+  }
+
+  /// Exact canonical USD for consistency checks; displayed values are rounded and converted.
+  private static String exact(BigDecimal usd) {
+    assert usd.signum() >= 0;
+    return usd.stripTrailingZeros().toPlainString();
   }
 
   private static BigDecimal median(List<BigDecimal> sorted) {
@@ -359,10 +369,14 @@ final class UsageChartsFactory {
                 number(Math.max(columnWidth - 1, 0.5)),
                 number(height),
                 seriesOf(series, tool),
-                period + " · " + tool + " · " + DashboardFactory.money(cost, currency, rate)));
+                period + " · " + tool + " · " + DashboardFactory.money(cost, currency, rate),
+                exact(cost)));
       }
       rows.add(
-          new DataRow(period, DashboardFactory.money(bucketTotals.get(index), currency, rate)));
+          new DataRow(
+              period,
+              DashboardFactory.money(bucketTotals.get(index), currency, rate),
+              exact(bucketTotals.get(index))));
       index++;
     }
 
@@ -426,7 +440,10 @@ final class UsageChartsFactory {
               : toolTotals.get(tool);
       legend.add(
           new LegendItem(
-              seriesOf(series, tool), tool, DashboardFactory.money(cost, currency, rate)));
+              seriesOf(series, tool),
+              tool,
+              DashboardFactory.money(cost, currency, rate),
+              exact(cost)));
     }
 
     var stats = new ArrayList<Kpi>();
@@ -440,15 +457,13 @@ final class UsageChartsFactory {
               "Peak " + bucket.noun,
               DashboardFactory.money(bucketTotals.get(peak), currency, rate)
                   + " · "
-                  + rows.get(peak).bucket()));
+                  + rows.get(peak).bucket(),
+              exact(bucketTotals.get(peak))));
       List<BigDecimal> used =
           bucketTotals.stream().filter(value -> value.signum() > 0).sorted().toList();
-      stats.add(
-          new Kpi(
-              "Typical " + bucket.noun + " with usage",
-              DashboardFactory.money(median(used), currency, rate)));
+      stats.add(money("Typical " + bucket.noun + " with usage", median(used), currency, rate));
     }
-    stats.add(new Kpi("Total", DashboardFactory.money(total, currency, rate)));
+    stats.add(money("Total", total, currency, rate));
 
     String description =
         "Estimated cost per "

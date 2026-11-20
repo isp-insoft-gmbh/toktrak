@@ -13,6 +13,7 @@ record DashboardSnapshot(
     String period,
     String cost,
     String costCounter,
+    String costUsd,
     String tokens,
     String tokensCounter,
     int activeUsers,
@@ -36,6 +37,7 @@ record DashboardSnapshot(
     Objects.requireNonNull(period, "period");
     Objects.requireNonNull(cost, "cost");
     Objects.requireNonNull(costCounter, "costCounter");
+    Objects.requireNonNull(costUsd, "costUsd");
     Objects.requireNonNull(tokens, "tokens");
     Objects.requireNonNull(tokensCounter, "tokensCounter");
     Objects.requireNonNull(averageCost, "averageCost");

@@ -11,6 +11,8 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 import toktrak.App;
@@ -28,9 +30,16 @@ final class UsageFixture implements AutoCloseable {
   private final String cookie;
 
   UsageFixture(Path dataDirectory) throws Exception {
+    this(dataDirectory, List.of());
+  }
+
+  /// `arguments` follow the pinned clock, for example `--corpus` and its path.
+  UsageFixture(Path dataDirectory, List<String> arguments) throws Exception {
+    var all = new ArrayList<String>(List.of("--clock", CLOCK));
+    all.addAll(arguments);
     app =
         App.start(
-            new String[] {"--clock", CLOCK},
+            all.toArray(String[]::new),
             Map.of(
                 "TOKTRAK_DEV_AUTH", "true",
                 "TOKTRAK_PORT", "0",
@@ -73,6 +82,18 @@ final class UsageFixture implements AutoCloseable {
             .build();
     HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
     assertEquals(200, response.statusCode(), response.body());
+  }
+
+  String overview() throws Exception {
+    var request =
+        HttpRequest.newBuilder(base.resolve("/"))
+            .timeout(TIMEOUT)
+            .header("Cookie", cookie)
+            .GET()
+            .build();
+    HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
+    assertEquals(200, response.statusCode(), response.body());
+    return response.body();
   }
 
   String visualizations(String query) throws Exception {
