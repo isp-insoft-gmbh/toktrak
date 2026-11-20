@@ -441,7 +441,7 @@ final class UsageHttpTest {
           {"agent":"codex","inputTokens":2,"outputTokens":1,"cacheCreationTokens":1,
            "cacheReadTokens":0,"totalTokens":4,"totalCost":0.25}
         ]}
-       ]}}}}}
+       ]}}}}
     """;
   }
 
@@ -508,7 +508,7 @@ final class UsageHttpTest {
         "totalCost":0},
        {"period":"2026-07-14","agent":"claude","inputTokens":0,"outputTokens":0,
         "cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":1,"totalCost":0}
-     ]}}}}}
+     ]}}}}
     """;
   }
 
