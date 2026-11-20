@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 
 const BASE_URL = __TOKTRAK_BASE_URL__;
 const TOKEN = __TOKTRAK_TOKEN__;
-const TRACKER_VERSION = "0";
+const TRACKER_VERSION = "1";
 const CCUSAGE_VERSION = "20.0.17";
 const REPORTS = ["daily", "session", "blocks"];
 const SOURCE_COMMANDS = new Set([
@@ -36,7 +36,8 @@ const SOURCE_COMMANDS = new Set([
 const JITTER_MILLIS_MAX = 5 * 60 * 1_000;
 const COMMAND_TIMEOUT_MILLIS = 2 * 60 * 1_000;
 const HTTP_TIMEOUT_MILLIS = 30 * 1_000;
-const COMMAND_OUTPUT_BYTES_MAX = 1_500_000;
+// Whole-history session reports reach several megabytes for heavy users.
+const COMMAND_OUTPUT_BYTES_MAX = 32 * 1_024 * 1_024;
 const UPLOAD_BYTES_MAX = 5 * 1_024 * 1_024;
 const PROJECT_PATH_CHARACTERS_MAX = 2_048;
 const UPDATE_BYTES_MAX = 512 * 1_024;
@@ -48,6 +49,10 @@ const LOG_CHARACTERS_MAX = 1_000;
 const WINDOWS_SCHEDULER_REVISION_BYTES_MAX = 32;
 const TASK_START_BOUNDARY = "2020-01-01T09:00:00";
 const WINDOWS_SCHEDULER_REVISION = "1";
+// Bump to force one full upload after a tracker update that must rewrite stored usage.
+const USAGE_REPAIR_REVISION = "1";
+const USAGE_REPAIR_BYTES_MAX = 32;
+const SESSION_WINDOW_MILLIS = 8 * 24 * 60 * 60 * 1_000;
 const WINDOWS_TASK_NAME = "TokTrak";
 const MAC_LAUNCH_AGENT_LABEL = "de.isp-insoft.toktrak";
 const MAC_WILDCARD_TRIGGER = "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>9</integer></dict>";
@@ -235,6 +240,25 @@ export function windowsTaskDefinition(nodePath, scriptPath, piSessionsPath) {
 
 function windowsSchedulerRevisionPath(scriptPath) {
   return path.join(path.dirname(scriptPath), "windows-scheduler-revision");
+}
+
+function usageRepairPath(scriptPath) {
+  return path.join(path.dirname(scriptPath), "usage-repair-revision");
+}
+
+/// True until a full upload has run with the current repair revision.
+export async function usageRepairPending(scriptPath) {
+  try {
+    const revision = await readBounded(usageRepairPath(scriptPath), USAGE_REPAIR_BYTES_MAX);
+    return revision.toString("utf8") !== USAGE_REPAIR_REVISION;
+  } catch (error) {
+    if (error?.code !== "ENOENT") log("warning", "usage repair revision is unreadable; repairing it");
+    return true;
+  }
+}
+
+async function completeUsageRepair(scriptPath) {
+  await atomicWrite(usageRepairPath(scriptPath), Buffer.from(USAGE_REPAIR_REVISION));
 }
 
 export function windowsIntegrityLevel(groups) {
@@ -516,7 +540,8 @@ async function executeCcusage(commandArguments, full, environment, byAgent = fal
 }
 
 async function ccusage(report, full, environment) {
-  const json = await executeCcusage([report], full, environment, report === "daily");
+  // Session totals must cover whole sessions: `--since` would truncate sessions that began earlier.
+  const json = await executeCcusage([report], full || report === "session", environment, report === "daily");
   if (!json || !Array.isArray(json[report])) throw new Error(`${report} JSON is invalid`);
   return json;
 }
@@ -571,7 +596,7 @@ async function collectSourceReports(reports, full, environment) {
       try {
         log("info", `reading ${source} ${report} detail with ccusage@${CCUSAGE_VERSION}`);
         // oxlint-disable-next-line no-await-in-loop -- Serial execution bounds external processes.
-        const json = await executeCcusage([source, report], full, environment);
+        const json = await executeCcusage([source, report], full || report === "session", environment);
         if (!json || !Array.isArray(json[rowsName])) {
           throw new Error(`${source} ${report} JSON is invalid`);
         }
@@ -591,6 +616,26 @@ async function collectSourceReports(reports, full, environment) {
   if (reports.session?.ok) enrichSessionRows(reports.session.json, sourceReports);
 }
 
+/// Keeps sessions active since `cutoffMillis`; sessions without a readable activity time stay.
+export function recentSessions(rows, cutoffMillis, activityOf) {
+  return rows.filter((row) => {
+    const activity = Date.parse(activityOf(row) ?? "");
+    return Number.isNaN(activity) || activity >= cutoffMillis;
+  });
+}
+
+function limitSessionsToWindow(reports, cutoffMillis) {
+  if (reports.session?.ok) {
+    const json = reports.session.json;
+    json.session = recentSessions(json.session, cutoffMillis, (row) => row.metadata?.lastActivity);
+  }
+  for (const source of Object.values(reports.sourceReports ?? {})) {
+    if (!source.session?.ok) continue;
+    const json = source.session.json;
+    json.sessions = recentSessions(json.sessions, cutoffMillis, (row) => row.lastActivity);
+  }
+}
+
 async function collectReports(full, fallback) {
   const reports = {};
   const environment = await ccusageEnvironment(fallback);
@@ -607,6 +652,7 @@ async function collectReports(full, fallback) {
     }
   }
   await collectSourceReports(reports, full, environment);
+  if (!full) limitSessionsToWindow(reports, Date.now() - SESSION_WINDOW_MILLIS);
   return reports;
 }
 
@@ -738,6 +784,7 @@ async function install() {
   await installScheduler(target, sessions?.value);
   log("info", "scheduler installed; running initial upload");
   await runUpload(true, target);
+  await completeUsageRepair(target);
   log("info", `installation complete at ${target}`);
 }
 
@@ -745,6 +792,7 @@ async function uninstall() {
   const target = installationPath();
   await uninstallScheduler(target);
   log("info", `removing installed tracker at ${target}`);
+  await rm(usageRepairPath(target), { force: true });
   await rm(target, { force: true });
   try {
     if ((await readdir(path.dirname(target))).length === 0) await rm(path.dirname(target), { recursive: true });
@@ -771,6 +819,7 @@ async function main() {
       break;
     case "full":
       await runUpload(true, CURRENT_SCRIPT);
+      await completeUsageRepair(CURRENT_SCRIPT);
       break;
     case "daily": {
       let macSchedule = { status: "untracked" };
@@ -785,7 +834,19 @@ async function main() {
         log("info", `scheduled run waiting ${Math.ceil(jitterMillis / 1_000)} seconds`);
         await delay(jitterMillis);
       }
-      await runUpload(false, CURRENT_SCRIPT, fallback);
+      let uploaded = false;
+      if (await usageRepairPending(CURRENT_SCRIPT)) {
+        log("info", "running one-time full upload to repair stored usage");
+        try {
+          await runUpload(true, CURRENT_SCRIPT, fallback);
+          await completeUsageRepair(CURRENT_SCRIPT);
+          uploaded = true;
+        } catch (error) {
+          // Keep daily usage flowing; the repair is retried on the next run.
+          log("warning", `repair upload failed: ${error?.message || "unknown error"}`);
+        }
+      }
+      if (!uploaded) await runUpload(false, CURRENT_SCRIPT, fallback);
       if (macSchedule.status === "pending") await completeMacScheduledRun(macSchedule);
       break;
     }
