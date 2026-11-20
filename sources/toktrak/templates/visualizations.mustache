@@ -87,6 +87,289 @@
 {{/dailyCost}}
     </div>
 {{/charts}}
+{{#insights}}
+    <div class="chart-grid">
+      <article class="chart-card" aria-labelledby="cumulative-heading">
+        <h2 id="cumulative-heading">Cumulative cost</h2>
+        <p>Running total across the range. Dashed: an even pace that reaches the same total by today.</p>
+{{#cumulative}}
+        <svg class="chart" viewBox="0 0 {{width}} {{height}}" role="img" aria-labelledby="cumulative-heading">
+{{#yTicks}}
+          <line class="chart-grid-line" x1="{{x1}}" y1="{{y}}" x2="{{x2}}" y2="{{y}}"/>
+          <text class="chart-axis" x="{{labelX}}" y="{{labelY}}" text-anchor="end">{{label}}</text>
+{{/yTicks}}
+{{#lines}}
+          <path class="{{lineClass}}" d="{{path}}"><title>{{label}}</title></path>
+{{/lines}}
+{{#xLabels}}
+          <text class="chart-axis" x="{{x}}" y="{{y}}" text-anchor="middle">{{label}}</text>
+{{/xLabels}}
+        </svg>
+        <ul class="chart-legend">
+{{#lines}}
+          <li><span class="swatch swatch-line {{lineClass}}" aria-hidden="true"></span>{{label}}</li>
+{{/lines}}
+        </ul>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+        </dl>
+{{/cumulative}}
+        <p class="chart-note">Above the dashed line, spending ran ahead of the average pace.</p>
+      </article>
+{{#activePeople}}
+      <article class="chart-card" aria-labelledby="people-active-heading">
+        <h2 id="people-active-heading">People active per {{bucketName}}</h2>
+        <p>{{description}} An adoption signal, not a productivity measure.</p>
+        <svg class="chart" viewBox="0 0 {{width}} {{height}}" role="img" aria-labelledby="people-active-heading">
+{{#yTicks}}
+          <line class="chart-grid-line" x1="{{x1}}" y1="{{y}}" x2="{{x2}}" y2="{{y}}"/>
+          <text class="chart-axis" x="{{labelX}}" y="{{labelY}}" text-anchor="end">{{label}}</text>
+{{/yTicks}}
+{{#columns}}
+          <rect class="{{seriesClass}}" x="{{x}}" y="{{y}}" width="{{width}}" height="{{height}}"><title>{{title}}</title></rect>
+{{/columns}}
+{{#xLabels}}
+          <text class="chart-axis" x="{{x}}" y="{{y}}" text-anchor="middle">{{label}}</text>
+{{/xLabels}}
+        </svg>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+        </dl>
+      </article>
+{{/activePeople}}
+      <article class="chart-card" aria-labelledby="sizes-heading">
+        <h2 id="sizes-heading">How big is a person-day?</h2>
+        <p>Each person-day, one person on one day with usage, falls into a cost range. Left: how often. Right: how much of the cost it adds.</p>
+{{#personDaySizes}}
+        <div class="bar-list" role="table" aria-labelledby="sizes-heading">
+          <div class="bar-list-head" role="row">{{#headings}}<span role="columnheader">{{.}}</span>{{/headings}}</div>
+{{#rows}}
+          <div class="bar-list-row" role="row" data-usd="{{usd}}"><span role="cell">{{label}}</span><span role="cell"><svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bar-track" width="100" height="8"/><rect class="bar-fill" width="{{firstWidth}}" height="8"/></svg><small>{{firstValue}}</small></span>{{#second}}<span role="cell"><svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bar-track" width="100" height="8"/><rect class="bar-fill" width="{{width}}" height="8"/></svg><small>{{value}}</small></span>{{/second}}</div>
+{{/rows}}
+        </div>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+        </dl>
+{{/personDaySizes}}
+        <p class="chart-note">A mean far above the median means a few large days drive the total.</p>
+      </article>
+      <article class="chart-card" aria-labelledby="concentration-heading">
+        <h2 id="concentration-heading">Concentration</h2>
+        <p>Sort person-days from most to least expensive. Each point shows how much of the cost the costliest x% cause. Dashed: perfectly even.</p>
+{{#personDayConcentration}}
+        <svg class="chart" viewBox="0 0 {{width}} {{height}}" role="img" aria-labelledby="concentration-heading">
+{{#yTicks}}
+          <line class="chart-grid-line" x1="{{x1}}" y1="{{y}}" x2="{{x2}}" y2="{{y}}"/>
+          <text class="chart-axis" x="{{labelX}}" y="{{labelY}}" text-anchor="end">{{label}}</text>
+{{/yTicks}}
+{{#lines}}
+          <path class="{{lineClass}}" d="{{path}}"><title>{{label}}</title></path>
+{{/lines}}
+{{#xLabels}}
+          <text class="chart-axis" x="{{x}}" y="{{y}}" text-anchor="middle">{{label}}</text>
+{{/xLabels}}
+        </svg>
+        <ul class="chart-legend">
+{{#lines}}
+          <li><span class="swatch swatch-line {{lineClass}}" aria-hidden="true"></span>{{label}}</li>
+{{/lines}}
+        </ul>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+        </dl>
+{{/personDayConcentration}}
+        <p class="chart-note">A steeper curve means the spend is concentrated in fewer days.</p>
+      </article>
+{{#people}}
+      <article class="chart-card chart-card-wide" aria-labelledby="per-person-heading">
+        <h2 id="per-person-heading">Per person</h2>
+        <p>Cost per person in this range. Each trend uses its own scale; totals and shares carry the comparison and shares add up to 100%. The typical day is the median over days with usage.</p>
+        <div class="table-wrap">
+          <table class="people-table">
+            <thead><tr><th scope="col">Person</th><th scope="col">Trend</th><th scope="col">Total</th><th scope="col">Share</th><th scope="col">Active days</th><th scope="col">Typical day</th><th scope="col">Per calendar day</th></tr></thead>
+            <tbody>
+{{#rows}}
+              <tr><th scope="row">{{name}}</th><td><svg class="spark" viewBox="0 0 120 24" preserveAspectRatio="none" role="img" aria-label="Cost trend for {{name}}">{{#spark}}<rect class="{{seriesClass}}" x="{{x}}" y="{{y}}" width="{{width}}" height="{{height}}"><title>{{title}}</title></rect>{{/spark}}</svg></td><td data-usd="{{usd}}">{{total}}</td><td>{{share}}</td><td>{{activeDays}}</td><td>{{typical}}</td><td>{{perDay}}</td></tr>
+{{/rows}}
+            </tbody>
+          </table>
+        </div>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+        </dl>
+      </article>
+{{/people}}
+{{#modelMix}}
+      <article class="chart-card chart-card-wide" aria-labelledby="model-mix-heading">
+        <h2 id="model-mix-heading">Model mix per {{periodName}}</h2>
+        <p>Share of each {{periodName}}'s cost per model. The top five models are shown; the rest are grouped.</p>
+        <div class="stacked-rows">
+{{#rows}}
+          <div class="stacked-row" data-usd="{{usd}}"><span>{{period}}</span><svg viewBox="0 0 100 10" preserveAspectRatio="none" role="img" aria-label="Model mix for {{period}}">{{#segments}}<rect class="{{seriesClass}}" x="{{x}}" y="0" width="{{width}}" height="10" data-usd="{{usd}}"><title>{{title}}</title></rect>{{/segments}}</svg></div>
+{{/rows}}
+        </div>
+        <ul class="chart-legend chart-legend-models">
+{{#legend}}
+          <li data-model-usd="{{usd}}"><span class="swatch {{seriesClass}}" aria-hidden="true"></span>{{label}} <strong>{{value}}</strong></li>
+{{/legend}}
+        </ul>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+        </dl>
+        <p class="chart-note">Model names are shown as each tool reports them. Costs without a reported model appear as Not reported.</p>
+      </article>
+{{/modelMix}}
+      <article class="chart-card" aria-labelledby="token-price-heading">
+        <h2 id="token-price-heading">Cost per million tokens</h2>
+        <p>Model cost divided by all its tokens, including cache reads. Shows how expensive each model was in practice.</p>
+{{#tokenPrice}}
+        <div class="bar-list" role="table" aria-labelledby="token-price-heading">
+          <div class="bar-list-head" role="row">{{#headings}}<span role="columnheader">{{.}}</span>{{/headings}}</div>
+{{#rows}}
+          <div class="bar-list-row" role="row" data-usd="{{usd}}"><span role="cell">{{label}}</span><span role="cell"><svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bar-track" width="100" height="8"/><rect class="bar-fill" width="{{firstWidth}}" height="8"/></svg><small>{{firstValue}}</small></span>{{#second}}<span role="cell"><svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bar-track" width="100" height="8"/><rect class="bar-fill" width="{{width}}" height="8"/></svg><small>{{value}}</small></span>{{/second}}</div>
+{{/rows}}
+        </div>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+        </dl>
+{{/tokenPrice}}
+        <p class="chart-note">Low numbers usually mean heavy cache reuse, not a cheap model. Top eight models by cost.</p>
+      </article>
+      <article class="chart-card" aria-labelledby="cache-heading">
+        <h2 id="cache-heading">Cache reuse</h2>
+        <p>Share of input-side tokens read from cache per period. High values mean long agent sessions reusing context.</p>
+{{#cacheReuse}}
+        <svg class="chart" viewBox="0 0 {{width}} {{height}}" role="img" aria-labelledby="cache-heading">
+{{#yTicks}}
+          <line class="chart-grid-line" x1="{{x1}}" y1="{{y}}" x2="{{x2}}" y2="{{y}}"/>
+          <text class="chart-axis" x="{{labelX}}" y="{{labelY}}" text-anchor="end">{{label}}</text>
+{{/yTicks}}
+{{#lines}}
+          <path class="{{lineClass}}" d="{{path}}"><title>{{label}}</title></path>
+{{/lines}}
+{{#xLabels}}
+          <text class="chart-axis" x="{{x}}" y="{{y}}" text-anchor="middle">{{label}}</text>
+{{/xLabels}}
+        </svg>
+        <ul class="chart-legend">
+{{#lines}}
+          <li><span class="swatch swatch-line {{lineClass}}" aria-hidden="true"></span>{{label}}</li>
+{{/lines}}
+        </ul>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+        </dl>
+{{/cacheReuse}}
+        <p class="chart-note">Gaps are periods without usage.</p>
+      </article>
+    </div>
+{{#sessions}}
+    <section class="session-insights" aria-labelledby="sessions-heading">
+      <h2 id="sessions-heading" class="legacy-heading">Sessions</h2>
+{{#warning}}
+      <aside class="warning" role="note"><strong>Session data incomplete</strong> {{coverage}}</aside>
+{{/warning}}
+{{^warning}}
+      <p class="coverage">{{coverage}}</p>
+{{/warning}}
+      <dl class="chart-stats">
+{{#stats}}
+        <div><dt>{{label}}</dt><dd data-session-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+      </dl>
+      <div class="chart-grid">
+      <article class="chart-card" aria-labelledby="session-sizes-heading">
+        <h2 id="session-sizes-heading">Session sizes</h2>
+        <p>Coding sessions grouped by cost. Left: share of sessions. Right: share of session cost.</p>
+{{#sizes}}
+        <div class="bar-list" role="table" aria-labelledby="session-sizes-heading">
+          <div class="bar-list-head" role="row">{{#headings}}<span role="columnheader">{{.}}</span>{{/headings}}</div>
+{{#rows}}
+          <div class="bar-list-row" role="row" data-usd="{{usd}}"><span role="cell">{{label}}</span><span role="cell"><svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bar-track" width="100" height="8"/><rect class="bar-fill" width="{{firstWidth}}" height="8"/></svg><small>{{firstValue}}</small></span>{{#second}}<span role="cell"><svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bar-track" width="100" height="8"/><rect class="bar-fill" width="{{width}}" height="8"/></svg><small>{{value}}</small></span>{{/second}}</div>
+{{/rows}}
+        </div>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+        </dl>
+{{/sizes}}
+        <p class="chart-note">Sessions count on the day of their last activity.</p>
+      </article>
+      <article class="chart-card" aria-labelledby="session-concentration-heading">
+        <h2 id="session-concentration-heading">Session concentration</h2>
+        <p>Sort sessions from most to least expensive. Each point shows how much of the session cost the costliest x% cause.</p>
+{{#concentration}}
+        <svg class="chart" viewBox="0 0 {{width}} {{height}}" role="img" aria-labelledby="session-concentration-heading">
+{{#yTicks}}
+          <line class="chart-grid-line" x1="{{x1}}" y1="{{y}}" x2="{{x2}}" y2="{{y}}"/>
+          <text class="chart-axis" x="{{labelX}}" y="{{labelY}}" text-anchor="end">{{label}}</text>
+{{/yTicks}}
+{{#lines}}
+          <path class="{{lineClass}}" d="{{path}}"><title>{{label}}</title></path>
+{{/lines}}
+{{#xLabels}}
+          <text class="chart-axis" x="{{x}}" y="{{y}}" text-anchor="middle">{{label}}</text>
+{{/xLabels}}
+        </svg>
+        <ul class="chart-legend">
+{{#lines}}
+          <li><span class="swatch swatch-line {{lineClass}}" aria-hidden="true"></span>{{label}}</li>
+{{/lines}}
+        </ul>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+{{/stats}}
+        </dl>
+{{/concentration}}
+        <p class="chart-note">Most sessions are cheap; a few long ones dominate.</p>
+      </article>
+{{#rhythm}}
+        <article class="chart-card chart-card-wide" aria-labelledby="rhythm-hours-heading">
+          <h2 id="rhythm-hours-heading">When cost happens</h2>
+          <p>Session cost by weekday and hour of each session's last activity, in each person's own time zone. Darker means more cost.</p>
+          <div class="heatmap-wrap" tabindex="0">
+          <svg class="chart" viewBox="0 0 {{width}} {{height}}" role="img" aria-labelledby="rhythm-hours-heading">
+{{#cells}}
+            <rect class="heat-cell" x="{{x}}" y="{{y}}" width="{{width}}" height="{{height}}" fill-opacity="{{opacity}}"><title>{{title}}</title></rect>
+{{/cells}}
+{{#rowLabels}}
+            <text class="chart-axis" x="{{x}}" y="{{y}}">{{label}}</text>
+{{/rowLabels}}
+{{#columnLabels}}
+            <text class="chart-axis" x="{{x}}" y="{{y}}" text-anchor="middle">{{label}}</text>
+{{/columnLabels}}
+          </svg>
+          </div>
+          <dl class="chart-stats">
+  {{#stats}}
+            <div><dt>{{label}}</dt><dd data-usd="{{usd}}">{{value}}</dd></div>
+  {{/stats}}
+          </dl>
+          <p class="chart-note">Long sessions place all their cost in their final hour.</p>
+        </article>
+{{/rhythm}}
+      </div>
+    </section>
+{{/sessions}}
+{{/insights}}
     <h2 class="legacy-heading">All reported dates · older views</h2>
     <div class="narrative">
       <section class="viz-section viz-hero" aria-labelledby="trend-heading">

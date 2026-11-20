@@ -70,13 +70,36 @@ final class UsageFixture implements AutoCloseable {
         + "}";
   }
 
+  /// A session report row counted on the day of `lastActivity`.
+  static String session(String id, String cost, String lastActivity) {
+    return "{\"period\":\""
+        + id
+        + "\",\"agent\":\"claude\",\"inputTokens\":1,\"outputTokens\":1,"
+        + "\"cacheCreationTokens\":0,\"cacheReadTokens\":0,\"totalTokens\":2,\"totalCost\":"
+        + cost
+        + ",\"metadata\":{\"lastActivity\":\""
+        + lastActivity
+        + "\"}}";
+  }
+
   void upload(String... dailyRows) throws Exception {
+    upload(List.of(dailyRows), List.of());
+  }
+
+  /// Uploads daily rows and, when present, session rows in one full report.
+  void upload(List<String> dailyRows, List<String> sessionRows) throws Exception {
     String body =
         "{\"trackerVersion\":\"1\",\"ccusageVersion\":\"20.0.17\",\"clientTimeZone\":\"UTC\","
             + "\"full\":true,\"generatedAt\":\"2026-07-14T23:00:00Z\",\"reports\":{"
             + "\"daily\":{\"ok\":true,\"json\":{\"daily\":["
             + String.join(",", dailyRows)
-            + "]}}}}";
+            + "]}}"
+            + (sessionRows.isEmpty()
+                ? ""
+                : ",\"session\":{\"ok\":true,\"json\":{\"session\":["
+                    + String.join(",", sessionRows)
+                    + "]}}")
+            + "}}";
     var request =
         HttpRequest.newBuilder(base.resolve("/api/usage"))
             .timeout(TIMEOUT)

@@ -1342,6 +1342,131 @@ button.button-danger:hover {
   text-transform: uppercase;
 }
 
+path.chart-line {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+path.chart-line.series-1 {
+  stroke: var(--series-1);
+}
+path.chart-line.series-2 {
+  stroke: var(--series-2);
+}
+path.chart-line.series-3 {
+  stroke: var(--series-3);
+}
+path.chart-line.series-4 {
+  stroke: var(--series-4);
+}
+path.chart-line.series-5 {
+  stroke: var(--series-5);
+}
+path.chart-line.series-6 {
+  stroke: var(--series-6);
+}
+
+.chart-reference {
+  fill: none;
+  stroke: var(--muted);
+  stroke-dasharray: 5 4;
+  stroke-width: 1.5;
+}
+
+.swatch-line.chart-line {
+  border-top-color: var(--series-1);
+}
+
+.swatch-line.series-4 {
+  border-top-color: var(--series-4);
+}
+
+.swatch-line.chart-reference {
+  border-top: 2px dashed var(--muted);
+}
+
+.heat-cell {
+  fill: var(--series-1);
+}
+
+.heatmap-wrap {
+  overflow-x: auto;
+}
+
+.heatmap-wrap .chart {
+  min-width: 40rem;
+}
+
+.bar-list {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-list-head,
+.bar-list-row {
+  display: grid;
+  grid-template-columns:
+    minmax(6rem, 1.1fr) repeat(auto-fit, minmax(5rem, 1fr));
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.bar-list-head {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.bar-list-row > span:not(:first-child) {
+  display: grid;
+  grid-template-columns: minmax(2rem, 1fr) 3.6rem;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.bar-list-row small {
+  text-align: right;
+}
+
+.bar-list-row .bar {
+  min-width: 2rem;
+}
+
+.people-table .spark {
+  display: block;
+  width: 7.5rem;
+  height: 1.5rem;
+}
+
+.people-table th[scope="row"] {
+  text-align: left;
+}
+
+.stacked-rows {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.stacked-row {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.stacked-row svg {
+  display: block;
+  width: 100%;
+  height: 1.25rem;
+}
+
+.session-insights .coverage {
+  color: var(--muted);
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: var(--theme-ink);

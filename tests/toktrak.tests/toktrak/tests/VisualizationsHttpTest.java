@@ -419,14 +419,21 @@ final class VisualizationsHttpTest {
 
   private static List<String> legend(String html) {
     return LEGEND
-        .matcher(html)
+        .matcher(rangeCharts(html))
         .results()
         .map(match -> match.group(1) + "=" + match.group(2))
         .toList();
   }
 
   private static List<String> ticks(String html) {
-    return TICK.matcher(html).results().map(match -> match.group(1)).toList();
+    return TICK.matcher(rangeCharts(html)).results().map(match -> match.group(1)).toList();
+  }
+
+  /// The range charts above the insight cards, which carry their own legends and axes.
+  private static String rangeCharts(String html) {
+    int insights = html.indexOf("aria-labelledby=\"cumulative-heading\"");
+    assertTrue(insights >= 0, "insight cards missing\n" + html);
+    return html.substring(0, insights);
   }
 
   private static String rangeDays(String html) {

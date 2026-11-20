@@ -687,7 +687,8 @@ public final class Router implements HttpHandler {
             session.user().displayName(),
             DashboardFactory.create(projection, health, effective, clock.instant()),
             UsageChartsFactory.create(
-                daily, range, today, effective, projection.fxRate().orElse(null)));
+                daily, range, today, effective, projection.fxRate().orElse(null)),
+            insights(daily, range, today, effective));
     HttpSupport.encodedHtml(
         exchange,
         200,
@@ -729,6 +730,28 @@ public final class Router implements HttpHandler {
             "changes.mustache",
             "ChangesView",
             "ChangesViewRenderer"));
+  }
+
+  private UsageInsights insights(
+      List<toktrak.usage.UsageProjection.Row> daily,
+      UsageRange range,
+      LocalDate today,
+      DashboardCurrency currency) {
+    var users = new HashMap<UserKey, toktrak.projection.Projection.User>();
+    for (var user : projection.users()) users.put(user.key(), user);
+    var zones = new HashMap<UserKey, java.time.ZoneId>();
+    for (var ingestion : projection.ingestion()) {
+      zones.put(ingestion.owner(), UsageInsightsFactory.zone(ingestion.clientTimeZone()));
+    }
+    return UsageInsightsFactory.create(
+        daily,
+        projection.usageRows(Report.SESSION),
+        users,
+        zones,
+        range,
+        today,
+        currency,
+        projection.fxRate().orElse(null));
   }
 
   private DashboardCurrency dashboardCurrency(HttpExchange exchange, String path)

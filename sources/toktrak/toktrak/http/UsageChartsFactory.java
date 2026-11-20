@@ -43,7 +43,7 @@ final class UsageChartsFactory {
   private static final int X_LABELS_MAX = 8;
   private static final int Y_TICKS = 4;
   private static final int AVERAGE_DAYS = 7;
-  private static final String NOT_REPORTED = "Not reported";
+  static final String NOT_REPORTED = "Not reported";
   private static final BigDecimal ROUNDING_SLACK = new BigDecimal("0.000001");
   private static final String OTHER_TOOLS = "Other tools";
   private static final double WIDTH = 960;
@@ -91,6 +91,10 @@ final class UsageChartsFactory {
         case WEEK -> start.plusWeeks(1);
         case MONTH -> start.plusMonths(1);
       };
+    }
+
+    String noun() {
+      return noun;
     }
 
     String label(LocalDate start) {
@@ -176,6 +180,24 @@ final class UsageChartsFactory {
         }
       }
     }
+    String fallback = null;
+    if (row.data().get("metadata") instanceof Map<?, ?> metadata
+        && metadata.get("agents") instanceof List<?> names
+        && names.size() == 1
+        && names.getFirst() instanceof String name
+        && !name.isBlank()
+        && name.length() <= AGENT_NAME_CHARACTERS_MAX) {
+      fallback = name;
+    }
+    return attribute(reported, rowCost, fallback);
+  }
+
+  /// Splits `rowCost` across reported parts so the result always sums exactly to `rowCost`. Parts
+  /// within {@code ROUNDING_SLACK} of the row total absorb rounding noise; parts that disagree more
+  /// are ignored in favour of `fallback` (when named) or Not reported.
+  static Map<String, BigDecimal> attribute(
+      Map<String, BigDecimal> reported, BigDecimal rowCost, String fallback) {
+    assert rowCost.signum() >= 0;
     BigDecimal reportedTotal = reported.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
     var result = new LinkedHashMap<String, BigDecimal>();
     BigDecimal attributed = BigDecimal.ZERO;
@@ -187,15 +209,8 @@ final class UsageChartsFactory {
         attributed = attributed.add(cost);
       }
     }
-    if (result.isEmpty()
-        && row.data().get("metadata") instanceof Map<?, ?> metadata
-        && metadata.get("agents") instanceof List<?> names
-        && names.size() == 1
-        && names.getFirst() instanceof String name
-        && !name.isBlank()
-        && name.length() <= AGENT_NAME_CHARACTERS_MAX
-        && rowCost.signum() > 0) {
-      result.put(name, rowCost);
+    if (result.isEmpty() && fallback != null && rowCost.signum() > 0) {
+      result.put(fallback, rowCost);
       attributed = rowCost;
     }
     BigDecimal unattributed = rowCost.subtract(attributed);
@@ -235,7 +250,7 @@ final class UsageChartsFactory {
     return "series-" + (index + 1);
   }
 
-  private static long elapsedDays(UsageRange range, LocalDate today) {
+  static long elapsedDays(UsageRange range, LocalDate today) {
     LocalDate end = range.to().isAfter(today) ? today : range.to();
     return end.isBefore(range.from()) ? 0 : ChronoUnit.DAYS.between(range.from(), end) + 1;
   }
@@ -301,17 +316,17 @@ final class UsageChartsFactory {
         money("Typical person-day", typical, currency, rate));
   }
 
-  private static Kpi money(String label, BigDecimal usd, DashboardCurrency currency, FxRate rate) {
+  static Kpi money(String label, BigDecimal usd, DashboardCurrency currency, FxRate rate) {
     return new Kpi(label, DashboardFactory.money(usd, currency, rate), exact(usd));
   }
 
   /// Exact canonical USD for consistency checks; displayed values are rounded and converted.
-  private static String exact(BigDecimal usd) {
+  static String exact(BigDecimal usd) {
     assert usd.signum() >= 0;
     return usd.stripTrailingZeros().toPlainString();
   }
 
-  private static BigDecimal median(List<BigDecimal> sorted) {
+  static BigDecimal median(List<BigDecimal> sorted) {
     assert !sorted.isEmpty();
     int middle = sorted.size() / 2;
     return sorted.size() % 2 == 1
@@ -487,7 +502,7 @@ final class UsageChartsFactory {
         rows);
   }
 
-  private static String bucketPeriod(Bucket bucket, LocalDate start, UsageRange range) {
+  static String bucketPeriod(Bucket bucket, LocalDate start, UsageRange range) {
     return switch (bucket) {
       case DAY -> FULL_DAY_LABEL.format(start);
       case WEEK -> {
@@ -499,7 +514,7 @@ final class UsageChartsFactory {
     };
   }
 
-  private static double ratio(BigDecimal value, BigDecimal maximum) {
+  static double ratio(BigDecimal value, BigDecimal maximum) {
     return maximum.signum() == 0 ? 0 : value.divide(maximum, 8, RoundingMode.HALF_UP).doubleValue();
   }
 
@@ -514,7 +529,7 @@ final class UsageChartsFactory {
     throw new AssertionError("nice ceiling not found");
   }
 
-  private static String compactMoney(BigDecimal usd, DashboardCurrency currency, FxRate rate) {
+  static String compactMoney(BigDecimal usd, DashboardCurrency currency, FxRate rate) {
     BigDecimal value =
         currency == DashboardCurrency.EUR
             ? usd.multiply(Objects.requireNonNull(rate).eurPerUsd())
@@ -533,7 +548,7 @@ final class UsageChartsFactory {
             .toPlainString();
   }
 
-  private static String number(double value) {
+  static String number(double value) {
     assert Double.isFinite(value);
     return BigDecimal.valueOf(value)
         .setScale(1, RoundingMode.HALF_UP)

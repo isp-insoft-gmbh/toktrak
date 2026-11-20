@@ -9,11 +9,13 @@ record VisualizationsView(
     long revision,
     String signedInName,
     DashboardSnapshot dashboard,
-    UsageCharts charts) {
+    UsageCharts charts,
+    UsageInsights insights) {
   VisualizationsView {
     Objects.requireNonNull(base, "base");
     Objects.requireNonNull(signedInName, "signedInName");
     Objects.requireNonNull(dashboard, "dashboard");
     Objects.requireNonNull(charts, "charts");
+    Objects.requireNonNull(insights, "insights");
   }
 }

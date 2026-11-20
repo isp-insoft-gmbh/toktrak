@@ -2,6 +2,7 @@ package toktrak.tests;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static toktrak.tests.UsageFixture.daily;
+import static toktrak.tests.UsageFixture.session;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -19,8 +20,10 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/// Every figure on the visualizations page must reconcile with every other figure, for any range.
-/// The checks compare exact canonical USD values (`data-usd`) and the rounding of each display.
+/// Every money figure on the visualizations page must reconcile, for any range. Daily-based figures
+/// reconcile exactly with the range total; session figures with the session total, and the coverage
+/// note states their ratio. Every displayed money stat must equal its exact canonical USD value
+/// (`data-usd` or `data-session-usd`) rounded half-up to cents.
 final class VisualizationsConsistencyTest {
   private static final Pattern KPI =
       Pattern.compile("<dt>([^<]+)</dt><dd data-usd=\"([^\"]*)\">([^<]+)</dd>");
@@ -34,9 +37,26 @@ final class VisualizationsConsistencyTest {
       Pattern.compile(
           "<rect class=\"series-\\d\"[^>]* data-usd=\"([^\"]+)\"><title>[^<]+ · ([^<]+)</title>");
   private static final Pattern DAYS = Pattern.compile("(\\d+) of (\\d+)");
-  private static final int RANDOM_RANGES = 120;
-  private static final int RANDOM_SPLITS = 80;
+  private static final Pattern BAR_ROW =
+      Pattern.compile("<div class=\"bar-list-row\" role=\"row\" data-usd=\"([^\"]+)\">");
+  private static final Pattern PERSON_TOTAL =
+      Pattern.compile("<td data-usd=\"([^\"]+)\">([^<]+)</td>");
+  private static final Pattern STACKED_ROW =
+      Pattern.compile("<div class=\"stacked-row\" data-usd=\"([^\"]+)\">(.*?)</div>");
+  private static final Pattern SEGMENT =
+      Pattern.compile("<rect class=\"series-\\d\"[^>]* data-usd=\"([^\"]+)\">");
+  private static final Pattern MODEL = Pattern.compile("<li data-model-usd=\"([^\"]+)\">");
+  private static final Pattern SESSION_KPI =
+      Pattern.compile("<dt>([^<]+)</dt><dd data-session-usd=\"([^\"]*)\">([^<]+)</dd>");
+  private static final String INSIGHTS = "aria-labelledby=\"cumulative-heading\"";
+  // Bounded so each test stays well inside the per-test timeout, including under PIT.
+  private static final int RANDOM_RANGES = 30;
+  private static final int RANDOM_SPLITS = 20;
   private static final int RANDOM_ROWS = 160;
+  private static final int RANDOM_SESSIONS = 60;
+  private static final String[] MODELS = {
+    "claude-opus-4-8", "gpt-5.5", "[pi] gpt-5.5", "gemini-3", "glm-5", "kimi-k3", "Other models"
+  };
 
   @TempDir java.nio.file.Path directory;
 
@@ -67,8 +87,20 @@ final class VisualizationsConsistencyTest {
           LocalDate date = LocalDate.parse("2025-11-01").plusDays(random.nextInt(250));
           rows.put(date, randomRow(random, date));
         }
+        var sessions = new ArrayList<String>();
+        for (int row = 0; row < RANDOM_SESSIONS; row++) {
+          sessions.add(
+              session(
+                  "s-" + upload + "-" + row,
+                  BigDecimal.valueOf(random.nextLong(3_000_000_000_000L), 10).toPlainString(),
+                  LocalDate.parse("2025-11-01")
+                          .plusDays(random.nextInt(250))
+                          .atTime(random.nextInt(24), random.nextInt(60))
+                          .toString()
+                      + ":00Z"));
+        }
         // Later uploads overwrite earlier rows for the same day; every view must follow.
-        usage.upload(rows.values().toArray(String[]::new));
+        usage.upload(List.copyOf(rows.values()), sessions);
       }
       checkRanges(usage, LocalDate.parse("2025-10-01"), LocalDate.parse("2026-08-31"), 11);
     }
@@ -78,19 +110,23 @@ final class VisualizationsConsistencyTest {
       throws Exception {
     var random = new Random(seed);
     long span = ChronoUnit.DAYS.between(first, last);
+    var months = new java.util.HashMap<YearMonth, BigDecimal>();
 
     for (YearMonth month = YearMonth.from(first);
         !month.isAfter(YearMonth.from(last));
         month = month.plusMonths(1)) {
-      check(usage, "range=month&month=" + month);
+      months.put(month, check(usage, "range=month&month=" + month).total());
     }
     for (int year = first.getYear(); year <= last.getYear(); year++) {
       Page whole = check(usage, "range=year&year=" + year);
-      BigDecimal months = BigDecimal.ZERO;
+      BigDecimal monthSum = BigDecimal.ZERO;
       for (int month = 1; month <= 12; month++) {
-        months = months.add(check(usage, "range=month&month=" + YearMonth.of(year, month)).total());
+        YearMonth key = YearMonth.of(year, month);
+        BigDecimal monthTotal = months.get(key);
+        if (monthTotal == null) monthTotal = check(usage, "range=month&month=" + key).total();
+        monthSum = monthSum.add(monthTotal);
       }
-      assertEquals(0, whole.total().compareTo(months), "months of " + year + " != year");
+      assertEquals(0, whole.total().compareTo(monthSum), "months of " + year + " != year");
     }
     check(usage, "range=all");
 
@@ -114,7 +150,9 @@ final class VisualizationsConsistencyTest {
 
   /// Checks one range in isolation and returns its figures.
   private static Page check(UsageFixture usage, String query) throws Exception {
-    Page page = Page.of(usage.visualizations(query));
+    String html = usage.visualizations(query);
+    Page page = Page.of(html);
+    checkInsights(html, page.total(), query);
     assertEquals(0, page.total().compareTo(sum(page.legend())), query + ": tools != total");
     assertEquals(0, page.total().compareTo(sum(page.rows())), query + ": periods != total");
     assertEquals(0, page.total().compareTo(sum(page.columns())), query + ": bars != total");
@@ -129,6 +167,120 @@ final class VisualizationsConsistencyTest {
     return page;
   }
 
+  /// Daily-based insight cards reconcile exactly with the range total; session cards with the
+  /// session total. Daily against session is only a coverage note.
+  private static void checkInsights(String html, BigDecimal total, String query) {
+    String compact = html.replaceAll(">\\s+<", "><");
+    String cumulative = section(compact, "cumulative-heading", "people-active-heading");
+    assertEquals(0, total.compareTo(kpi(cumulative, "Total")), query + ": cumulative");
+
+    String sizes = section(compact, "sizes-heading", "concentration-heading");
+    assertEquals(0, total.compareTo(sum(exact(BAR_ROW, sizes))), query + ": person-day bins");
+    assertEquals(0, total.compareTo(kpi(sizes, "Total")), query + ": person-day total");
+
+    String people = section(compact, "per-person-heading", "model-mix-heading");
+    var personTotals = new ArrayList<BigDecimal>();
+    Matcher person = PERSON_TOTAL.matcher(people);
+    while (person.find()) personTotals.add(money(person.group(1), person.group(2), "person"));
+    assertEquals(0, total.compareTo(sum(personTotals)), query + ": people");
+    assertEquals(0, total.compareTo(kpi(people, "Total")), query + ": people total");
+
+    String mix = section(compact, "model-mix-heading", "token-price-heading");
+    assertEquals(0, total.compareTo(sum(exact(MODEL, mix))), query + ": model legend");
+    var periods = new ArrayList<BigDecimal>();
+    Matcher period = STACKED_ROW.matcher(mix);
+    while (period.find()) {
+      BigDecimal periodTotal = new BigDecimal(period.group(1));
+      assertEquals(
+          0, periodTotal.compareTo(sum(exact(SEGMENT, period.group(2)))), query + ": segments");
+      periods.add(periodTotal);
+    }
+    assertEquals(0, total.compareTo(sum(periods)), query + ": model periods");
+    assertEquals(0, total.compareTo(kpi(mix, "Total")), query + ": model total");
+
+    String sessions = section(compact, "sessions-heading", null);
+    BigDecimal sessionTotal = null;
+    Matcher sessionKpi = SESSION_KPI.matcher(sessions);
+    while (sessionKpi.find()) {
+      if (sessionKpi.group(1).equals("Session total")) {
+        sessionTotal = money(sessionKpi.group(2), sessionKpi.group(3), "Session total");
+      }
+    }
+    assertNotNull(sessionTotal, query + ": session total");
+    String sessionSizes =
+        section(compact, "session-sizes-heading", "session-concentration-heading");
+    assertEquals(
+        0, sessionTotal.compareTo(sum(exact(BAR_ROW, sessionSizes))), query + ": session bins");
+    assertEquals(0, sessionTotal.compareTo(kpi(sessionSizes, "Total")), query + ": session sizes");
+    checkCoverage(sessions, total, sessionTotal, query);
+
+    String insights = compact.substring(compact.indexOf(INSIGHTS));
+    Matcher stat = KPI.matcher(insights);
+    while (stat.find()) {
+      if (!stat.group(2).isEmpty())
+        money(stat.group(2), stat.group(3), query + ": " + stat.group(1));
+    }
+    Matcher sessionStat = SESSION_KPI.matcher(insights);
+    while (sessionStat.find()) {
+      if (!sessionStat.group(2).isEmpty()) {
+        money(sessionStat.group(2), sessionStat.group(3), query + ": " + sessionStat.group(1));
+      }
+    }
+  }
+
+  /// The only place daily and session totals meet: a note with their ratio, warning beyond 2%.
+  private static void checkCoverage(
+      String sessions, BigDecimal total, BigDecimal sessionTotal, String query) {
+    boolean warned = sessions.contains("<strong>Session data incomplete</strong>");
+    if (total.signum() == 0) {
+      assertTrue(sessions.contains("No daily usage in this range"), query);
+      assertEquals(sessionTotal.signum() != 0, warned, query + ": coverage level");
+      return;
+    }
+    BigDecimal share =
+        sessionTotal.multiply(BigDecimal.valueOf(100)).divide(total, 1, RoundingMode.HALF_UP);
+    assertTrue(
+        sessions.contains(
+            "Sessions add up to "
+                + shown(sessionTotal)
+                + " of "
+                + shown(total)
+                + " daily cost ("
+                + share.toPlainString()
+                + "%)"),
+        query + ": coverage note\n" + sessions);
+    assertEquals(
+        share.subtract(BigDecimal.valueOf(100)).abs().compareTo(BigDecimal.valueOf(2)) > 0,
+        warned,
+        query + ": coverage level " + share);
+  }
+
+  private static String shown(BigDecimal usd) {
+    var format = new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.US));
+    format.setRoundingMode(RoundingMode.HALF_UP);
+    return "$" + format.format(usd);
+  }
+
+  private static String section(String html, String fromId, String toId) {
+    int from = html.indexOf("id=\"" + fromId + "\"");
+    int to = toId == null ? html.length() : html.indexOf("id=\"" + toId + "\"", from);
+    assertTrue(from >= 0 && to > from, fromId + "\n" + html);
+    return html.substring(from, to);
+  }
+
+  /// The exact value of one labelled stat, after checking its displayed rounding.
+  private static BigDecimal kpi(String html, String label) {
+    Matcher kpi = KPI.matcher(html);
+    while (kpi.find()) {
+      if (kpi.group(1).equals(label)) return money(kpi.group(2), kpi.group(3), label);
+    }
+    throw new AssertionError("missing stat " + label + "\n" + html);
+  }
+
+  private static List<BigDecimal> exact(Pattern pattern, String html) {
+    return pattern.matcher(html).results().map(match -> new BigDecimal(match.group(1))).toList();
+  }
+
   private static String custom(LocalDate from, LocalDate to) {
     return "range=custom&from=" + from + "&to=" + to;
   }
@@ -137,36 +289,74 @@ final class VisualizationsConsistencyTest {
     BigDecimal cost =
         BigDecimal.valueOf(random.nextLong(5_000_000_000_000L), 10 + random.nextInt(4));
     String[] tools = {"claude", "codex", "pi", "opencode"};
-    return switch (random.nextInt(5)) {
-      // No tool costs, one named tool.
-      case 0 ->
-          daily(date.toString(), cost.toPlainString(), "", "\"" + tools[random.nextInt(4)] + "\"");
-      // Tool costs that disagree materially with the row.
-      case 1 ->
-          daily(
-              date.toString(),
-              cost.toPlainString(),
-              agent(tools[random.nextInt(4)], cost.add(BigDecimal.ONE)),
-              "");
-      default -> {
-        int count = 1 + random.nextInt(3);
-        var agents = new ArrayList<String>();
-        BigDecimal remaining = cost;
-        for (int index = 0; index < count; index++) {
-          BigDecimal part =
-              index == count - 1
-                  ? remaining
-                  : remaining.multiply(BigDecimal.valueOf(random.nextInt(100), 2));
-          remaining = remaining.subtract(part);
-          agents.add(agent(tools[index], part));
-        }
-        // Float-style noise within the rounding slack on some rows.
-        if (random.nextBoolean()) {
-          agents.add(agent("pi", new BigDecimal("0.000000000000001")));
-        }
-        yield daily(date.toString(), cost.toPlainString(), String.join(",", agents), "");
-      }
-    };
+    return withModels(
+        random,
+        cost,
+        switch (random.nextInt(5)) {
+          // No tool costs, one named tool.
+          case 0 ->
+              daily(
+                  date.toString(),
+                  cost.toPlainString(),
+                  "",
+                  "\"" + tools[random.nextInt(4)] + "\"");
+          // Tool costs that disagree materially with the row.
+          case 1 ->
+              daily(
+                  date.toString(),
+                  cost.toPlainString(),
+                  agent(tools[random.nextInt(4)], cost.add(BigDecimal.ONE)),
+                  "");
+          default -> {
+            int count = 1 + random.nextInt(3);
+            var agents = new ArrayList<String>();
+            BigDecimal remaining = cost;
+            for (int index = 0; index < count; index++) {
+              BigDecimal part =
+                  index == count - 1
+                      ? remaining
+                      : remaining.multiply(BigDecimal.valueOf(random.nextInt(100), 2));
+              remaining = remaining.subtract(part);
+              agents.add(agent(tools[index], part));
+            }
+            // Float-style noise within the rounding slack on some rows.
+            if (random.nextBoolean()) {
+              agents.add(agent("pi", new BigDecimal("0.000000000000001")));
+            }
+            yield daily(date.toString(), cost.toPlainString(), String.join(",", agents), "");
+          }
+        });
+  }
+
+  /// Adds model costs that usually split the row exactly, sometimes overshoot it, and may use a
+  /// model literally named like the model-mix remainder group.
+  private static String withModels(Random random, BigDecimal cost, String row) {
+    int count = random.nextInt(5);
+    if (count == 0) return row;
+    var models = new ArrayList<String>();
+    BigDecimal remaining = cost;
+    for (int index = 0; index < count; index++) {
+      BigDecimal part =
+          index == count - 1
+              ? remaining
+              : remaining.multiply(BigDecimal.valueOf(random.nextInt(100), 2));
+      remaining = remaining.subtract(part);
+      models.add(model(MODELS[random.nextInt(MODELS.length)], part));
+    }
+    if (random.nextInt(6) == 0) models.add(model(MODELS[0], BigDecimal.ONE));
+    return row.substring(0, row.length() - 1)
+        + ",\"modelBreakdowns\":["
+        + String.join(",", models)
+        + "]}";
+  }
+
+  private static String model(String name, BigDecimal cost) {
+    return "{\"modelName\":\""
+        + name
+        + "\",\"cost\":"
+        + cost.toPlainString()
+        + ",\"inputTokens\":1,\"outputTokens\":1,\"cacheCreationTokens\":0,"
+        + "\"cacheReadTokens\":3}";
   }
 
   private static String agent(String name, BigDecimal cost) {
@@ -205,7 +395,9 @@ final class VisualizationsConsistencyTest {
       List<BigDecimal> rows,
       List<BigDecimal> columns) {
     static Page of(String html) {
-      String compact = html.replaceAll(">\\s+<", "><");
+      int insights = html.indexOf(INSIGHTS);
+      assertTrue(insights >= 0, "insight cards missing\n" + html);
+      String compact = html.substring(0, insights).replaceAll(">\\s+<", "><");
       BigDecimal total = null;
       BigDecimal perDay = null;
       BigDecimal statTotal = null;
