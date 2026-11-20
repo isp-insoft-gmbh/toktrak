@@ -580,7 +580,8 @@ public final class Build {
     assert arguments != null;
     if (arguments.equals(List.of("--help"))) {
       System.out.println(
-          "usage: mise run pit [PIT options...] [-- production source files/directories...]");
+          "usage: mise run pit [--history|--no-history] [PIT options...] [-- production source"
+              + " files/directories...]; history is on by default");
       return;
     }
     PitSelection selection = pitSelection(arguments);
@@ -614,9 +615,37 @@ public final class Build {
                       classpath,
                       PIT_MAIN));
           launchArguments.addAll(pitArguments(selection, staging));
-          runArgFile(javaExecutable(), "pit", launchArguments, PROCESS_TIMEOUT, false);
+          explainingPitTimeout(
+                  PROCESS_TIMEOUT,
+                  _ -> runArgFile(javaExecutable(), "pit", launchArguments, PROCESS_TIMEOUT, false))
+              .build(staging);
           validatePitReport(staging, selection.dryRun());
         });
+  }
+
+  /// Replaces a bare process timeout with what it means for PIT and how to recover.
+  static ArtifactBuilder explainingPitTimeout(Duration timeout, ArtifactBuilder builder) {
+    assert timeout != null;
+    assert builder != null;
+    return staging -> {
+      try {
+        builder.build(staging);
+      } catch (ProcessTimeoutException exception) {
+        throw new IllegalStateException(pitTimeoutMessage(timeout), exception);
+      }
+    };
+  }
+
+  /// PIT rewrites the history file while it runs: a stopped run may keep the mutants it finished,
+  /// but a run on a different selection replaces the history of the previous one.
+  static String pitTimeoutMessage(Duration timeout) {
+    assert timeout != null;
+    return "PIT exceeded "
+        + timeout
+        + " and was stopped, so it wrote no report. output/pit.history may keep the mutants"
+        + " finished before the stop, and rerunning the same selection skips them. If reruns"
+        + " still cannot finish, select fewer production source paths or give the covered code"
+        + " fast unit tests so mutants die without starting servers.";
   }
 
   private static String mutationFingerprint(PitSelection selection) throws Exception {
@@ -707,7 +736,8 @@ public final class Build {
     var forwarded = new ArrayList<String>();
     var sources = new ArrayList<String>();
     boolean sourceSection = false;
-    boolean history = false;
+    boolean historyRequested = false;
+    boolean historyDisabled = false;
     for (String argument : arguments) {
       if (argument.equals("--")) {
         if (sourceSection) throw new IllegalStateException("duplicate PIT source separator");
@@ -719,8 +749,11 @@ public final class Build {
         }
         sources.add(argument);
       } else if (argument.equals("--history")) {
-        if (history) throw new IllegalStateException("duplicate --history");
-        history = true;
+        if (historyRequested) throw new IllegalStateException("duplicate --history");
+        historyRequested = true;
+      } else if (argument.equals("--no-history")) {
+        if (historyDisabled) throw new IllegalStateException("duplicate --no-history");
+        historyDisabled = true;
       } else {
         String option =
             argument.contains("=") ? argument.substring(0, argument.indexOf('=')) : argument;
@@ -733,6 +766,11 @@ public final class Build {
     if (sourceSection && sources.isEmpty()) {
       throw new IllegalStateException("no mutable production source files selected");
     }
+    if (historyRequested && historyDisabled) {
+      throw new IllegalStateException("--history conflicts with --no-history");
+    }
+    // History is on by default: forgetting it silently repeats every earlier mutant.
+    boolean history = !historyDisabled;
     boolean dryRun = dryRun(forwarded);
     boolean pitHelp = forwarded.contains("-h") || forwarded.contains("-?");
     List<String> targets =
@@ -828,7 +866,8 @@ public final class Build {
                 PIT_JVM_ARGS,
                 "--failWhenNoMutations",
                 "true"));
-    if (selection.history()) {
+    // Dry runs and help analyse nothing, so they must not rewrite the history.
+    if (selection.history() && !selection.dryRun() && !selection.pitHelp()) {
       arguments.add("--historyInputLocation");
       arguments.add(PIT_HISTORY.toString());
       arguments.add("--historyOutputLocation");
@@ -5126,7 +5165,16 @@ public final class Build {
     } else {
       terminate(process, killTimeout);
     }
-    throw new IllegalStateException("process timed out after " + timeout);
+    throw new ProcessTimeoutException(timeout);
+  }
+
+  /// A child process exceeded its time limit and was terminated.
+  static final class ProcessTimeoutException extends IllegalStateException {
+    private static final long serialVersionUID = 1L;
+
+    ProcessTimeoutException(Duration timeout) {
+      super("process timed out after " + timeout);
+    }
   }
 
   private static void terminate(Process process, Duration killTimeout) throws InterruptedException {

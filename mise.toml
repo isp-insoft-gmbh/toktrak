@@ -84,7 +84,7 @@ description = "Run JaCoCo tests, generate reports, and enforce floors (also in c
 run = "java -ea tools/Build.java coverage"
 
 [tasks.pit]
-description = "Run PIT options directly; use --history while iterating; source filters follow --"
+description = "Run PIT on production paths after --; reuses output/pit.history unless --no-history"
 raw_args = true
 run = "java -ea tools/Build.java pit"
 

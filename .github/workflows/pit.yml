@@ -30,7 +30,7 @@ jobs:
           key: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml', 'mise.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml', 'mise.lock') }}-
       - if: github.event_name == 'pull_request'
-        run: mise run pit
+        run: mise run pit --no-history
       - if: github.event_name != 'pull_request'
         run: mise run pit --history
       - if: github.event_name != 'pull_request'

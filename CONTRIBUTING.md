@@ -195,15 +195,15 @@ changes JStachio standalone-tag whitespace and rendered HTML snapshots.
 
 Additional gates:
 
-| Change                   | Run                                               |
-| ------------------------ | ------------------------------------------------- |
-| Unit tests               | `mise run pit --history -- [production paths...]` |
-| Coverage-sensitive code  | `mise run coverage`                               |
-| Tracker scheduler        | `mise run tracker-test`                           |
-| Runtime or packaging     | `mise run runtime-build`                          |
-| Performance evidence     | `mise run perf`                                   |
-| Container build/behavior | GitHub Actions production verification            |
-| Before pushing           | `mise run ci`                                     |
+| Change                   | Run                                     |
+| ------------------------ | --------------------------------------- |
+| Unit tests               | `mise run pit -- [production paths...]` |
+| Coverage-sensitive code  | `mise run coverage`                     |
+| Tracker scheduler        | `mise run tracker-test`                 |
+| Runtime or packaging     | `mise run runtime-build`                |
+| Performance evidence     | `mise run perf`                         |
+| Container build/behavior | GitHub Actions production verification  |
+| Before pushing           | `mise run ci`                           |
 
 The Linux scheduler test needs a running systemd user manager. When `systemctl
 --user` fails for any reason, it is skipped unless
