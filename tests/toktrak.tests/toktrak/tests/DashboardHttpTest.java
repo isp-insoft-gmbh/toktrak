@@ -118,11 +118,11 @@ final class DashboardHttpTest {
           new String[] {
             "Daily projected cost",
             "Where tokens go",
-            "Usage rhythm by UTC weekday",
+            "Usage by day of the week",
             "Model and harness mix",
             "Individual streams, shared context",
             "Costliest sessions",
-            "Recent coding blocks"
+            "Recent usage windows"
           }) {
         assertTrue(visualizations.body().contains(heading), heading);
       }

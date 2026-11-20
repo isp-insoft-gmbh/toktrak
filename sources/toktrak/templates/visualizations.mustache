@@ -44,7 +44,8 @@
 
       <section class="viz-section" aria-labelledby="rhythm-heading">
         <div>
-          <h2 id="rhythm-heading">Usage rhythm by UTC weekday</h2>
+          <h2 id="rhythm-heading">Usage by day of the week</h2>
+          <p>Adds up estimated cost and tokens across all reported dates and tools. Weekdays use the dates reported by each tracker. The longest bar marks the highest total cost.</p>
         </div>
         <div class="rhythm-grid" role="list">
 {{#dashboard.rhythm}}
@@ -117,11 +118,12 @@
 
       <section class="viz-section" aria-labelledby="blocks-heading">
         <div>
-          <h2 id="blocks-heading">Recent coding blocks</h2>
+          <h2 id="blocks-heading">Recent usage windows</h2>
+          <p>These five-hour windows come from ccusage. They show recorded usage, not time spent coding.</p>
         </div>
         <div class="table-wrap">
           <table>
-            <caption>Recent five-hour usage blocks</caption>
+            <caption>Up to 20 windows, newest first</caption>
             <thead><tr><th>Start UTC</th><th>Models</th><th>Cost</th><th>Tokens</th><th>Entries</th></tr></thead>
             <tbody>
 {{#dashboard.blocks}}
