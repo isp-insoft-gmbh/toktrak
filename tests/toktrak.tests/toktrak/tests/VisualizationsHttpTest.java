@@ -369,6 +369,45 @@ final class VisualizationsHttpTest {
     }
   }
 
+  @Test
+  void
+      given_modelCostsOfVeryDifferentSize_when_drawingMeters_then_scalesToLargestAndKeepsSmallVisible()
+          throws Exception {
+    try (var usage = new UsageFixture(directory.resolve("meters"))) {
+      usage.upload(
+          "{\"period\":\"2026-07-01\",\"agent\":\"all\",\"inputTokens\":1,\"outputTokens\":1,"
+              + "\"cacheCreationTokens\":0,\"cacheReadTokens\":0,\"totalTokens\":2,\"totalCost\":4.001,"
+              + "\"modelBreakdowns\":[{\"modelName\":\"large\",\"cost\":3},"
+              + "{\"modelName\":\"third\",\"cost\":1},{\"modelName\":\"tiny\",\"cost\":0.001},"
+              + "{\"modelName\":\"free\",\"cost\":0}]}");
+
+      String page = usage.visualizations(null);
+      assertEquals("100", meter(page, "large"));
+      assertEquals("33.3", meter(page, "third"));
+      assertEquals("1", meter(page, "tiny"));
+      assertEquals("0", meter(page, "free"));
+    }
+    try (var usage = new UsageFixture(directory.resolve("zero-meters"))) {
+      usage.upload(
+          "{\"period\":\"2026-07-01\",\"agent\":\"all\",\"inputTokens\":0,\"outputTokens\":0,"
+              + "\"cacheCreationTokens\":0,\"cacheReadTokens\":0,\"totalTokens\":0,\"totalCost\":0,"
+              + "\"modelBreakdowns\":[{\"modelName\":\"free\",\"cost\":0}]}");
+      assertEquals("0", meter(usage.visualizations(null), "free"));
+    }
+  }
+
+  private static String meter(String html, String label) {
+    var match =
+        Pattern.compile(
+                "<strong>"
+                    + Pattern.quote(label)
+                    + "</strong><svg class=\"bar\"[^>]*><rect class=\"bar-track\"[^>]*/>"
+                    + "<rect class=\"bar-fill\" width=\"([^\"]+)\"")
+            .matcher(html);
+    assertTrue(match.find(), html);
+    return match.group(1);
+  }
+
   private static String sixtyFiveAgents() {
     var agents = new StringBuilder();
     for (int index = 1; index <= 65; index++) {

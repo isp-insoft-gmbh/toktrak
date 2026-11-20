@@ -499,14 +499,15 @@ final class DashboardFactory {
     return new DecimalFormat("#,##0", DecimalFormatSymbols.getInstance(Locale.US)).format(value);
   }
 
-  /// Bar length as a percentage of the largest value, for an SVG meter's width attribute.
+  /// Bar length as a percentage of the largest value, for an SVG meter's width attribute. Any
+  /// non-zero value stays visible with at least one percent.
   private static String bar(BigDecimal value, BigDecimal maximum) {
-    if (maximum.signum() == 0) return "0";
-    BigDecimal percent =
-        value.multiply(BigDecimal.valueOf(100)).divide(maximum, 1, RoundingMode.HALF_UP);
-    return percent
-        .max(BigDecimal.ZERO)
-        .min(BigDecimal.valueOf(100))
+    assert value.signum() >= 0 && value.compareTo(maximum) <= 0;
+    if (value.signum() == 0) return "0";
+    return value
+        .multiply(BigDecimal.valueOf(100))
+        .divide(maximum, 1, RoundingMode.HALF_UP)
+        .max(BigDecimal.ONE)
         .stripTrailingZeros()
         .toPlainString();
   }

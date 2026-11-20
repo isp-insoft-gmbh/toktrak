@@ -96,7 +96,7 @@
         </div>
         <figure class="trend-chart">
           <svg class="chart-rule" viewBox="0 0 100 2" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 1H100"/></svg>
-          <figcaption class="sr-only">Daily cost trend shown as proportional text bars.</figcaption>
+          <figcaption class="sr-only">Daily cost trend shown as proportional bars.</figcaption>
 {{#dashboard.trends}}
           <div class="trend-row">
             <time datetime="{{date}}">{{humanReadableDate}}</time>
@@ -129,7 +129,7 @@
         </div>
         <div class="rhythm-grid" role="list">
 {{#dashboard.rhythm}}
-          <div role="listitem"><strong>{{label}}</strong><svg class="bar heat" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bar-track" width="100" height="8"/><rect class="bar-fill" width="{{bar}}" height="8"/></svg><span>{{value}}</span><small>{{detail}}</small></div>
+          <div role="listitem"><strong>{{label}}</strong><svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bar-track" width="100" height="8"/><rect class="bar-fill" width="{{bar}}" height="8"/></svg><span>{{value}}</span><small>{{detail}}</small></div>
 {{/dashboard.rhythm}}
         </div>
       </section>

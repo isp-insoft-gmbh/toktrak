@@ -611,7 +611,7 @@ h3 {
 }
 
 .trend-row strong,
-.metric-row > span:not(.bar) {
+.metric-row > span {
   text-align: right;
 }
 
@@ -1463,8 +1463,9 @@ button.button-danger:hover {
   }
 
   .trend-row,
-  .metric-row {
-    grid-template-columns: 6.5rem minmax(5rem, 1fr) auto;
+  .metric-row,
+  .compact .metric-row {
+    grid-template-columns: 6.5rem minmax(4rem, 1fr) 6.5rem;
   }
 
   .trend-row small,
@@ -1518,7 +1519,8 @@ button.button-danger:hover {
 
 @media (max-width: 20rem) {
   .trend-row,
-  .metric-row {
+  .metric-row,
+  .compact .metric-row {
     grid-template-columns: 1fr;
   }
 }
