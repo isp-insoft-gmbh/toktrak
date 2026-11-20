@@ -45,7 +45,7 @@
         <ol class="leaderboard">
 {{#dashboard.leaderboard}}
           <li>
-            <span class="person"><strong>{{name}}</strong><span class="bar" aria-hidden="true">{{bar}}</span></span>
+            <span class="person"><strong>{{name}}</strong><svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bar-track" width="100" height="8"/><rect class="bar-fill" width="{{bar}}" height="8"/></svg></span>
             <span class="values"><strong>{{cost}}</strong><small>{{tokens}} tokens</small></span>
           </li>
 {{/dashboard.leaderboard}}

@@ -86,7 +86,9 @@ final class DashboardHttpTest {
           ingestion.indexOf("<strong>Synthetic User 5</strong>")
               < ingestion.indexOf("<strong>Synthetic User 1</strong>"),
           ingestion);
-      assertTrue(overview.body().contains(">██████████</span>"), overview.body());
+      assertTrue(
+          overview.body().contains("<rect class=\"bar-fill\" width=\"100\" height=\"8\"/>"),
+          overview.body());
       assertTrue(overview.body().contains("datastar-patch-signals"), overview.body());
       assertTrue(
           overview.body().matches("(?s).*src=\"/assets/datastar\\.[0-9a-f]{32}\\.js\".*"),
