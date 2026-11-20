@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpHandler;
 import io.jstach.jstachio.Template;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -306,7 +307,7 @@ public final class Router implements HttpHandler {
 
   private void login(HttpExchange exchange) throws IOException {
     try {
-      AuthService.Login login = auth.beginLogin();
+      AuthService.Login login = auth.beginLogin(requestedReturnPath(exchange));
       if (login.transaction() != null) {
         exchange
             .getResponseHeaders()
@@ -848,8 +849,34 @@ public final class Router implements HttpHandler {
       if (backgroundRequest(exchange)) {
         apiError(exchange, 401, "login_required", "login required");
       } else {
-        HttpSupport.redirect(exchange, 302, URI.create("/login"));
+        HttpSupport.redirect(exchange, 302, loginUri(exchange));
       }
+      return null;
+    }
+  }
+
+  /// Login link that returns to the requested page; only safe local GET pages are remembered.
+  private static URI loginUri(HttpExchange exchange) {
+    assert exchange != null;
+    URI requested = exchange.getRequestURI();
+    String target =
+        requested.getRawPath()
+            + (requested.getRawQuery() == null ? "" : "?" + requested.getRawQuery());
+    if (!exchange.getRequestMethod().equals("GET") || !AuthService.returnPath(target)) {
+      return URI.create("/login");
+    }
+    return URI.create("/login?return=" + URLEncoder.encode(target, StandardCharsets.UTF_8));
+  }
+
+  /// The `return` query of a login request when it names a safe local page; otherwise null.
+  private static String requestedReturnPath(HttpExchange exchange) {
+    String query = exchange.getRequestURI().getRawQuery();
+    if (query == null) return null;
+    try {
+      Map<String, String> fields = toktrak.auth.OidcClient.parseForm(query);
+      String target = fields.size() == 1 ? fields.get("return") : null;
+      return AuthService.returnPath(target) ? target : null;
+    } catch (IllegalArgumentException exception) {
       return null;
     }
   }

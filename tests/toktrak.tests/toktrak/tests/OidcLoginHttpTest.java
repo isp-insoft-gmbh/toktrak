@@ -148,7 +148,8 @@ final class OidcLoginHttpTest {
       URI base = URI.create("http://127.0.0.1:" + app.port());
       var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
 
-      HttpResponse<String> login = send(client, base.resolve("/login"), null);
+      HttpResponse<String> login =
+          send(client, base.resolve("/login?return=%2Fvisualizations%3Frange%3Dall"), null);
       assertEquals(302, login.statusCode());
       URI authorization = URI.create(login.headers().firstValue("Location").orElseThrow());
       assertEquals(
@@ -177,7 +178,8 @@ final class OidcLoginHttpTest {
       HttpResponse<String> completed = send(client, callback, transaction);
       assertEquals(302, completed.statusCode());
       assertEquals(
-          "https://toktrak.test/tokens", completed.headers().firstValue("Location").orElseThrow());
+          "https://toktrak.test/visualizations?range=all",
+          completed.headers().firstValue("Location").orElseThrow());
       List<String> cookies = completed.headers().allValues("Set-Cookie");
       assertTrue(
           cookies.stream()

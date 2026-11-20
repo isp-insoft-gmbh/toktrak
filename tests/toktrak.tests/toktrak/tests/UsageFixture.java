@@ -54,6 +54,10 @@ final class UsageFixture implements AutoCloseable {
     cookie = login.headers().firstValue("Set-Cookie").orElseThrow().split(";", 2)[0];
   }
 
+  URI base() {
+    return base;
+  }
+
   /// A daily report row; empty `agents` or `metadataAgent` omit that field.
   static String daily(String date, String cost, String agents, String metadataAgent) {
     return "{\"period\":\""
