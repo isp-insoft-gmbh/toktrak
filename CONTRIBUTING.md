@@ -121,6 +121,11 @@ Additional gates:
 | Container build/behavior | GitHub Actions production verification            |
 | Before pushing           | `mise run ci`                                     |
 
+The Linux scheduler test needs a running systemd user manager. When `systemctl
+--user` fails for any reason, it is skipped unless
+`TOKTRAK_REQUIRE_NATIVE_SCHEDULER=1`. The `core`, tracker and release workflows
+set that variable, so CI still fails without a user manager.
+
 Every test name follows
 `given_<camelCaseContext>_when_<camelCaseBehavior>_then_<camelCaseExpectation>`.
 Fix every warning; do not suppress checks without approval.

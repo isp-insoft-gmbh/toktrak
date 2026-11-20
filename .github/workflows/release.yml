@@ -54,6 +54,8 @@ jobs:
           git merge-base --is-ancestor HEAD origin/trunk
       - name: Validate release candidate
         run: mise run ci
+        env:
+          TOKTRAK_REQUIRE_NATIVE_SCHEDULER: "1"
       - name: Generate release notes
         env:
           TAG: ${{ github.ref_name }}
