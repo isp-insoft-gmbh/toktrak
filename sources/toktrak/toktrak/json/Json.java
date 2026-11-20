@@ -69,6 +69,7 @@ public final class Json {
     ObjectMapper mapper =
         new ObjectMapper(factory)
             .registerModule(module)
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
     assert mapper != null;
     return mapper;
