@@ -52,7 +52,8 @@ public final class TestLauncher {
     TestGroup group = TestGroup.parse(args[0]);
     System.setProperty("toktrak.quiet", "true");
     if (group == TestGroup.UNIT) {
-      System.setProperty("junit.jupiter.execution.timeout.default", "10s");
+      // Same limit as PIT (tools/Build.java), so a test too slow for PIT fails here first.
+      System.setProperty("junit.jupiter.execution.timeout.default", "5s");
     }
     var selectors = new ArrayList<DiscoverySelector>();
     if (args.length == 1) {
@@ -88,7 +89,8 @@ public final class TestLauncher {
     if (groupTestsDiscovered == 0) return;
     var summaryListener = new SummaryGeneratingListener();
     var boundedListener = new BoundedExecutionListener();
-    launcher.registerTestExecutionListeners(summaryListener, boundedListener);
+    var durationListener = new DurationListener();
+    launcher.registerTestExecutionListeners(summaryListener, boundedListener, durationListener);
     launcher.execute(testPlan);
     var summary = summaryListener.getSummary();
     long testsFound = summary.getTestsFoundCount();
@@ -106,6 +108,7 @@ public final class TestLauncher {
             summary.getTestsSkippedCount(),
             summary.getTestsAbortedCount(),
             summary.getTestsFailedCount()));
+    System.out.println(durationListener.slowest());
     if (failed) System.exit(1);
     assert summary.getTestsSucceededCount() == testsFound;
   }
@@ -216,6 +219,46 @@ public final class TestLauncher {
       if (count > TEST_COUNT_MAX) {
         throw new IllegalStateException("started tests exceed " + TEST_COUNT_MAX + " entries");
       }
+    }
+  }
+
+  /// Reports the slowest tests so their margin to the per-test time limit stays visible.
+  private static final class DurationListener implements TestExecutionListener {
+    private static final int REPORTED_MAX = 5;
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> started =
+        new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> durations =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
+    @Override
+    public void executionStarted(TestIdentifier testIdentifier) {
+      if (!testIdentifier.isTest() || started.size() >= TEST_COUNT_MAX) return;
+      started.put(testIdentifier.getUniqueId(), System.nanoTime());
+    }
+
+    @Override
+    public void executionFinished(
+        TestIdentifier testIdentifier,
+        org.junit.platform.engine.TestExecutionResult testExecutionResult) {
+      Long start = started.remove(testIdentifier.getUniqueId());
+      if (start == null) return;
+      String name =
+          testIdentifier.getSource().orElse(null) instanceof MethodSource method
+              ? method.getClassName().replaceFirst("^toktrak\\.tests\\.", "")
+                  + "."
+                  + method.getMethodName()
+              : testIdentifier.getDisplayName();
+      durations.put(name, (System.nanoTime() - start) / 1_000_000);
+    }
+
+    String slowest() {
+      var lines = new StringJoiner(System.lineSeparator());
+      lines.add("slowest tests:");
+      durations.entrySet().stream()
+          .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+          .limit(REPORTED_MAX)
+          .forEach(entry -> lines.add("  " + entry.getValue() + " ms " + entry.getKey()));
+      return lines.toString();
     }
   }
 

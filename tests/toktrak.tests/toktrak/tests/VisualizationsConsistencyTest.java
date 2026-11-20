@@ -49,9 +49,12 @@ final class VisualizationsConsistencyTest {
   private static final Pattern SESSION_KPI =
       Pattern.compile("<dt>([^<]+)</dt><dd data-session-usd=\"([^\"]*)\">([^<]+)</dd>");
   private static final String INSIGHTS = "aria-labelledby=\"cumulative-heading\"";
-  // Bounded so each test stays well inside the per-test timeout, including under PIT.
+  // Each test renders at most about 40 pages so it stays well inside the 5s per-test limit,
+  // which also applies under PIT's instrumentation.
   private static final int RANDOM_RANGES = 30;
-  private static final int RANDOM_SPLITS = 20;
+  private static final int RANDOM_SPLITS = 12;
+  private static final LocalDate FIRST = LocalDate.parse("2025-10-01");
+  private static final LocalDate LAST = LocalDate.parse("2026-08-31");
   private static final int RANDOM_ROWS = 160;
   private static final int RANDOM_SESSIONS = 60;
   private static final String[] MODELS = {
@@ -61,13 +64,10 @@ final class VisualizationsConsistencyTest {
   @TempDir java.nio.file.Path directory;
 
   @Test
-  void given_developmentCorpus_when_openingManyRanges_then_everyFigureReconciles()
+  void given_developmentCorpus_when_openingCalendarRanges_then_everyFigureReconciles()
       throws Exception {
-    try (var usage =
-        new UsageFixture(
-            directory.resolve("corpus"), List.of("--corpus", "tests/corpus/dev.jsonl"))) {
-      checkRanges(usage, LocalDate.parse("2025-10-01"), LocalDate.parse("2026-08-31"), 11);
-
+    try (var usage = corpus("corpus-calendar")) {
+      calendar(usage);
       Page month = Page.of(usage.visualizations(null));
       assertEquals(
           new BigDecimal(attribute(usage.overview(), "id=\"kpi-cost\"[^>]*data-usd=\"([^\"]+)\"")),
@@ -77,47 +77,85 @@ final class VisualizationsConsistencyTest {
   }
 
   @Test
-  void given_randomUploadsWithToolNoise_when_openingManyRanges_then_everyFigureReconciles()
+  void given_developmentCorpus_when_openingRandomRanges_then_everyFigureReconciles()
       throws Exception {
-    var random = new Random(20_260_715L);
-    try (var usage = new UsageFixture(directory.resolve("random"))) {
-      for (int upload = 0; upload < 3; upload++) {
-        var rows = new java.util.TreeMap<LocalDate, String>();
-        for (int row = 0; row < RANDOM_ROWS; row++) {
-          LocalDate date = LocalDate.parse("2025-11-01").plusDays(random.nextInt(250));
-          rows.put(date, randomRow(random, date));
-        }
-        var sessions = new ArrayList<String>();
-        for (int row = 0; row < RANDOM_SESSIONS; row++) {
-          sessions.add(
-              session(
-                  "s-" + upload + "-" + row,
-                  BigDecimal.valueOf(random.nextLong(3_000_000_000_000L), 10).toPlainString(),
-                  LocalDate.parse("2025-11-01")
-                          .plusDays(random.nextInt(250))
-                          .atTime(random.nextInt(24), random.nextInt(60))
-                          .toString()
-                      + ":00Z"));
-        }
-        // Later uploads overwrite earlier rows for the same day; every view must follow.
-        usage.upload(List.copyOf(rows.values()), sessions);
-      }
-      checkRanges(usage, LocalDate.parse("2025-10-01"), LocalDate.parse("2026-08-31"), 11);
+    try (var usage = corpus("corpus-random")) {
+      randomRanges(usage, 11);
     }
   }
 
-  private static void checkRanges(UsageFixture usage, LocalDate first, LocalDate last, int seed)
-      throws Exception {
-    var random = new Random(seed);
-    long span = ChronoUnit.DAYS.between(first, last);
-    var months = new java.util.HashMap<YearMonth, BigDecimal>();
+  @Test
+  void given_developmentCorpus_when_splittingRanges_then_partsAddUpToWhole() throws Exception {
+    try (var usage = corpus("corpus-splits")) {
+      splits(usage, 12);
+    }
+  }
 
-    for (YearMonth month = YearMonth.from(first);
-        !month.isAfter(YearMonth.from(last));
+  @Test
+  void given_randomUploadsWithToolNoise_when_openingCalendarRanges_then_everyFigureReconciles()
+      throws Exception {
+    try (var usage = randomUploads("random-calendar")) {
+      calendar(usage);
+    }
+  }
+
+  @Test
+  void given_randomUploadsWithToolNoise_when_openingRandomRanges_then_everyFigureReconciles()
+      throws Exception {
+    try (var usage = randomUploads("random-random")) {
+      randomRanges(usage, 13);
+    }
+  }
+
+  @Test
+  void given_randomUploadsWithToolNoise_when_splittingRanges_then_partsAddUpToWhole()
+      throws Exception {
+    try (var usage = randomUploads("random-splits")) {
+      splits(usage, 14);
+    }
+  }
+
+  private UsageFixture corpus(String name) throws Exception {
+    return new UsageFixture(directory.resolve(name), List.of("--corpus", "tests/corpus/dev.jsonl"));
+  }
+
+  /// Three overlapping uploads with a fixed seed, so every test sees the same data.
+  private UsageFixture randomUploads(String name) throws Exception {
+    var random = new Random(20_260_715L);
+    var usage = new UsageFixture(directory.resolve(name));
+    for (int upload = 0; upload < 3; upload++) {
+      var rows = new java.util.TreeMap<LocalDate, String>();
+      for (int row = 0; row < RANDOM_ROWS; row++) {
+        LocalDate date = LocalDate.parse("2025-11-01").plusDays(random.nextInt(250));
+        rows.put(date, randomRow(random, date));
+      }
+      var sessions = new ArrayList<String>();
+      for (int row = 0; row < RANDOM_SESSIONS; row++) {
+        sessions.add(
+            session(
+                "s-" + upload + "-" + row,
+                BigDecimal.valueOf(random.nextLong(3_000_000_000_000L), 10).toPlainString(),
+                LocalDate.parse("2025-11-01")
+                        .plusDays(random.nextInt(250))
+                        .atTime(random.nextInt(24), random.nextInt(60))
+                        .toString()
+                    + ":00Z"));
+      }
+      // Later uploads overwrite earlier rows for the same day; every view must follow.
+      usage.upload(List.copyOf(rows.values()), sessions);
+    }
+    return usage;
+  }
+
+  /// Every month and year in the window, plus all time; months add up to their year.
+  private static void calendar(UsageFixture usage) throws Exception {
+    var months = new java.util.HashMap<YearMonth, BigDecimal>();
+    for (YearMonth month = YearMonth.from(FIRST);
+        !month.isAfter(YearMonth.from(LAST));
         month = month.plusMonths(1)) {
       months.put(month, check(usage, "range=month&month=" + month).total());
     }
-    for (int year = first.getYear(); year <= last.getYear(); year++) {
+    for (int year = FIRST.getYear(); year <= LAST.getYear(); year++) {
       Page whole = check(usage, "range=year&year=" + year);
       BigDecimal monthSum = BigDecimal.ZERO;
       for (int month = 1; month <= 12; month++) {
@@ -129,15 +167,24 @@ final class VisualizationsConsistencyTest {
       assertEquals(0, whole.total().compareTo(monthSum), "months of " + year + " != year");
     }
     check(usage, "range=all");
+  }
 
+  private static void randomRanges(UsageFixture usage, int seed) throws Exception {
+    var random = new Random(seed);
+    long span = ChronoUnit.DAYS.between(FIRST, LAST);
     for (int index = 0; index < RANDOM_RANGES; index++) {
-      LocalDate from = first.plusDays(random.nextLong(span + 1));
-      LocalDate to = from.plusDays(random.nextLong(ChronoUnit.DAYS.between(from, last) + 1));
+      LocalDate from = FIRST.plusDays(random.nextLong(span + 1));
+      LocalDate to = from.plusDays(random.nextLong(ChronoUnit.DAYS.between(from, LAST) + 1));
       check(usage, custom(from, to));
     }
+  }
+
+  private static void splits(UsageFixture usage, int seed) throws Exception {
+    var random = new Random(seed);
+    long span = ChronoUnit.DAYS.between(FIRST, LAST);
     for (int index = 0; index < RANDOM_SPLITS; index++) {
-      LocalDate from = first.plusDays(random.nextLong(span));
-      LocalDate to = from.plusDays(1 + random.nextLong(ChronoUnit.DAYS.between(from, last)));
+      LocalDate from = FIRST.plusDays(random.nextLong(span));
+      LocalDate to = from.plusDays(1 + random.nextLong(ChronoUnit.DAYS.between(from, LAST)));
       LocalDate split = from.plusDays(random.nextLong(ChronoUnit.DAYS.between(from, to)));
       BigDecimal whole = check(usage, custom(from, to)).total();
       BigDecimal parts =
