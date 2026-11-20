@@ -1,6 +1,6 @@
 {{<base.mustache}}
 {{$content}}
-  <div id="dashboard" class="dashboard" data-signals__ifmissing="{_observedUsageRevision: {{revision}}, _htmlPending: false, _streamPending: false, _authExpired: false, _retrying: false}" data-signals="{_renderedUsageRevision: {{revision}}, _retrying: false}" data-init="!$_authExpired && !$_streamPending && (($_streamPending = true) && @get('/api/stream?revision=' + $_observedUsageRevision, {retry: 'never'}).finally(() => $_streamPending = false).catch(() => $_retrying = true))" data-on-interval__duration.6s="!$_authExpired && ($_observedUsageRevision > $_renderedUsageRevision ? (!$_htmlPending && (($_htmlPending = true) && @get(window.location.pathname, {retry: 'never'}).finally(() => $_htmlPending = false).catch(() => $_retrying = true))) : (!$_streamPending && (($_streamPending = true) && @get('/api/stream?revision=' + $_observedUsageRevision, {retry: 'never'}).finally(() => $_streamPending = false).catch(() => $_retrying = true))))" data-effect="$_observedUsageRevision > $_renderedUsageRevision && @peek(() => document.dispatchEvent(new CustomEvent('toktrak-dashboard-revision')))" data-on:toktrak-dashboard-revision__document="!$_authExpired && $_observedUsageRevision > $_renderedUsageRevision && !$_htmlPending && (($_htmlPending = true) && @get(window.location.pathname, {retry: 'never'}).finally(() => $_htmlPending = false).catch(() => $_retrying = true))" data-on:datastar-fetch__document="evt.detail.el.id === 'dashboard' && evt.detail.argsRaw.status === '401' ? (($_authExpired = true) && ($_retrying = false)) : (evt.detail.el.id === 'dashboard' && (evt.detail.type === 'retrying' || /^5\d\d$/u.test(evt.detail.argsRaw.status)) ? ($_retrying = true) : (evt.detail.el.id === 'dashboard' && evt.detail.type === 'datastar-patch-signals' && $_observedUsageRevision === $_renderedUsageRevision && ($_retrying = false)))">
+  <div id="dashboard" class="dashboard" data-signals__ifmissing="{_observedUsageRevision: {{revision}}, _htmlPending: false, _streamPending: false, _authExpired: false, _retrying: false}" data-signals="{_renderedUsageRevision: {{revision}}, _retrying: false}" data-init="!$_authExpired && !$_streamPending && (($_streamPending = true) && @get('/api/stream?revision=' + $_observedUsageRevision, {retry: 'never'}).finally(() => $_streamPending = false).catch(() => $_retrying = true))" data-on-interval__duration.6s="!$_authExpired && ($_observedUsageRevision > $_renderedUsageRevision ? (!$_htmlPending && (($_htmlPending = true) && @get(window.location.pathname + window.location.search, {retry: 'never'}).finally(() => $_htmlPending = false).catch(() => $_retrying = true))) : (!$_streamPending && (($_streamPending = true) && @get('/api/stream?revision=' + $_observedUsageRevision, {retry: 'never'}).finally(() => $_streamPending = false).catch(() => $_retrying = true))))" data-effect="$_observedUsageRevision > $_renderedUsageRevision && @peek(() => document.dispatchEvent(new CustomEvent('toktrak-dashboard-revision')))" data-on:toktrak-dashboard-revision__document="!$_authExpired && $_observedUsageRevision > $_renderedUsageRevision && !$_htmlPending && (($_htmlPending = true) && @get(window.location.pathname + window.location.search, {retry: 'never'}).finally(() => $_htmlPending = false).catch(() => $_retrying = true))" data-on:datastar-fetch__document="evt.detail.el.id === 'dashboard' && evt.detail.argsRaw.status === '401' ? (($_authExpired = true) && ($_retrying = false)) : (evt.detail.el.id === 'dashboard' && (evt.detail.type === 'retrying' || /^5\d\d$/u.test(evt.detail.argsRaw.status)) ? ($_retrying = true) : (evt.detail.el.id === 'dashboard' && evt.detail.type === 'datastar-patch-signals' && $_observedUsageRevision === $_renderedUsageRevision && ($_retrying = false)))">
     <p id="dashboard-refresh-state" data-show="$_authExpired || $_retrying" role="status"><span data-show="$_authExpired">Dashboard updates paused. Refresh to sign in again.</span><span data-show="!$_authExpired && $_retrying">Dashboard updates delayed. Retrying shortly.</span></p>
     <header class="page-heading">
       <h1>Visualizations</h1>
@@ -8,6 +8,86 @@
 {{#dashboard.degraded}}
     <aside class="warning" role="alert"><strong>Read-only mode</strong> Showing last stored usage.</aside>
 {{/dashboard.degraded}}
+{{#charts}}
+    <section class="usage-range" aria-labelledby="range-heading">
+      <div>
+        <h2 id="range-heading" class="eyebrow">Range</h2>
+        <p class="range-label"><strong>{{rangeLabel}}</strong> <span>{{calendarDays}} days · applies to every chart below</span></p>
+      </div>
+      <nav class="segmented" aria-label="Date range">
+{{#rangeOptions}}
+{{#current}}
+        <a href="{{url}}" aria-current="page">{{label}}</a>
+{{/current}}
+{{^current}}
+        <a href="{{url}}">{{label}}</a>
+{{/current}}
+{{/rangeOptions}}
+      </nav>
+      <form class="range-form" method="get" action="/visualizations">
+        <input type="hidden" name="range" value="custom">
+        <label>From <input type="date" name="from" value="{{rangeFrom}}" required></label>
+        <label>To <input type="date" name="to" value="{{rangeTo}}" required></label>
+        <button type="submit">Apply</button>
+      </form>
+    </section>
+    <dl class="chart-kpis">
+{{#kpis}}
+      <div><dt>{{label}}</dt><dd>{{value}}</dd></div>
+{{/kpis}}
+    </dl>
+    <div class="chart-grid">
+{{#dailyCost}}
+      <article class="chart-card chart-card-wide" aria-labelledby="daily-cost-heading">
+        <h2 id="daily-cost-heading">Cost per {{bucketName}} by tool</h2>
+        <p>{{description}}</p>
+        <svg class="chart" viewBox="0 0 {{width}} {{height}}" role="img" aria-labelledby="daily-cost-heading">
+{{#yTicks}}
+          <line class="chart-grid-line" x1="{{x1}}" y1="{{y}}" x2="{{x2}}" y2="{{y}}"/>
+          <text class="chart-axis" x="{{labelX}}" y="{{labelY}}" text-anchor="end">{{label}}</text>
+{{/yTicks}}
+{{#columns}}
+          <rect class="{{seriesClass}}" x="{{x}}" y="{{y}}" width="{{width}}" height="{{height}}"><title>{{title}}</title></rect>
+{{/columns}}
+{{#averages}}
+          <path class="chart-average" d="{{path}}"><title>{{label}}</title></path>
+{{/averages}}
+{{#xLabels}}
+          <text class="chart-axis" x="{{x}}" y="{{y}}" text-anchor="middle">{{label}}</text>
+{{/xLabels}}
+        </svg>
+        <ul class="chart-legend">
+{{#legend}}
+          <li><span class="swatch {{seriesClass}}" aria-hidden="true"></span>{{label}} <strong>{{value}}</strong></li>
+{{/legend}}
+{{#averages}}
+          <li><span class="swatch swatch-line" aria-hidden="true"></span>{{label}}</li>
+{{/averages}}
+        </ul>
+        <dl class="chart-stats">
+{{#stats}}
+          <div><dt>{{label}}</dt><dd>{{value}}</dd></div>
+{{/stats}}
+        </dl>
+        <details class="chart-data">
+          <summary>Data table</summary>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th scope="col">Period</th><th scope="col">Estimated cost</th></tr></thead>
+              <tbody>
+{{#rows}}
+                <tr><td>{{bucket}}</td><td>{{value}}</td></tr>
+{{/rows}}
+              </tbody>
+            </table>
+          </div>
+        </details>
+        <p class="chart-note">Tool totals add up to the estimated cost above. Costs without a reported tool appear as Not reported.</p>
+      </article>
+{{/dailyCost}}
+    </div>
+{{/charts}}
+    <h2 class="legacy-heading">All reported dates · older views</h2>
     <div class="narrative">
       <section class="viz-section viz-hero" aria-labelledby="trend-heading">
         <div>

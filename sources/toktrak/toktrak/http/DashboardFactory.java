@@ -457,7 +457,7 @@ final class DashboardFactory {
         BigInteger.valueOf(UsageUpload.nonnegativeLong(row.data(), "totalTokens")));
   }
 
-  private static String money(BigDecimal usd, DashboardCurrency currency, FxRate rate) {
+  static String money(BigDecimal usd, DashboardCurrency currency, FxRate rate) {
     assert usd != null && usd.signum() >= 0;
     BigDecimal value =
         currency == DashboardCurrency.EUR
