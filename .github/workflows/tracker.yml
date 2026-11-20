@@ -34,3 +34,5 @@ jobs:
           install_args: node java
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - run: mise run tracker-test
+        env:
+          TOKTRAK_REQUIRE_NATIVE_SCHEDULER: "1"

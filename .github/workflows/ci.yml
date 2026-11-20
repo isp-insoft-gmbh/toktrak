@@ -67,6 +67,8 @@ jobs:
           cache_key: mise-v2-{{platform}}-{{version}}-{{install_args_hash}}-{{file_hash}}
       - id: validation
         run: mise run ci
+        env:
+          TOKTRAK_REQUIRE_NATIVE_SCHEDULER: "1"
       - name: Upload coverage report
         id: coverage-artifact
         if: always() && github.event_name != 'pull_request' && hashFiles('output/coverage/**') != ''
