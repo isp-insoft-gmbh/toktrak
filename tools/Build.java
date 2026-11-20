@@ -118,6 +118,8 @@ public final class Build {
   private static final Path TRACKER_TEST_SOURCES = ROOT.resolve("tests/tracker");
   private static final List<Path> JAVASCRIPT_TEST_SOURCES =
       List.of(
+          ROOT.resolve("tools/corpus-anonymize.test.mjs"),
+          ROOT.resolve("tools/corpus-shapes.test.mjs"),
           ROOT.resolve("tools/dashboard-presentation.test.mjs"),
           ROOT.resolve("tools/perf-compare.test.mjs"),
           ROOT.resolve("tools/java-runtime-version.test.mjs"),
@@ -310,13 +312,18 @@ public final class Build {
       if (args.length == 0) {
         throw new IllegalStateException(
             "command required: clean, fmt, check, test, pit, refactor, ci, verify, ide, dev, prod,"
-                + " coverage, perf, image, container-verify, or release");
+                + " coverage, perf, corpus-import, corpus-shapes, image, container-verify, or"
+                + " release");
       }
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
       List<String> commandArguments = List.of(args).subList(1, args.length);
       if (args[0].equals("fmt")) {
         formatCommand(commandArguments);
+        return;
+      }
+      if (args[0].equals("corpus-import") || args[0].equals("corpus-shapes")) {
+        corpusCommand(args[0], commandArguments);
         return;
       }
       if (args[0].equals("pit") && commandArguments.equals(List.of("--help"))) {
@@ -2400,6 +2407,18 @@ public final class Build {
         + System.getProperty("os.name")
         + "\n"
         + System.getProperty("os.arch");
+  }
+
+  /// Pseudonymizes a production snapshot or adds its missing shapes to the development corpus.
+  /// Neither needs the build lock: each writes only its own data file.
+  private static void corpusCommand(String name, List<String> arguments) throws Exception {
+    assert name.equals("corpus-import") || name.equals("corpus-shapes");
+    assert arguments != null;
+    var command = new ArrayList<String>();
+    command.add(
+        name.equals("corpus-import") ? "tools/corpus-anonymize.mjs" : "tools/corpus-shapes.mjs");
+    command.addAll(arguments);
+    System.out.println(runTool("node", name, command, ROOT, PROCESS_TIMEOUT).output());
   }
 
   private static void formatCommand(List<String> paths) throws Exception {

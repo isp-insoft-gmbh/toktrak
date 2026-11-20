@@ -61,6 +61,74 @@ fractional digits after exponent expansion. This admission limit also covers
 nested report fields. It applies only to incoming uploads; replay preserves
 previously stored numbers without changing the v1 event schema or rounding data.
 
+## Production-shaped local data
+
+Realistic data matters more than full anonymity when designing dashboards or
+checking migrations. `mise run corpus-import` turns a deployment's
+`events.ndjson` into pseudonymous development data:
+
+1. Copy `TOKTRAK_DATA_DIR/events.ndjson` from your deployment to a private
+   location outside this repository. The log is append-only, so a copy taken
+   while the server runs is consistent up to its last complete line.
+2. Run `mise run corpus-import <events.ndjson>`.
+3. Run `mise run dev --corpus output/corpus/production-anonymized.jsonl`.
+
+The import replaces identities, tracker tokens, projects, sessions, and errors
+with keyed pseudonyms. It fails on any string field without an explicit rule. It
+keeps exact numbers, timestamps, models, tools, colors, and time zones. One
+uploading person, chosen by the key, becomes the development login `viewer`, so
+personal pages show real-shaped data.
+
+The output is pseudonymous: anyone who knows the team can recognize people from
+their usage pattern. Keep snapshots and output private and out of Git. Never
+copy output lines into `tests/corpus/dev.jsonl`.
+
+### Committed corpus shapes
+
+The import lists field shapes the committed corpus lacks. A shape is a field
+path plus its JSON type. `mise run corpus-shapes` closes that gap without
+committing production data. It picks the fewest pseudonymized events covering
+every missing shape and keeps only the array rows that carry them. Their values
+become synthetic:
+
+- One new `synthetic-subject-N` owns all events. Identifiers, token labels and
+  digests, projects, and sessions become fresh synthetic values.
+- Timestamps and dates are regenerated before the hand-written history. Only
+  their order, equality, and text format survive; time of day, weekday, and
+  spacing do not.
+- Numbers keep sign, zero, fraction length, and exponent, but get random digits
+  and at most two integer digits. Related numbers, such as totals and their
+  parts, therefore no longer add up.
+- Model, tool, version, and time-zone names, booleans, and nulls stay as they
+  are.
+
+The command appends to `tests/corpus/dev.jsonl` and fails if the result still
+misses a shape of the input. Review the diff, then update `CorpusUsageTest` and
+other corpus expectations deliberately; changed totals are expected.
+
+### Pseudonymization key
+
+The key keeps pseudonyms stable across imports and developers. Treat it as a
+team secret: with it, anyone can test guessed emails or account IDs against
+pseudonyms. Keep one key per deployment in your team's secret manager.
+
+- First import for a deployment: run `mise run corpus-import <events.ndjson>
+  --new-key`, then store the created key file's content in your secret manager.
+- New developer: copy the key from the secret manager into a private file
+  outside the repository. Either use the default path or point
+  `TOKTRAK_CORPUS_KEY_FILE` at it, for example in the Git-ignored
+  `mise.local.toml`:
+
+  ```toml
+  [env]
+  TOKTRAK_CORPUS_KEY_FILE = "/path/to/toktrak-corpus.key"
+  ```
+
+The default path is `%LOCALAPPDATA%\toktrak\corpus-anonymization.key` on Windows
+and `$XDG_CONFIG_HOME/toktrak/corpus-anonymization.key` (falling back to
+`~/.config`) elsewhere. `--key <path>` overrides both. Without a key the import
+stops and explains these steps instead of silently creating a new one.
+
 ## Generated code
 
 JStachio generates renderers from `sources/toktrak/templates` during

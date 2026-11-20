@@ -129,7 +129,7 @@ final class DashboardHttpTest {
       assertTrue(visualizations.body().contains("<svg class=\"chart-rule\""));
       assertTrue(
           visualizations.body().contains("<time datetime=\"2026-07-14\">14 Jul 2026</time>"));
-      assertTrue(visualizations.body().contains("4,263,701,600"));
+      assertTrue(visualizations.body().contains("4,263,701,684"));
       assertTrue(visualizations.body().contains(">Monday<"));
       assertTrue(visualizations.body().contains("<strong>claude-fable-5</strong>"));
       assertTrue(visualizations.body().contains("<strong>opencode</strong>"));
