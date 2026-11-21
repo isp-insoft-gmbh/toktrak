@@ -5,8 +5,12 @@ import com.sun.net.httpserver.HttpHandler;
 import io.jstach.jstachio.Template;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -303,7 +307,7 @@ public final class Router implements HttpHandler {
 
   private void login(HttpExchange exchange) throws IOException {
     try {
-      AuthService.Login login = auth.beginLogin();
+      AuthService.Login login = auth.beginLogin(requestedReturnPath(exchange));
       if (login.transaction() != null) {
         exchange
             .getResponseHeaders()
@@ -626,19 +630,65 @@ public final class Router implements HttpHandler {
   private void visualizations(HttpExchange exchange) throws IOException {
     Session session = browserSession(exchange);
     if (session == null) return;
-    DashboardCurrency currency = dashboardCurrency(exchange, "/visualizations");
-    if (currency == null) return;
-    DashboardCurrency effective = effectiveCurrency(currency);
+    var daily = projection.usageRows(Report.DAILY);
+    LocalDate today = clock.instant().atZone(ZoneOffset.UTC).toLocalDate();
+    LocalDate earliest =
+        daily.stream()
+            .map(row -> LocalDate.parse(row.firstKey()))
+            .min(LocalDate::compareTo)
+            .orElse(today);
+    // Future-dated uploads must not move the default month or the all-time range end.
+    LocalDate latest =
+        daily.stream()
+            .map(row -> LocalDate.parse(row.firstKey()))
+            .filter(date -> !date.isAfter(today))
+            .max(LocalDate::compareTo)
+            .orElse(today);
+    if (earliest.isAfter(latest)) earliest = latest;
+    UsageRange range;
+    String requestedCurrency;
+    try {
+      String query = exchange.getRequestURI().getRawQuery();
+      var fields =
+          new HashMap<String, String>(
+              query == null ? Map.of() : toktrak.auth.OidcClient.parseForm(query));
+      String datastar = fields.remove("datastar");
+      if (datastar != null && !datastar.equals("{}")) {
+        throw new IllegalArgumentException("datastar query is invalid");
+      }
+      requestedCurrency = fields.remove("currency");
+      range = UsageRange.parse(fields, earliest, latest);
+    } catch (IllegalArgumentException exception) {
+      badRequest(exchange, "visualizations query is invalid");
+      return;
+    }
+    if (requestedCurrency != null) {
+      DashboardCurrency currency;
+      try {
+        currency = DashboardCurrency.valueOf(requestedCurrency);
+      } catch (IllegalArgumentException exception) {
+        badRequest(exchange, "currency query is invalid");
+        return;
+      }
+      setCurrencyCookie(exchange, currency);
+      HttpSupport.redirect(
+          exchange, 303, URI.create(UsageChartsFactory.PATH + "?" + range.query()));
+      return;
+    }
+    DashboardCurrency effective = effectiveCurrency(currencyCookie(exchange));
     var view =
         new VisualizationsView(
             dashboardBase(
                 "Visualizations · TokTrak",
-                "/visualizations",
+                UsageChartsFactory.PATH + "?" + range.query() + "&",
                 CurrentPage.VISUALIZATIONS,
                 effective),
             projection.revision(),
             session.user().displayName(),
-            DashboardFactory.create(projection, health, effective, clock.instant()));
+            DashboardFactory.create(projection, health, effective, clock.instant()),
+            UsageChartsFactory.create(
+                daily, range, today, effective, projection.fxRate().orElse(null)),
+            insights(daily, range, today, effective));
     HttpSupport.encodedHtml(
         exchange,
         200,
@@ -682,25 +732,38 @@ public final class Router implements HttpHandler {
             "ChangesViewRenderer"));
   }
 
+  private UsageInsights insights(
+      List<toktrak.usage.UsageProjection.Row> daily,
+      UsageRange range,
+      LocalDate today,
+      DashboardCurrency currency) {
+    var users = new HashMap<UserKey, toktrak.projection.Projection.User>();
+    for (var user : projection.users()) users.put(user.key(), user);
+    var zones = new HashMap<UserKey, java.time.ZoneId>();
+    for (var ingestion : projection.ingestion()) {
+      zones.put(ingestion.owner(), UsageInsightsFactory.zone(ingestion.clientTimeZone()));
+    }
+    return UsageInsightsFactory.create(
+        daily,
+        projection.usageRows(Report.SESSION),
+        users,
+        zones,
+        range,
+        today,
+        currency,
+        projection.fxRate().orElse(null));
+  }
+
   private DashboardCurrency dashboardCurrency(HttpExchange exchange, String path)
       throws IOException {
     assert exchange != null;
-    assert path.equals("/") || path.equals("/visualizations") || path.equals("/scope");
+    assert path.equals("/") || path.equals("/scope");
     String query = exchange.getRequestURI().getRawQuery();
     if (query != null) {
       try {
         Map<String, String> fields = toktrak.auth.OidcClient.parseForm(query);
         if (fields.keySet().equals(java.util.Set.of("currency"))) {
-          DashboardCurrency currency = DashboardCurrency.valueOf(fields.get("currency"));
-          exchange
-              .getResponseHeaders()
-              .add(
-                  "Set-Cookie",
-                  CURRENCY_COOKIE
-                      + "="
-                      + currency
-                      + "; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax"
-                      + (devAuth ? "" : "; Secure"));
+          setCurrencyCookie(exchange, DashboardCurrency.valueOf(fields.get("currency")));
           HttpSupport.redirect(exchange, 303, URI.create(path));
           return null;
         }
@@ -712,6 +775,25 @@ public final class Router implements HttpHandler {
         return null;
       }
     }
+    return currencyCookie(exchange);
+  }
+
+  private void setCurrencyCookie(HttpExchange exchange, DashboardCurrency currency) {
+    assert exchange != null;
+    assert currency != null;
+    exchange
+        .getResponseHeaders()
+        .add(
+            "Set-Cookie",
+            CURRENCY_COOKIE
+                + "="
+                + currency
+                + "; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax"
+                + (devAuth ? "" : "; Secure"));
+  }
+
+  private static DashboardCurrency currencyCookie(HttpExchange exchange) {
+    assert exchange != null;
     return AuthService.cookie(exchange.getRequestHeaders().getFirst("Cookie"), CURRENCY_COOKIE)
         .map(value -> {
           try {
@@ -732,15 +814,18 @@ public final class Router implements HttpHandler {
 
   private BaseView dashboardBase(
       String title, String path, CurrentPage currentPage, DashboardCurrency currency) {
-    assert path.equals("/") || path.equals("/visualizations") || path.equals("/scope");
+    assert path.equals("/")
+        || path.equals("/scope")
+        || (path.startsWith(UsageChartsFactory.PATH + "?") && path.endsWith("&"));
     DashboardCurrency alternative =
         currency == DashboardCurrency.USD ? DashboardCurrency.EUR : DashboardCurrency.USD;
+    String separator = path.endsWith("&") ? "" : "?";
     return base(
         title,
         currentPage,
         CurrencySwitch.enabled(
             Currency.from(currency),
-            path + "?currency=" + alternative,
+            path + separator + "currency=" + alternative,
             Currency.from(alternative)));
   }
 
@@ -787,8 +872,34 @@ public final class Router implements HttpHandler {
       if (backgroundRequest(exchange)) {
         apiError(exchange, 401, "login_required", "login required");
       } else {
-        HttpSupport.redirect(exchange, 302, URI.create("/login"));
+        HttpSupport.redirect(exchange, 302, loginUri(exchange));
       }
+      return null;
+    }
+  }
+
+  /// Login link that returns to the requested page; only safe local GET pages are remembered.
+  private static URI loginUri(HttpExchange exchange) {
+    assert exchange != null;
+    URI requested = exchange.getRequestURI();
+    String target =
+        requested.getRawPath()
+            + (requested.getRawQuery() == null ? "" : "?" + requested.getRawQuery());
+    if (!exchange.getRequestMethod().equals("GET") || !AuthService.returnPath(target)) {
+      return URI.create("/login");
+    }
+    return URI.create("/login?return=" + URLEncoder.encode(target, StandardCharsets.UTF_8));
+  }
+
+  /// The `return` query of a login request when it names a safe local page; otherwise null.
+  private static String requestedReturnPath(HttpExchange exchange) {
+    String query = exchange.getRequestURI().getRawQuery();
+    if (query == null) return null;
+    try {
+      Map<String, String> fields = toktrak.auth.OidcClient.parseForm(query);
+      String target = fields.size() == 1 ? fields.get("return") : null;
+      return AuthService.returnPath(target) ? target : null;
+    } catch (IllegalArgumentException exception) {
       return null;
     }
   }

@@ -133,7 +133,8 @@ test("given_pullRequest_when_checkingReports_then_uploadsOnlyFailedMutationXml",
 
 test("given_pullRequest_when_pitRuns_then_recomputesMutationsWithoutSharedHistory", () => {
   const pit = workflow("pit");
-  assert.match(pit, /- if: github\.event_name == 'pull_request'\n        run: mise run pit\n/u);
+  // History is on by default, so pull requests must opt out explicitly.
+  assert.match(pit, /- if: github\.event_name == 'pull_request'\n        run: mise run pit --no-history\n/u);
   assert.match(pit, /- if: github\.event_name != 'pull_request'\n        run: mise run pit --history\n/u);
   assert.equal(
     (pit.match(/- if: github\.event_name != 'pull_request'\n        uses: actions\/cache\//gu) ?? []).length,

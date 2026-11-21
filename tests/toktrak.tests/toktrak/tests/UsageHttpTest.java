@@ -491,7 +491,7 @@ final class UsageHttpTest {
     String expected =
         "<strong>"
             + Pattern.quote(label)
-            + "</strong><span class=\"bar\" aria-hidden=\"true\">[^<]*</span><span>"
+            + "</strong><svg class=\"bar\"[^>]*>(?:<rect [^>]*/>){2}</svg><span>"
             + Pattern.quote(cost)
             + "</span><small>"
             + Pattern.quote(tokens)

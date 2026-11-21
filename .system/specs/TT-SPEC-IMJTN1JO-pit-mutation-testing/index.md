@@ -9,20 +9,23 @@ title: PIT mutation testing
 Provide a standalone focused mutation loop:
 
 ```text
-mise run pit [PIT options...] [-- production source paths...]
+mise run pit [--no-history] [PIT options...] [-- production source paths...]
 ```
 
-No selector mutates all TokTrak production code. Paths after one separator map
-deterministically to the top-level class and nested-class glob. PIT discovers
-covering tests.
+No selector mutates all TokTrak production code. Paths after one separator, or
+existing production source paths before it, map deterministically to the
+top-level class and nested-class glob; Mise consumes the first `--`. PIT
+discovers covering tests.
 
 ## Contract
 
 Forward pre-separator PIT options unchanged except build-owned safety, target,
 path, report, concurrency, timeout, JVM, and history locations. Reject reserved
 options, multiple separators, symbolic/external source paths, and argument
-injection. `--history` uses `output/pit.history`; delete it and rerun without
-history only when results are inconsistent.
+injection. History in `output/pit.history` is on by default; `--no-history` opts
+out for one run. A run stopped at the time limit keeps finished mutants, and a
+run on another selection replaces the history. Delete it only when results are
+inconsistent.
 
 PIT remains outside check/test/verify/CI. It compiles through the authoritative
 build, runs with four workers and assertions, bounds test/mutation/process time,

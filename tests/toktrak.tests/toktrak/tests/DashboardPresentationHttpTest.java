@@ -101,6 +101,9 @@ final class DashboardPresentationHttpTest {
           sessions);
       assertFalse(sessions.contains(SESSION_MODEL_BEYOND_LIMIT), sessions);
 
+      String weekday = section(visualizations, "<strong>Tuesday</strong>", "</div>");
+      assertTrue(weekday.contains("<span>$0.13</span><small>1,234,567 tokens</small>"), weekday);
+
       String blocks = section(visualizations, "blocks-heading", "</table>");
       assertTrue(
           blocks.contains(

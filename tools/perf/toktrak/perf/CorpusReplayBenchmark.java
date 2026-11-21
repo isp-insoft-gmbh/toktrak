@@ -34,8 +34,8 @@ import toktrak.store.EventLog;
 public class CorpusReplayBenchmark {
   private static final Path CORPUS = Path.of("tests/corpus/dev.jsonl");
   private static final String CORPUS_SHA256 =
-      "4172025f12970c4efabb3cb19f6081905ef5d90ea87a1a6102ac741cb757d3e4";
-  private static final int EVENT_COUNT = 14;
+      "b84b0d05dee7586d21661cf624e7546aa19b8996d60fda09a361dee8c9d5e5d5";
+  private static final int EVENT_COUNT = 22;
 
   /// The digest pins the corpus bytes, so the canonical totals it produces stay asserted once in
   /// `CorpusUsageTest` rather than being duplicated here.

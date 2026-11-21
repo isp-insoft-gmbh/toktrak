@@ -116,8 +116,16 @@ public final class Build {
   private static final Path JUNIT_TEST_SOURCES = ROOT.resolve("tests/toktrak.tests");
   private static final Path BUILD_TEST_SOURCE = ROOT.resolve("tests/tools/BuildTest.java");
   private static final Path TRACKER_TEST_SOURCES = ROOT.resolve("tests/tracker");
+  private static final Map<String, String> NODE_DATA_TOOLS =
+      Map.of(
+          "corpus-import", "tools/corpus-anonymize.mjs",
+          "corpus-shapes", "tools/corpus-shapes.mjs",
+          "viz-oracle", "tools/visualizations-oracle.mjs");
   private static final List<Path> JAVASCRIPT_TEST_SOURCES =
       List.of(
+          ROOT.resolve("tools/corpus-anonymize.test.mjs"),
+          ROOT.resolve("tools/corpus-shapes.test.mjs"),
+          ROOT.resolve("tools/visualizations-oracle.test.mjs"),
           ROOT.resolve("tools/dashboard-presentation.test.mjs"),
           ROOT.resolve("tools/perf-compare.test.mjs"),
           ROOT.resolve("tools/java-runtime-version.test.mjs"),
@@ -310,13 +318,18 @@ public final class Build {
       if (args.length == 0) {
         throw new IllegalStateException(
             "command required: clean, fmt, check, test, pit, refactor, ci, verify, ide, dev, prod,"
-                + " coverage, perf, image, container-verify, or release");
+                + " coverage, perf, corpus-import, corpus-shapes, viz-oracle, image,"
+                + " container-verify, or release");
       }
       if (args.length > 256)
         throw new IllegalStateException("command arguments exceed 256 entries");
       List<String> commandArguments = List.of(args).subList(1, args.length);
       if (args[0].equals("fmt")) {
         formatCommand(commandArguments);
+        return;
+      }
+      if (NODE_DATA_TOOLS.containsKey(args[0])) {
+        nodeDataToolCommand(args[0], commandArguments);
         return;
       }
       if (args[0].equals("pit") && commandArguments.equals(List.of("--help"))) {
@@ -567,7 +580,8 @@ public final class Build {
     assert arguments != null;
     if (arguments.equals(List.of("--help"))) {
       System.out.println(
-          "usage: mise run pit [PIT options...] [-- production source files/directories...]");
+          "usage: mise run pit [--history|--no-history] [PIT options...] [-- production source"
+              + " files/directories...]; history is on by default");
       return;
     }
     PitSelection selection = pitSelection(arguments);
@@ -601,9 +615,37 @@ public final class Build {
                       classpath,
                       PIT_MAIN));
           launchArguments.addAll(pitArguments(selection, staging));
-          runArgFile(javaExecutable(), "pit", launchArguments, PROCESS_TIMEOUT, false);
+          explainingPitTimeout(
+                  PROCESS_TIMEOUT,
+                  _ -> runArgFile(javaExecutable(), "pit", launchArguments, PROCESS_TIMEOUT, false))
+              .build(staging);
           validatePitReport(staging, selection.dryRun());
         });
+  }
+
+  /// Replaces a bare process timeout with what it means for PIT and how to recover.
+  static ArtifactBuilder explainingPitTimeout(Duration timeout, ArtifactBuilder builder) {
+    assert timeout != null;
+    assert builder != null;
+    return staging -> {
+      try {
+        builder.build(staging);
+      } catch (ProcessTimeoutException exception) {
+        throw new IllegalStateException(pitTimeoutMessage(timeout), exception);
+      }
+    };
+  }
+
+  /// PIT rewrites the history file while it runs: a stopped run may keep the mutants it finished,
+  /// but a run on a different selection replaces the history of the previous one.
+  static String pitTimeoutMessage(Duration timeout) {
+    assert timeout != null;
+    return "PIT exceeded "
+        + timeout
+        + " and was stopped, so it wrote no report. output/pit.history may keep the mutants"
+        + " finished before the stop, and rerunning the same selection skips them. If reruns"
+        + " still cannot finish, select fewer production source paths or give the covered code"
+        + " fast unit tests so mutants die without starting servers.";
   }
 
   private static String mutationFingerprint(PitSelection selection) throws Exception {
@@ -684,6 +726,20 @@ public final class Build {
         .collect(java.util.stream.Collectors.joining(System.getProperty("path.separator")));
   }
 
+  /// An existing file or directory under production sources, not an option or option value.
+  private static boolean isProductionSourcePath(String argument) {
+    assert argument != null;
+    if (argument.isEmpty() || argument.startsWith("-")) return false;
+    Path path;
+    try {
+      path = Path.of(argument);
+    } catch (java.nio.file.InvalidPathException exception) {
+      return false;
+    }
+    path = (path.isAbsolute() ? path : ROOT.resolve(path)).normalize();
+    return path.startsWith(APP_SOURCES) && Files.exists(path, LinkOption.NOFOLLOW_LINKS);
+  }
+
   static PitSelection pitSelectionForTest(List<String> arguments) throws IOException {
     return pitSelection(arguments);
   }
@@ -694,7 +750,8 @@ public final class Build {
     var forwarded = new ArrayList<String>();
     var sources = new ArrayList<String>();
     boolean sourceSection = false;
-    boolean history = false;
+    boolean historyRequested = false;
+    boolean historyDisabled = false;
     for (String argument : arguments) {
       if (argument.equals("--")) {
         if (sourceSection) throw new IllegalStateException("duplicate PIT source separator");
@@ -706,8 +763,17 @@ public final class Build {
         }
         sources.add(argument);
       } else if (argument.equals("--history")) {
-        if (history) throw new IllegalStateException("duplicate --history");
-        history = true;
+        if (historyRequested) throw new IllegalStateException("duplicate --history");
+        historyRequested = true;
+      } else if (argument.equals("--no-history")) {
+        if (historyDisabled) throw new IllegalStateException("duplicate --no-history");
+        historyDisabled = true;
+      } else if (isProductionSourcePath(argument)) {
+        // mise consumes the first `--`, so `mise run pit -- paths` arrives without it. Without this
+        // branch the paths became stray PIT arguments and PIT mutated the whole project.
+        Path path = resolveProjectPath(argument);
+        assert path.startsWith(APP_SOURCES);
+        sources.add(argument);
       } else {
         String option =
             argument.contains("=") ? argument.substring(0, argument.indexOf('=')) : argument;
@@ -720,6 +786,11 @@ public final class Build {
     if (sourceSection && sources.isEmpty()) {
       throw new IllegalStateException("no mutable production source files selected");
     }
+    if (historyRequested && historyDisabled) {
+      throw new IllegalStateException("--history conflicts with --no-history");
+    }
+    // History is on by default: forgetting it silently repeats every earlier mutant.
+    boolean history = !historyDisabled;
     boolean dryRun = dryRun(forwarded);
     boolean pitHelp = forwarded.contains("-h") || forwarded.contains("-?");
     List<String> targets =
@@ -815,7 +886,8 @@ public final class Build {
                 PIT_JVM_ARGS,
                 "--failWhenNoMutations",
                 "true"));
-    if (selection.history()) {
+    // Dry runs and help analyse nothing, so they must not rewrite the history.
+    if (selection.history() && !selection.dryRun() && !selection.pitHelp()) {
       arguments.add("--historyInputLocation");
       arguments.add(PIT_HISTORY.toString());
       arguments.add("--historyOutputLocation");
@@ -2400,6 +2472,18 @@ public final class Build {
         + System.getProperty("os.name")
         + "\n"
         + System.getProperty("os.arch");
+  }
+
+  /// Runs a Node data tool: corpus pseudonymization, corpus shape synthesis, or the visualizations
+  /// oracle, which reads a running development server. None needs the build lock because none
+  /// compiles or touches build output.
+  private static void nodeDataToolCommand(String name, List<String> arguments) throws Exception {
+    assert NODE_DATA_TOOLS.containsKey(name);
+    assert arguments != null;
+    var command = new ArrayList<String>();
+    command.add(NODE_DATA_TOOLS.get(name));
+    command.addAll(arguments);
+    System.out.println(runTool("node", name, command, ROOT, PROCESS_TIMEOUT).output());
   }
 
   private static void formatCommand(List<String> paths) throws Exception {
@@ -5101,7 +5185,16 @@ public final class Build {
     } else {
       terminate(process, killTimeout);
     }
-    throw new IllegalStateException("process timed out after " + timeout);
+    throw new ProcessTimeoutException(timeout);
+  }
+
+  /// A child process exceeded its time limit and was terminated.
+  static final class ProcessTimeoutException extends IllegalStateException {
+    private static final long serialVersionUID = 1L;
+
+    ProcessTimeoutException(Duration timeout) {
+      super("process timed out after " + timeout);
+    }
   }
 
   private static void terminate(Process process, Duration killTimeout) throws InterruptedException {

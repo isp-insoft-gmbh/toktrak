@@ -35,11 +35,11 @@ async function writeFakeNpx(commandDirectory) {
         `echo %*>>"%FAKE_LOG%"\r\n` +
         `echo %PI_AGENT_DIR%>>"%FAKE_PI_LOG%"\r\n` +
         `if "%3"=="daily" echo {"daily":[{"period":"2026-08-15","agent":"all","inputTokens":1,"outputTokens":1,"cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":2,"totalCost":0.1}]}\r\n` +
-        `if "%3"=="session" echo {"session":[{"period":"codex-session","agent":"codex","metadata":{"lastActivity":"2026-08-15T00:00:00Z"}}]}\r\n` +
+        `if "%3"=="session" echo {"session":[{"period":"codex-session","agent":"codex","metadata":{"lastActivity":"2999-01-01T00:00:00Z"}},{"period":"old-session","agent":"codex","metadata":{"lastActivity":"2000-01-01T00:00:00Z"}}]}\r\n` +
         `if "%3"=="blocks" if "%FAKE_PARTIAL%"=="1" exit /b 7\r\n` +
         `if "%3"=="blocks" echo {"blocks":[]}\r\n` +
         `if "%3"=="codex" if "%4"=="daily" echo {"daily":[{"date":"2026-08-15","reasoningOutputTokens":7}],"totals":{}}\r\n` +
-        `if "%3"=="codex" if "%4"=="session" echo {"sessions":[{"sessionId":"codex-session","directory":"C:\\\\work\\\\project","futureField":{"preserved":true}}],"totals":{}}\r\n`,
+        `if "%3"=="codex" if "%4"=="session" echo {"sessions":[{"sessionId":"codex-session","directory":"C:\\\\work\\\\project","futureField":{"preserved":true}},{"sessionId":"old-source-session","lastActivity":"2000-01-01T00:00:00Z"}],"totals":{}}\r\n`,
     );
     return;
   }
@@ -51,9 +51,9 @@ async function writeFakeNpx(commandDirectory) {
       `printf '%s\\n' "$PI_AGENT_DIR" >>"$FAKE_PI_LOG"\n` +
       `case "$3" in\n` +
       `daily) printf '%s\\n' '{"daily":[{"period":"2026-08-15","agent":"all","inputTokens":1,"outputTokens":1,"cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":2,"totalCost":0.1}]}' ;;\n` +
-      `session) printf '%s\\n' '{"session":[{"period":"codex-session","agent":"codex","metadata":{"lastActivity":"2026-08-15T00:00:00Z"}}]}' ;;\n` +
+      `session) printf '%s\\n' '{"session":[{"period":"codex-session","agent":"codex","metadata":{"lastActivity":"2999-01-01T00:00:00Z"}},{"period":"old-session","agent":"codex","metadata":{"lastActivity":"2000-01-01T00:00:00Z"}}]}' ;;\n` +
       `blocks) [ "$FAKE_PARTIAL" = 1 ] && exit 7; printf '%s\\n' '{"blocks":[]}' ;;\n` +
-      `codex) if [ "$4" = daily ]; then printf '%s\\n' '{"daily":[{"date":"2026-08-15","reasoningOutputTokens":7}],"totals":{}}'; else printf '%s\\n' '{"sessions":[{"sessionId":"codex-session","directory":"/work/project","futureField":{"preserved":true}}],"totals":{}}'; fi ;;\n` +
+      `codex) if [ "$4" = daily ]; then printf '%s\\n' '{"daily":[{"date":"2026-08-15","reasoningOutputTokens":7}],"totals":{}}'; else printf '%s\\n' '{"sessions":[{"sessionId":"codex-session","directory":"/work/project","futureField":{"preserved":true}},{"sessionId":"old-source-session","lastActivity":"2000-01-01T00:00:00Z"}],"totals":{}}'; fi ;;\n` +
       `esac\n`,
   );
   await chmod(command, 0o700);
@@ -176,7 +176,7 @@ test("given_fakeCcusageAndServer_when_runningFullAndDaily_then_retriesUploadsPar
   assert.match(full, /reading codex daily detail/u);
   assert.match(full, /codex daily detail ready \(1 rows\)/u);
   assert.match(full, /reading codex session detail/u);
-  assert.match(full, /codex session detail ready \(1 rows\)/u);
+  assert.match(full, /codex session detail ready \(2 rows\)/u);
   assert.match(full, /checking for tracker update/u);
   assert.match(full, /tracker already current/u);
   assert.ok(full.includes(`Pi sessions: ${environmentPiSessions} (PI_CODING_AGENT_SESSION_DIR)`));
@@ -206,11 +206,110 @@ test("given_fakeCcusageAndServer_when_runningFullAndDaily_then_retriesUploadsPar
   assert.ok(uploads[1].includes('"sourceReports":{"codex":{"daily":{"ok":true'));
   assert.deepEqual(await readFile(tracker), script);
 
+  // Whole sessions only: the full upload keeps every session, the daily one only recent sessions.
+  assert.ok(uploads[0].includes('"old-session"'));
+  assert.ok(uploads[0].includes('"old-source-session"'));
+  assert.ok(uploads[1].includes('"codex-session"'));
+  assert.ok(!uploads[1].includes('"old-session"'));
+  assert.ok(!uploads[1].includes('"old-source-session"'));
+
   const commands = await lines(commandLog);
   assert.equal(commands.length, 10);
   assert.ok(commands.slice(0, 5).every((value) => !value.includes("--since")));
-  assert.ok(commands.slice(5).every((value) => value.includes("--since")));
+  const dailyCommands = commands.slice(5);
+  assert.deepEqual(
+    dailyCommands.map((value) => value.includes("--since")),
+    dailyCommands.map((value) => !/(?:^|\s)session(?:\s|$)/u.test(value)),
+  );
+  assert.equal(dailyCommands.filter((value) => value.includes("--since")).length, 3);
   assert.ok(commands.every((value) => value.split(/\s+/u)[1] === `ccusage@${ccusageVersion}`));
   assert.deepEqual(await lines(piLog), [...Array(5).fill(environmentPiSessions), ...Array(5).fill(piSessions)]);
   assert.equal(serverFailure, undefined);
+});
+
+async function startUsageServer(context, accept) {
+  const uploads = [];
+  let script;
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const body = Buffer.concat(chunks).toString("utf8");
+    if (request.url === "/api/usage") {
+      uploads.push(body);
+      response.writeHead(accept(body) ? 200 : 413);
+      response.end("{}");
+      return;
+    }
+    response.setHeader("X-TokTrak-SHA256", sha256(script));
+    response.end(script);
+  });
+  await new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  context.after(
+    () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  );
+  const address = server.address();
+  assert(address && typeof address === "object");
+  script = renderTracker(await readFile(TRACKER_SOURCE, "utf8"), `http://127.0.0.1:${address.port}`);
+  return { uploads, script };
+}
+
+async function prepareTracker(context, accept) {
+  const directory = await mkdtemp(path.join(tmpdir(), "toktrak-repair-test-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const commandDirectory = path.join(directory, "bin");
+  const piAgent = path.join(directory, "pi agent");
+  await Promise.all([mkdir(piAgent), writeFakeNpx(commandDirectory)]);
+  const { uploads, script } = await startUsageServer(context, accept);
+  const tracker = path.join(directory, "toktrak.mjs");
+  await writeFile(tracker, script);
+  const run = () =>
+    runTracker(
+      tracker,
+      commandDirectory,
+      path.join(directory, "ccusage.log"),
+      path.join(directory, "pi.log"),
+      piAgent,
+      "0",
+      "daily",
+      undefined,
+    );
+  return { uploads, run, marker: path.join(directory, "usage-repair-revision") };
+}
+
+test("given_updatedTrackerWithoutRepair_when_runningDaily_then_uploadsFullOnceAndThenIncrementally", async (context) => {
+  const { uploads, run, marker } = await prepareTracker(context, () => true);
+
+  const repair = await run();
+  assert.match(repair, /running one-time full upload to repair stored usage/u);
+  assert.equal(await readFile(marker, "utf8"), "1");
+  const incremental = await run();
+  assert.doesNotMatch(incremental, /one-time full upload/u);
+
+  assert.equal(uploads.length, 2);
+  assert.ok(uploads[0].includes('"full":true'));
+  assert.ok(uploads[0].includes('"old-session"'));
+  assert.ok(uploads[1].includes('"full":false'));
+  assert.ok(!uploads[1].includes('"old-session"'));
+  assert.ok(uploads.every((body) => body.includes('"trackerVersion":"1"')));
+});
+
+test("given_rejectedRepairUpload_when_runningDaily_then_stillUploadsIncrementallyAndRetriesLater", async (context) => {
+  const { uploads, run, marker } = await prepareTracker(context, (body) => body.includes('"full":false'));
+
+  const output = await run();
+  assert.match(output, /repair upload failed: upload returned HTTP 413/u);
+  assert.match(output, /usage uploaded/u);
+  await assert.rejects(readFile(marker), { code: "ENOENT" });
+  assert.deepEqual(
+    uploads.map((body) => JSON.parse(body).full),
+    [true, true, false],
+  );
+
+  await run();
+  assert.equal(JSON.parse(uploads[3]).full, true);
 });

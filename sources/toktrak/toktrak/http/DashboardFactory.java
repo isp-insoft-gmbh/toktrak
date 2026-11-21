@@ -10,7 +10,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -109,7 +108,7 @@ final class DashboardFactory {
     List<DashboardMetricRow> tokenTypes = tokenTypes(summary);
     List<DashboardMetricRow> models = models(daily, currency, rate);
     List<DashboardMetricRow> sources = sources(daily, currency, rate);
-    List<DashboardMetricRow> rhythm = rhythm(blocks, currency, rate);
+    List<DashboardMetricRow> rhythm = rhythm(dailyTotals, currency, rate);
     List<DashboardSpikeRow> spikes = spikes(daily, usersByKey, currency, rate);
     List<DashboardSessionRow> sessionRows = sessions(sessions, usersByKey, currency, rate);
     List<DashboardBlockRow> blockRows = blocks(blocks, currency, rate);
@@ -124,6 +123,7 @@ final class DashboardFactory {
         period,
         money(monthly.cost, currency, rate),
         counter(monthly.cost, currency, rate),
+        monthly.cost.stripTrailingZeros().toPlainString(),
         integer(monthly.tokens),
         monthly.tokens.toString(),
         activeUsers,
@@ -315,25 +315,10 @@ final class DashboardFactory {
   }
 
   private static List<DashboardMetricRow> rhythm(
-      List<Row> rows, DashboardCurrency currency, FxRate rate) {
+      Map<LocalDate, Totals> dailyTotals, DashboardCurrency currency, FxRate rate) {
     var totals = new EnumMap<DayOfWeek, Totals>(DayOfWeek.class);
     for (DayOfWeek day : DayOfWeek.values()) totals.put(day, Totals.ZERO);
-    for (Row row : rows) {
-      try {
-        DayOfWeek day =
-            Instant.parse(text(row.data().get("startTime"), "", 64))
-                .atZone(java.time.ZoneOffset.UTC)
-                .getDayOfWeek();
-        totals.merge(
-            day,
-            new Totals(
-                decimal(row.data().get("costUSD")),
-                BigInteger.valueOf(whole(row.data().get("totalTokens")))),
-            Totals::add);
-      } catch (DateTimeParseException ignored) {
-        // Unknown optional block timestamps do not make canonical daily totals unusable.
-      }
-    }
+    dailyTotals.forEach((date, usage) -> totals.merge(date.getDayOfWeek(), usage, Totals::add));
     BigDecimal maximum =
         totals.values().stream()
             .map(value -> value.cost)
@@ -473,7 +458,7 @@ final class DashboardFactory {
         BigInteger.valueOf(UsageUpload.nonnegativeLong(row.data(), "totalTokens")));
   }
 
-  private static String money(BigDecimal usd, DashboardCurrency currency, FxRate rate) {
+  static String money(BigDecimal usd, DashboardCurrency currency, FxRate rate) {
     assert usd != null && usd.signum() >= 0;
     BigDecimal value =
         currency == DashboardCurrency.EUR
@@ -514,16 +499,17 @@ final class DashboardFactory {
     return new DecimalFormat("#,##0", DecimalFormatSymbols.getInstance(Locale.US)).format(value);
   }
 
+  /// Bar length as a percentage of the largest value, for an SVG meter's width attribute. Any
+  /// non-zero value stays visible with at least one percent.
   private static String bar(BigDecimal value, BigDecimal maximum) {
-    int filled =
-        maximum.signum() == 0
-            ? 0
-            : value
-                .multiply(BigDecimal.TEN)
-                .divide(maximum, 0, RoundingMode.CEILING)
-                .intValueExact();
-    filled = Math.clamp(filled, 0, 10);
-    return "█".repeat(filled) + "░".repeat(10 - filled);
+    assert value.signum() >= 0 && value.compareTo(maximum) <= 0;
+    if (value.signum() == 0) return "0";
+    return value
+        .multiply(BigDecimal.valueOf(100))
+        .divide(maximum, 1, RoundingMode.HALF_UP)
+        .max(BigDecimal.ONE)
+        .stripTrailingZeros()
+        .toPlainString();
   }
 
   private static String initials(String name) {

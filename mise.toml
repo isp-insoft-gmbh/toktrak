@@ -46,9 +46,27 @@ run = "java -ea tools/Build.java ci"
 # Local authoring.
 [tasks.dev]
 description = "Run seeded TokTrak until stopped; restart manually after edits"
-usage = 'flag "--fail-writes" help="Start with degraded writes"'
+usage = '''
+flag "--fail-writes" help="Start with degraded writes"
+flag "--corpus <path>" default="tests/corpus/dev.jsonl" help="Event corpus copied into disposable dev data"
+'''
 env = { TOKTRAK_DEV_AUTH = "true" }
-run = "java -ea tools/Build.java dev -- --corpus tests/corpus/dev.jsonl{% if usage.fail_writes %} --fail-writes{% endif %}"
+run = "java -ea tools/Build.java dev -- --corpus \"{{ usage.corpus }}\"{% if usage.fail_writes %} --fail-writes{% endif %}"
+
+[tasks.corpus-import]
+description = "Pseudonymize a production events.ndjson snapshot into output/corpus for local use"
+raw_args = true
+run = "java -ea tools/Build.java corpus-import"
+
+[tasks.viz-oracle]
+description = "Recompute visualizations from events.ndjson independently and diff against a running dev server"
+raw_args = true
+run = "java -ea tools/Build.java viz-oracle"
+
+[tasks.corpus-shapes]
+description = "Append synthetic events for field shapes the pseudonymized data has but tests/corpus/dev.jsonl lacks"
+raw_args = true
+run = "java -ea tools/Build.java corpus-shapes"
 
 [tasks.fmt]
 description = "Format Markdown and Java sources, optionally limiting Java paths"
@@ -66,7 +84,7 @@ description = "Run JaCoCo tests, generate reports, and enforce floors (also in c
 run = "java -ea tools/Build.java coverage"
 
 [tasks.pit]
-description = "Run PIT options directly; use --history while iterating; source filters follow --"
+description = "Run PIT on production paths after --; reuses output/pit.history unless --no-history"
 raw_args = true
 run = "java -ea tools/Build.java pit"
 

@@ -86,7 +86,9 @@ final class DashboardHttpTest {
           ingestion.indexOf("<strong>Synthetic User 5</strong>")
               < ingestion.indexOf("<strong>Synthetic User 1</strong>"),
           ingestion);
-      assertTrue(overview.body().contains(">██████████</span>"), overview.body());
+      assertTrue(
+          overview.body().contains("<rect class=\"bar-fill\" width=\"100\" height=\"8\"/>"),
+          overview.body());
       assertTrue(overview.body().contains("datastar-patch-signals"), overview.body());
       assertTrue(
           overview.body().matches("(?s).*src=\"/assets/datastar\\.[0-9a-f]{32}\\.js\".*"),
@@ -118,18 +120,18 @@ final class DashboardHttpTest {
           new String[] {
             "Daily projected cost",
             "Where tokens go",
-            "Usage rhythm by UTC weekday",
+            "Usage by day of the week",
             "Model and harness mix",
             "Individual streams, shared context",
             "Costliest sessions",
-            "Recent coding blocks"
+            "Recent usage windows"
           }) {
         assertTrue(visualizations.body().contains(heading), heading);
       }
       assertTrue(visualizations.body().contains("<svg class=\"chart-rule\""));
       assertTrue(
           visualizations.body().contains("<time datetime=\"2026-07-14\">14 Jul 2026</time>"));
-      assertTrue(visualizations.body().contains("4,263,701,600"));
+      assertTrue(visualizations.body().contains("4,263,701,684"));
       assertTrue(visualizations.body().contains(">Monday<"));
       assertTrue(visualizations.body().contains("<strong>claude-fable-5</strong>"));
       assertTrue(visualizations.body().contains("<strong>opencode</strong>"));
