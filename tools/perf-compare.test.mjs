@@ -12,6 +12,7 @@ function result(score, scoreError = 0.1, benchmark = "toktrak.perf.CorpusReplayB
     mode: "avgt",
     threads: 1,
     forks: 2,
+    jvmArgs: ["-ea"],
     warmupIterations: 5,
     warmupTime: "1 s",
     warmupBatchSize: 1,
@@ -72,6 +73,19 @@ test("given_changedDefinitionOrFixture_when_compared_then_notComparable", () => 
     compare(new Map(), new Map([["new", result(1)]]), { baseHostKey: hostKey, candidateHostKey: hostKey })[0].verdict,
     "not comparable",
   );
+});
+
+test("given_changedJvmArguments_when_compared_then_notComparable", () => {
+  const base = result(1);
+  const candidate = result(3);
+  assert.equal(pair(base, candidate).verdict, "suspect");
+  for (const args of [["-ea", "-Xmx256m"], ["-da"], [], undefined]) {
+    candidate.jvmArgs = args;
+    assert.equal(pair(base, candidate).verdict, "not comparable");
+  }
+  base.jvmArgs = ["-ea", "-Xmx256m"];
+  candidate.jvmArgs = ["-Xmx256m", "-ea"];
+  assert.equal(pair(base, candidate).verdict, "not comparable");
 });
 
 function runs(context) {
