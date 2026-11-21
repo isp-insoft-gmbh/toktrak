@@ -68,7 +68,7 @@ final class VisualizationsConsistencyTest {
       throws Exception {
     try (var usage = corpus("corpus-calendar")) {
       calendar(usage);
-      Page month = Page.of(usage.visualizations(null));
+      Page month = Page.of(usage.visualizations(null).replaceAll(">\\s+<", "><"));
       assertEquals(
           new BigDecimal(attribute(usage.overview(), "id=\"kpi-cost\"[^>]*data-usd=\"([^\"]+)\"")),
           month.total(),
@@ -197,9 +197,10 @@ final class VisualizationsConsistencyTest {
 
   /// Checks one range in isolation and returns its figures.
   private static Page check(UsageFixture usage, String query) throws Exception {
-    String html = usage.visualizations(query);
-    Page page = Page.of(html);
-    checkInsights(html, page.total(), query);
+    // Compact once: the regular expressions below then scan one string without line breaks.
+    String compact = usage.visualizations(query).replaceAll(">\\s+<", "><");
+    Page page = Page.of(compact);
+    checkInsights(compact, page.total(), query);
     assertEquals(0, page.total().compareTo(sum(page.legend())), query + ": tools != total");
     assertEquals(0, page.total().compareTo(sum(page.rows())), query + ": periods != total");
     assertEquals(0, page.total().compareTo(sum(page.columns())), query + ": bars != total");
@@ -216,8 +217,7 @@ final class VisualizationsConsistencyTest {
 
   /// Daily-based insight cards reconcile exactly with the range total; session cards with the
   /// session total. Daily against session is only a coverage note.
-  private static void checkInsights(String html, BigDecimal total, String query) {
-    String compact = html.replaceAll(">\\s+<", "><");
+  private static void checkInsights(String compact, BigDecimal total, String query) {
     String cumulative = section(compact, "cumulative-heading", "people-active-heading");
     assertEquals(0, total.compareTo(kpi(cumulative, "Total")), query + ": cumulative");
 
@@ -441,10 +441,11 @@ final class VisualizationsConsistencyTest {
       List<BigDecimal> legend,
       List<BigDecimal> rows,
       List<BigDecimal> columns) {
+    /// `html` must already have the whitespace between tags removed.
     static Page of(String html) {
       int insights = html.indexOf(INSIGHTS);
       assertTrue(insights >= 0, "insight cards missing\n" + html);
-      String compact = html.substring(0, insights).replaceAll(">\\s+<", "><");
+      String compact = html.substring(0, insights);
       BigDecimal total = null;
       BigDecimal perDay = null;
       BigDecimal statTotal = null;
