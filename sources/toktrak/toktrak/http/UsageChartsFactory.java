@@ -17,6 +17,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
+import toktrak.charts.Attribution;
+import toktrak.charts.SeriesGrouping;
+import toktrak.charts.Statistics;
 import toktrak.http.UsageCharts.ColumnChart;
 import toktrak.http.UsageCharts.DataRow;
 import toktrak.http.UsageCharts.Kpi;
@@ -43,8 +46,6 @@ final class UsageChartsFactory {
   private static final int X_LABELS_MAX = 8;
   private static final int Y_TICKS = 4;
   private static final int AVERAGE_DAYS = 7;
-  static final String NOT_REPORTED = "Not reported";
-  private static final BigDecimal ROUNDING_SLACK = new BigDecimal("0.000001");
   private static final String OTHER_TOOLS = "Other tools";
   private static final double WIDTH = 960;
   private static final double HEIGHT = 260;
@@ -142,7 +143,7 @@ final class UsageChartsFactory {
     assert toolTotals.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add).compareTo(total)
         == 0;
 
-    List<String> series = series(toolTotals);
+    SeriesGrouping series = SeriesGrouping.of(toolTotals, SERIES_MAX);
     long elapsedDays = elapsedDays(range, today);
     return new UsageCharts(
         range.label(),
@@ -154,10 +155,8 @@ final class UsageChartsFactory {
         dailyCost(bucket, buckets, series, toolTotals, total, range, currency, rate));
   }
 
-  /// Costs per tool for one daily row; every row's cost is attributed exactly once. Reported tool
-  /// costs within {@code ROUNDING_SLACK} of the row total absorb that rounding noise. Tool costs
-  /// that disagree more are ignored, so the row falls back to a single reported tool or to Not
-  /// reported instead of being split arbitrarily.
+  /// Costs per tool for one daily row; every row's cost is attributed exactly once by {@link
+  /// Attribution#split}, falling back to a single reported tool or to Not reported.
   private static Map<String, BigDecimal> toolCosts(Row row, BigDecimal rowCost) {
     var reported = new LinkedHashMap<String, BigDecimal>();
     if (row.data().get("agents") instanceof List<?> agents) {
@@ -189,65 +188,12 @@ final class UsageChartsFactory {
         && name.length() <= AGENT_NAME_CHARACTERS_MAX) {
       fallback = name;
     }
-    return attribute(reported, rowCost, fallback);
+    return Attribution.split(reported, rowCost, fallback);
   }
 
-  /// Splits `rowCost` across reported parts so the result always sums exactly to `rowCost`. Parts
-  /// within {@code ROUNDING_SLACK} of the row total absorb rounding noise; parts that disagree more
-  /// are ignored in favour of `fallback` (when named) or Not reported.
-  static Map<String, BigDecimal> attribute(
-      Map<String, BigDecimal> reported, BigDecimal rowCost, String fallback) {
-    assert rowCost.signum() >= 0;
-    BigDecimal reportedTotal = reported.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-    var result = new LinkedHashMap<String, BigDecimal>();
-    BigDecimal attributed = BigDecimal.ZERO;
-    if (reportedTotal.subtract(rowCost).compareTo(ROUNDING_SLACK) <= 0) {
-      for (Map.Entry<String, BigDecimal> tool : reported.entrySet()) {
-        BigDecimal cost = tool.getValue().min(rowCost.subtract(attributed));
-        if (cost.signum() <= 0) continue;
-        result.put(tool.getKey(), cost);
-        attributed = attributed.add(cost);
-      }
-    }
-    if (result.isEmpty() && fallback != null && rowCost.signum() > 0) {
-      result.put(fallback, rowCost);
-      attributed = rowCost;
-    }
-    BigDecimal unattributed = rowCost.subtract(attributed);
-    assert unattributed.signum() >= 0;
-    if (unattributed.signum() > 0
-        && !result.isEmpty()
-        && unattributed.compareTo(ROUNDING_SLACK) <= 0) {
-      String largest =
-          result.entrySet().stream().max(Map.Entry.comparingByValue()).orElseThrow().getKey();
-      result.merge(largest, unattributed, BigDecimal::add);
-    } else if (unattributed.signum() > 0) {
-      result.merge(NOT_REPORTED, unattributed, BigDecimal::add);
-    }
-    return result;
-  }
-
-  /// Tool names in descending cost order; the long tail folds into one final series.
-  private static List<String> series(Map<String, BigDecimal> toolTotals) {
-    List<String> names =
-        toolTotals.entrySet().stream()
-            .sorted(
-                Map.Entry.<String, BigDecimal>comparingByValue()
-                    .reversed()
-                    .thenComparing(Map.Entry.comparingByKey()))
-            .map(Map.Entry::getKey)
-            .toList();
-    if (names.size() <= SERIES_MAX) return names;
-    var result = new ArrayList<>(names.subList(0, SERIES_MAX - 1));
-    result.add(OTHER_TOOLS);
-    return List.copyOf(result);
-  }
-
-  private static String seriesOf(List<String> series, String tool) {
-    int index = series.indexOf(tool);
-    if (index < 0) index = series.indexOf(OTHER_TOOLS);
-    assert index >= 0 && index < SERIES_MAX;
-    return "series-" + (index + 1);
+  private static String seriesName(SeriesGrouping series, int index) {
+    assert index >= 0 && index < series.size();
+    return index < series.shown().size() ? series.shown().get(index) : OTHER_TOOLS;
   }
 
   static long elapsedDays(UsageRange range, LocalDate today) {
@@ -307,7 +253,7 @@ final class UsageChartsFactory {
         elapsedDays == 0
             ? BigDecimal.ZERO
             : total.divide(BigDecimal.valueOf(elapsedDays), 8, RoundingMode.HALF_UP);
-    BigDecimal typical = dayCosts.isEmpty() ? BigDecimal.ZERO : median(dayCosts);
+    BigDecimal typical = dayCosts.isEmpty() ? BigDecimal.ZERO : Statistics.median(dayCosts);
     return List.of(
         money("Estimated cost", total, currency, rate),
         money("Per calendar day", perDay, currency, rate),
@@ -326,21 +272,10 @@ final class UsageChartsFactory {
     return usd.stripTrailingZeros().toPlainString();
   }
 
-  static BigDecimal median(List<BigDecimal> sorted) {
-    assert !sorted.isEmpty();
-    int middle = sorted.size() / 2;
-    return sorted.size() % 2 == 1
-        ? sorted.get(middle)
-        : sorted
-            .get(middle - 1)
-            .add(sorted.get(middle))
-            .divide(BigDecimal.valueOf(2), 8, RoundingMode.HALF_UP);
-  }
-
   private static ColumnChart dailyCost(
       Bucket bucket,
       Map<LocalDate, Map<String, BigDecimal>> buckets,
-      List<String> series,
+      SeriesGrouping series,
       Map<String, BigDecimal> toolTotals,
       BigDecimal total,
       UsageRange range,
@@ -366,15 +301,11 @@ final class UsageChartsFactory {
       double x = PAD_LEFT + index * columnWidth;
       double base = HEIGHT - PAD_BOTTOM;
       String period = bucketPeriod(bucket, entry.getKey(), range);
-      for (String tool : series.reversed()) {
-        BigDecimal cost =
-            tool.equals(OTHER_TOOLS)
-                ? entry.getValue().entrySet().stream()
-                    .filter(value -> !series.contains(value.getKey()))
-                    .map(Map.Entry::getValue)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add)
-                : entry.getValue().getOrDefault(tool, BigDecimal.ZERO);
+      List<BigDecimal> costs = series.costs(entry.getValue());
+      for (int seriesIndex = series.size() - 1; seriesIndex >= 0; seriesIndex--) {
+        BigDecimal cost = costs.get(seriesIndex);
         if (cost.signum() == 0) continue;
+        String tool = seriesName(series, seriesIndex);
         double height = plotHeight * ratio(cost, maximum);
         base -= height;
         columns.add(
@@ -383,7 +314,7 @@ final class UsageChartsFactory {
                 number(base),
                 number(Math.max(columnWidth - 1, 0.5)),
                 number(height),
-                seriesOf(series, tool),
+                "series-" + (seriesIndex + 1),
                 period + " · " + tool + " · " + DashboardFactory.money(cost, currency, rate),
                 exact(cost)));
       }
@@ -445,18 +376,13 @@ final class UsageChartsFactory {
     }
 
     var legend = new ArrayList<LegendItem>(series.size());
-    for (String tool : series) {
-      BigDecimal cost =
-          tool.equals(OTHER_TOOLS)
-              ? toolTotals.entrySet().stream()
-                  .filter(entry -> !series.contains(entry.getKey()))
-                  .map(Map.Entry::getValue)
-                  .reduce(BigDecimal.ZERO, BigDecimal::add)
-              : toolTotals.get(tool);
+    List<BigDecimal> legendCosts = series.costs(toolTotals);
+    for (int seriesIndex = 0; seriesIndex < series.size(); seriesIndex++) {
+      BigDecimal cost = legendCosts.get(seriesIndex);
       legend.add(
           new LegendItem(
-              seriesOf(series, tool),
-              tool,
+              "series-" + (seriesIndex + 1),
+              seriesName(series, seriesIndex),
               DashboardFactory.money(cost, currency, rate),
               exact(cost)));
     }
@@ -476,7 +402,8 @@ final class UsageChartsFactory {
               exact(bucketTotals.get(peak))));
       List<BigDecimal> used =
           bucketTotals.stream().filter(value -> value.signum() > 0).sorted().toList();
-      stats.add(money("Typical " + bucket.noun + " with usage", median(used), currency, rate));
+      stats.add(
+          money("Typical " + bucket.noun + " with usage", Statistics.median(used), currency, rate));
     }
     stats.add(money("Total", total, currency, rate));
 

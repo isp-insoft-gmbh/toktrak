@@ -86,6 +86,7 @@ record UsageInsights(
   record PersonRow(
       String name,
       List<SvgRect> spark,
+      List<SparkLine> grid,
       String total,
       String usd,
       String share,
@@ -94,8 +95,12 @@ record UsageInsights(
       String perDay) {
     PersonRow {
       spark = List.copyOf(spark);
+      grid = List.copyOf(grid);
     }
   }
+
+  /// A reference line in a person's trend, such as $10 on the shared log scale.
+  record SparkLine(String y, String label) {}
 
   /// Rows of 100% stacked segments, one row per period.
   record StackedRows(
@@ -123,7 +128,7 @@ record UsageInsights(
 
   record SessionInsights(
       String coverage,
-      CoverageLevel level,
+      toktrak.charts.Coverage.Level level,
       List<Kpi> stats,
       BarList sizes,
       LineChart concentration,
@@ -135,13 +140,8 @@ record UsageInsights(
     }
 
     boolean warning() {
-      return level == CoverageLevel.WARNING;
+      return level == toktrak.charts.Coverage.Level.WARNING;
     }
-  }
-
-  enum CoverageLevel {
-    CONSISTENT,
-    WARNING
   }
 
   record Heatmap(

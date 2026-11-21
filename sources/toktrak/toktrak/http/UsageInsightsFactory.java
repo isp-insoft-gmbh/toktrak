@@ -25,6 +25,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
+import toktrak.charts.Attribution;
+import toktrak.charts.Concentration;
+import toktrak.charts.Coverage;
+import toktrak.charts.LogScale;
+import toktrak.charts.SeriesGrouping;
+import toktrak.charts.SizeBins;
+import toktrak.charts.Statistics;
 import toktrak.http.UsageCharts.ColumnChart;
 import toktrak.http.UsageCharts.DataRow;
 import toktrak.http.UsageCharts.Kpi;
@@ -35,7 +42,6 @@ import toktrak.http.UsageCharts.SvgTick;
 import toktrak.http.UsageChartsFactory.Bucket;
 import toktrak.http.UsageInsights.BarList;
 import toktrak.http.UsageInsights.BarRow;
-import toktrak.http.UsageInsights.CoverageLevel;
 import toktrak.http.UsageInsights.HeatCell;
 import toktrak.http.UsageInsights.Heatmap;
 import toktrak.http.UsageInsights.Line;
@@ -45,6 +51,7 @@ import toktrak.http.UsageInsights.PeopleTable;
 import toktrak.http.UsageInsights.PersonRow;
 import toktrak.http.UsageInsights.Segment;
 import toktrak.http.UsageInsights.SessionInsights;
+import toktrak.http.UsageInsights.SparkLine;
 import toktrak.http.UsageInsights.StackedRow;
 import toktrak.http.UsageInsights.StackedRows;
 import toktrak.projection.Projection.FxRate;
@@ -74,14 +81,17 @@ final class UsageInsightsFactory {
   private static final int MIX_MONTHLY_DAYS_MAX = 731;
   private static final int PROJECTION_DAYS = 30;
   private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
-  private static final BigDecimal MILLION = BigDecimal.valueOf(1_000_000);
-  private static final BigDecimal COVERAGE_WARNING_PERCENT = BigDecimal.valueOf(98);
+  private static final BigDecimal COVERAGE_TOLERANCE_PERCENT = BigDecimal.valueOf(2);
   private static final List<Integer> CONCENTRATION_PERCENTS =
       List.of(1, 2, 5, 10, 20, 30, 50, 75, 100);
-  private static final List<String> PERSON_DAY_EDGES =
-      List.of("0", "0.3", "1", "3", "10", "30", "100", "300", "1000");
-  private static final List<String> SESSION_EDGES =
-      List.of("0", "0.1", "0.3", "1", "3", "10", "30", "100", "300");
+  private static final List<BigDecimal> PERSON_DAY_EDGES =
+      decimals("0", "0.3", "1", "3", "10", "30", "100", "300", "1000");
+  private static final List<BigDecimal> SESSION_EDGES =
+      decimals("0", "0.1", "0.3", "1", "3", "10", "30", "100", "300");
+
+  /// Costs at or below this draw as the thinnest spark bar on the shared log scale.
+  private static final BigDecimal SPARK_FLOOR = new BigDecimal("0.1");
+
   private static final String OTHER_MODELS = "Other models";
   private static final DateTimeFormatter WEEK =
       DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH);
@@ -186,7 +196,7 @@ final class UsageInsightsFactory {
         whole(data.get("cacheCreationTokens")),
         whole(data.get("cacheReadTokens")),
         whole(data.get("totalTokens")),
-        UsageChartsFactory.attribute(reported, cost, null),
+        Attribution.split(reported, cost, null),
         tokens);
   }
 
@@ -222,10 +232,7 @@ final class UsageInsightsFactory {
             + x(paceEnd, count)
             + " "
             + y(total, maximum);
-    BigDecimal pace =
-        elapsed == 0
-            ? BigDecimal.ZERO
-            : total.divide(BigDecimal.valueOf(elapsed), 8, RoundingMode.HALF_UP);
+    BigDecimal pace = Statistics.perUnit(total, elapsed);
     return new LineChart(
         number(WIDTH),
         number(HEIGHT),
@@ -296,10 +303,7 @@ final class UsageInsightsFactory {
     }
     List<Integer> used =
         people.values().stream().map(Set::size).filter(value -> value > 0).sorted().toList();
-    BigDecimal perPersonDay =
-        personDaysWithUsage == 0
-            ? BigDecimal.ZERO
-            : total.divide(BigDecimal.valueOf(personDaysWithUsage), 8, RoundingMode.HALF_UP);
+    BigDecimal perPersonDay = Statistics.perUnit(total, personDaysWithUsage);
     return new ColumnChart(
         number(WIDTH),
         number(HEIGHT),
@@ -323,55 +327,41 @@ final class UsageInsightsFactory {
   /// Log-scale size bins: how often a size occurs and how much of the cost it adds.
   private static BarList sizes(
       List<BigDecimal> sortedCosts,
-      List<String> edges,
+      List<BigDecimal> edges,
       String unit,
       DashboardCurrency currency,
       FxRate rate) {
-    int bins = edges.size();
-    long[] counts = new long[bins];
-    BigDecimal[] costs = new BigDecimal[bins];
-    java.util.Arrays.fill(costs, BigDecimal.ZERO);
-    for (BigDecimal cost : sortedCosts) {
-      int bin = bins - 1;
-      while (bin > 0 && cost.compareTo(new BigDecimal(edges.get(bin))) < 0) bin--;
-      counts[bin]++;
-      costs[bin] = costs[bin].add(cost);
-    }
-    BigDecimal total = sortedCosts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    List<SizeBins.Bin> bins = SizeBins.of(sortedCosts, edges);
+    BigDecimal total = Statistics.sum(sortedCosts);
     long count = sortedCosts.size();
-    long countMax = java.util.Arrays.stream(counts).max().orElse(0);
+    long countMax = bins.stream().mapToLong(SizeBins.Bin::count).max().orElse(0);
     BigDecimal costMax =
-        java.util.Arrays.stream(costs).max(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
-    var rows = new ArrayList<BarRow>(bins);
-    for (int bin = 0; bin < bins; bin++) {
+        bins.stream().map(SizeBins.Bin::cost).max(Comparator.naturalOrder()).orElseThrow();
+    var rows = new ArrayList<BarRow>(bins.size());
+    for (SizeBins.Bin bin : bins) {
+      String lower = bin.lower().toPlainString();
       String label =
-          bin == 0
-              ? "under $" + edges.get(1)
-              : bin == bins - 1
-                  ? "$" + edges.get(bin) + "+"
-                  : "$" + edges.get(bin) + "–" + edges.get(bin + 1);
+          bin.lower().signum() == 0
+              ? "under $" + bin.upper().toPlainString()
+              : bin.upper() == null
+                  ? "$" + lower + "+"
+                  : "$" + lower + "–" + bin.upper().toPlainString();
       rows.add(
           new BarRow(
               label,
-              meter(BigDecimal.valueOf(counts[bin]), BigDecimal.valueOf(countMax)),
-              percent(BigDecimal.valueOf(counts[bin]), BigDecimal.valueOf(count)),
-              List.of(new Meter(meter(costs[bin], costMax), percent(costs[bin], total))),
-              UsageChartsFactory.exact(costs[bin])));
+              meter(BigDecimal.valueOf(bin.count()), BigDecimal.valueOf(countMax)),
+              percent(BigDecimal.valueOf(bin.count()), BigDecimal.valueOf(count)),
+              List.of(new Meter(meter(bin.cost(), costMax), percent(bin.cost(), total))),
+              UsageChartsFactory.exact(bin.cost())));
     }
     var stats = new ArrayList<Kpi>();
     stats.add(new Kpi(capitalized(unit), Long.toString(count), ""));
     if (count > 0) {
+      stats.add(UsageChartsFactory.money("Median", Statistics.median(sortedCosts), currency, rate));
+      stats.add(UsageChartsFactory.money("Mean", Statistics.perUnit(total, count), currency, rate));
       stats.add(
           UsageChartsFactory.money(
-              "Median", UsageChartsFactory.median(sortedCosts), currency, rate));
-      stats.add(
-          UsageChartsFactory.money(
-              "Mean",
-              total.divide(BigDecimal.valueOf(count), 8, RoundingMode.HALF_UP),
-              currency,
-              rate));
-      stats.add(
-          UsageChartsFactory.money("90th percentile", quantile(sortedCosts, 90), currency, rate));
+              "90th percentile", Statistics.quantile(sortedCosts, 90), currency, rate));
       stats.add(UsageChartsFactory.money("Largest", sortedCosts.getLast(), currency, rate));
     }
     stats.add(UsageChartsFactory.money("Total", total, currency, rate));
@@ -380,19 +370,10 @@ final class UsageInsightsFactory {
 
   /// Share of cost caused by the costliest x% of items.
   private static LineChart concentration(List<BigDecimal> sortedCosts, String unit) {
-    List<BigDecimal> descending = sortedCosts.reversed();
-    BigDecimal total = descending.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
     var path = new StringBuilder("M" + percentX(0) + " " + percentY(BigDecimal.ZERO));
     var stats = new ArrayList<Kpi>();
     for (int percent : CONCENTRATION_PERCENTS) {
-      int items = (int) Math.ceil(descending.size() * percent / 100.0);
-      BigDecimal share =
-          total.signum() == 0
-              ? BigDecimal.ZERO
-              : descending.subList(0, items).stream()
-                  .reduce(BigDecimal.ZERO, BigDecimal::add)
-                  .multiply(HUNDRED)
-                  .divide(total, 8, RoundingMode.HALF_UP);
+      BigDecimal share = Concentration.topShare(sortedCosts, percent);
       path.append('L').append(percentX(percent)).append(' ').append(percentY(share));
       if (percent == 1 || percent == 10 || percent == 50) {
         stats.add(
@@ -456,7 +437,7 @@ final class UsageInsightsFactory {
     }
     var everyone =
         personDays.entrySet().stream()
-            .map(entry -> Map.entry(entry.getKey(), sum(entry.getValue().values())))
+            .map(entry -> Map.entry(entry.getKey(), Statistics.sum(entry.getValue().values())))
             .sorted(
                 Map.Entry.<UserKey, BigDecimal>comparingByValue()
                     .reversed()
@@ -465,16 +446,26 @@ final class UsageInsightsFactory {
     var ordered = everyone.subList(0, Math.min(everyone.size(), PEOPLE_MAX));
     var rows = new ArrayList<PersonRow>();
     double barWidth = (double) SPARK_WIDTH / buckets.size();
+    // One shared log scale: every trend stays visible and comparable across people.
+    BigDecimal bucketMax =
+        ordered.stream()
+            .flatMap(person -> java.util.Arrays.stream(perPerson.get(person.getKey())))
+            .max(Comparator.naturalOrder())
+            .orElse(BigDecimal.ZERO);
+    var scale = new LogScale(SPARK_FLOOR, bucketMax);
+    var grid = new ArrayList<SparkLine>();
+    for (BigDecimal decade : scale.decades()) {
+      grid.add(
+          new SparkLine(
+              number(SPARK_HEIGHT - sparkHeight(scale, decade)),
+              DashboardFactory.money(decade, currency, rate)));
+    }
     for (Map.Entry<UserKey, BigDecimal> person : ordered) {
       BigDecimal[] values = perPerson.get(person.getKey());
-      // Each person's trend uses their own scale; totals carry the comparison.
-      BigDecimal bucketMax =
-          java.util.Arrays.stream(values).max(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
       var spark = new ArrayList<SvgRect>();
       for (int index = 0; index < values.length; index++) {
         if (values[index].signum() == 0) continue;
-        double height =
-            Math.max(1, SPARK_HEIGHT * UsageChartsFactory.ratio(values[index], bucketMax));
+        double height = sparkHeight(scale, values[index]);
         spark.add(
             new SvgRect(
                 number(index * barWidth),
@@ -497,27 +488,20 @@ final class UsageInsightsFactory {
           new PersonRow(
               user == null ? "Unknown person" : user.displayName(),
               spark,
+              grid,
               DashboardFactory.money(person.getValue(), currency, rate),
               UsageChartsFactory.exact(person.getValue()),
               percent(person.getValue(), total),
               Integer.toString(active.size()),
               DashboardFactory.money(
-                  active.isEmpty() ? BigDecimal.ZERO : UsageChartsFactory.median(active),
-                  currency,
-                  rate),
+                  active.isEmpty() ? BigDecimal.ZERO : Statistics.median(active), currency, rate),
               DashboardFactory.money(
-                  elapsed == 0
-                      ? BigDecimal.ZERO
-                      : person
-                          .getValue()
-                          .divide(BigDecimal.valueOf(elapsed), 8, RoundingMode.HALF_UP),
-                  currency,
-                  rate)));
+                  Statistics.perUnit(person.getValue(), elapsed), currency, rate)));
     }
     var rest = everyone.subList(ordered.size(), everyone.size());
     if (!rest.isEmpty()) {
       // Remaining people share one row so the rows still add up to the range total.
-      BigDecimal restTotal = sum(rest.stream().map(Map.Entry::getValue).toList());
+      BigDecimal restTotal = Statistics.sum(rest.stream().map(Map.Entry::getValue).toList());
       List<BigDecimal> restDays =
           rest.stream()
               .flatMap(person -> personDays.get(person.getKey()).values().stream())
@@ -528,30 +512,26 @@ final class UsageInsightsFactory {
           new PersonRow(
               rest.size() + " more people",
               List.of(),
+              grid,
               DashboardFactory.money(restTotal, currency, rate),
               UsageChartsFactory.exact(restTotal),
               percent(restTotal, total),
               restDays.size() + " person-days",
               DashboardFactory.money(
-                  restDays.isEmpty() ? BigDecimal.ZERO : UsageChartsFactory.median(restDays),
+                  restDays.isEmpty() ? BigDecimal.ZERO : Statistics.median(restDays),
                   currency,
                   rate),
-              DashboardFactory.money(
-                  elapsed == 0
-                      ? BigDecimal.ZERO
-                      : restTotal.divide(BigDecimal.valueOf(elapsed), 8, RoundingMode.HALF_UP),
-                  currency,
-                  rate)));
+              DashboardFactory.money(Statistics.perUnit(restTotal, elapsed), currency, rate)));
     }
     List<BigDecimal> totals = everyone.stream().map(Map.Entry::getValue).sorted().toList();
-    assert sum(totals).compareTo(total) == 0;
+    assert Statistics.sum(totals).compareTo(total) == 0;
     return new PeopleTable(
         rows,
         List.of(
             new Kpi("People", Integer.toString(personDays.size()), ""),
             UsageChartsFactory.money(
                 "Median person",
-                totals.isEmpty() ? BigDecimal.ZERO : UsageChartsFactory.median(totals),
+                totals.isEmpty() ? BigDecimal.ZERO : Statistics.median(totals),
                 currency,
                 rate),
             UsageChartsFactory.money("Total", total, currency, rate)));
@@ -578,33 +558,19 @@ final class UsageInsightsFactory {
         totals.merge(model.getKey(), model.getValue(), BigDecimal::add);
       }
     }
-    List<String> ordered =
-        totals.entrySet().stream()
-            .sorted(
-                Map.Entry.<String, BigDecimal>comparingByValue()
-                    .reversed()
-                    .thenComparing(Map.Entry.comparingByKey()))
-            .map(Map.Entry::getKey)
-            .toList();
-    // Grouping is positional, so a reported model literally named like the group stays separate.
-    List<String> shown =
-        ordered.size() <= SERIES_MAX ? ordered : ordered.subList(0, SERIES_MAX - 1);
-    var shownSet = new java.util.HashSet<String>(shown);
-    int seriesCount = ordered.size() <= SERIES_MAX ? shown.size() : SERIES_MAX;
+    SeriesGrouping series = SeriesGrouping.of(totals, SERIES_MAX);
     var rows = new ArrayList<StackedRow>();
     for (Map.Entry<LocalDate, Map<String, BigDecimal>> period : periods.entrySet()) {
-      BigDecimal periodTotal = sum(period.getValue().values());
+      BigDecimal periodTotal = Statistics.sum(period.getValue().values());
       if (periodTotal.signum() == 0) continue;
       var segments = new ArrayList<Segment>();
       BigDecimal offset = BigDecimal.ZERO;
-      for (int index = 0; index < seriesCount; index++) {
-        String name = index < shown.size() ? shown.get(index) : OTHER_MODELS;
-        BigDecimal cost =
-            index < shown.size()
-                ? period.getValue().getOrDefault(name, BigDecimal.ZERO)
-                : remainder(period.getValue(), shownSet);
+      List<BigDecimal> costs = series.costs(period.getValue());
+      for (int index = 0; index < series.size(); index++) {
+        String name = modelName(series, index);
+        BigDecimal cost = costs.get(index);
         if (cost.signum() == 0) continue;
-        BigDecimal width = cost.multiply(HUNDRED).divide(periodTotal, 4, RoundingMode.HALF_UP);
+        BigDecimal width = Statistics.percent(cost, periodTotal, 4);
         segments.add(
             new Segment(
                 offset.stripTrailingZeros().toPlainString(),
@@ -628,25 +594,23 @@ final class UsageInsightsFactory {
               segments));
     }
     var legend = new ArrayList<LegendItem>();
-    for (int index = 0; index < seriesCount; index++) {
-      String name = index < shown.size() ? shown.get(index) : OTHER_MODELS;
-      BigDecimal cost = index < shown.size() ? totals.get(name) : remainder(totals, shownSet);
+    List<BigDecimal> legendCosts = series.costs(totals);
+    for (int index = 0; index < series.size(); index++) {
+      BigDecimal cost = legendCosts.get(index);
       legend.add(
           new LegendItem(
               "series-" + (index + 1),
-              name,
+              modelName(series, index),
               DashboardFactory.money(cost, currency, rate),
               UsageChartsFactory.exact(cost)));
     }
-    assert sum(legend.stream().map(item -> new BigDecimal(item.usd())).toList()).compareTo(total)
-        == 0;
-    assert sum(totals.values()).compareTo(total) == 0;
+    assert Statistics.sum(legendCosts).compareTo(total) == 0;
     return new StackedRows(
         periodName,
         rows,
         legend,
         List.of(
-            new Kpi("Models", Integer.toString(ordered.size()), ""),
+            new Kpi("Models", Integer.toString(totals.size()), ""),
             UsageChartsFactory.money("Total", total, currency, rate)));
   }
 
@@ -658,7 +622,7 @@ final class UsageInsightsFactory {
     for (Day day : days) {
       allTokens = allTokens.add(day.totalTokens());
       for (Map.Entry<String, BigDecimal> model : day.models().entrySet()) {
-        if (model.getKey().equals(UsageChartsFactory.NOT_REPORTED)) continue;
+        if (model.getKey().equals(Attribution.NOT_REPORTED)) continue;
         costs.merge(model.getKey(), model.getValue(), BigDecimal::add);
       }
       day.modelTokens().forEach((name, value) -> tokens.merge(name, value, BigInteger::add));
@@ -674,10 +638,7 @@ final class UsageInsightsFactory {
         .forEach(entry ->
             prices.put(
                 entry.getKey(),
-                entry
-                    .getValue()
-                    .multiply(MILLION)
-                    .divide(new BigDecimal(tokens.get(entry.getKey())), 8, RoundingMode.HALF_UP)));
+                Statistics.perMillion(entry.getValue(), tokens.get(entry.getKey()))));
     BigDecimal maximum =
         prices.values().stream().max(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
     var rows = new ArrayList<BarRow>();
@@ -690,10 +651,7 @@ final class UsageInsightsFactory {
               List.of(),
               UsageChartsFactory.exact(price.getValue())));
     }
-    BigDecimal average =
-        allTokens.signum() == 0
-            ? BigDecimal.ZERO
-            : total.multiply(MILLION).divide(new BigDecimal(allTokens), 8, RoundingMode.HALF_UP);
+    BigDecimal average = Statistics.perMillion(total, allTokens);
     return new BarList(
         List.of("Model", "Cost per 1M tokens"),
         rows,
@@ -729,9 +687,8 @@ final class UsageInsightsFactory {
         open = false;
       } else {
         BigDecimal share =
-            new BigDecimal(read.get(start))
-                .multiply(HUNDRED)
-                .divide(new BigDecimal(side), 8, RoundingMode.HALF_UP);
+            Statistics.percent(
+                new BigDecimal(read.get(start)), new BigDecimal(side), Statistics.SCALE);
         path.append(open ? 'L' : 'M')
             .append(x(index + 0.5, count))
             .append(' ')
@@ -747,9 +704,7 @@ final class UsageInsightsFactory {
     String overall =
         allInput.signum() == 0
             ? "–"
-            : new BigDecimal(allRead)
-                    .multiply(HUNDRED)
-                    .divide(new BigDecimal(allInput), 1, RoundingMode.HALF_UP)
+            : Statistics.percent(new BigDecimal(allRead), new BigDecimal(allInput), 1)
                     .toPlainString()
                 + "%";
     return new LineChart(
@@ -787,32 +742,25 @@ final class UsageInsightsFactory {
       heatCost[weekday][local.getHour()] = heatCost[weekday][local.getHour()].add(cost);
     }
     costs.sort(Comparator.naturalOrder());
-    BigDecimal total = sum(costs);
-    String coverage;
-    CoverageLevel level;
-    if (dailyTotal.signum() == 0) {
-      coverage = "No daily usage in this range to compare sessions with.";
-      level = total.signum() == 0 ? CoverageLevel.CONSISTENT : CoverageLevel.WARNING;
+    BigDecimal total = Statistics.sum(costs);
+    Coverage coverage = Coverage.of(total, dailyTotal, COVERAGE_TOLERANCE_PERCENT);
+    String note;
+    if (coverage.basis() == Coverage.Basis.NO_REFERENCE) {
+      note = "No daily usage in this range to compare sessions with.";
     } else {
-      BigDecimal share = total.multiply(HUNDRED).divide(dailyTotal, 1, RoundingMode.HALF_UP);
-      coverage =
+      note =
           "Sessions add up to "
               + DashboardFactory.money(total, currency, rate)
               + " of "
               + DashboardFactory.money(dailyTotal, currency, rate)
               + " daily cost ("
-              + share.toPlainString()
+              + coverage.sharePercent().toPlainString()
               + "%). Sessions count on the day of their last activity, so ranges can differ"
               + " slightly; large gaps mean incomplete or inconsistent session reports.";
-      BigDecimal distance = share.subtract(HUNDRED).abs();
-      level =
-          distance.compareTo(HUNDRED.subtract(COVERAGE_WARNING_PERCENT)) > 0
-              ? CoverageLevel.WARNING
-              : CoverageLevel.CONSISTENT;
     }
     return new SessionInsights(
-        coverage,
-        level,
+        note,
+        coverage.level(),
         List.of(
             UsageChartsFactory.money("Session total", total, currency, rate),
             new Kpi("Sessions", Integer.toString(costs.size()), "")),
@@ -975,23 +923,16 @@ final class UsageInsightsFactory {
 
   private static String meter(BigDecimal value, BigDecimal maximum) {
     if (value.signum() == 0 || maximum.signum() == 0) return "0";
-    return value
-        .multiply(HUNDRED)
-        .divide(maximum, 1, RoundingMode.HALF_UP)
+    return Statistics.percent(value, maximum, 1)
         .max(BigDecimal.ONE)
         .stripTrailingZeros()
         .toPlainString();
   }
 
+  /// One decimal place; an empty whole shows a plain `0%` as before.
   private static String percent(BigDecimal value, BigDecimal total) {
     if (total.signum() == 0) return "0%";
-    return value.multiply(HUNDRED).divide(total, 1, RoundingMode.HALF_UP).toPlainString() + "%";
-  }
-
-  /// Nearest-rank percentile of an ascending list.
-  private static BigDecimal quantile(List<BigDecimal> sorted, int percentile) {
-    int rank = (int) Math.ceil(sorted.size() * percentile / 100.0);
-    return sorted.get(Math.max(rank, 1) - 1);
+    return Statistics.percent(value, total, 1).toPlainString() + "%";
   }
 
   private static String periodLabel(String periodName, LocalDate start) {
@@ -1006,15 +947,17 @@ final class UsageInsightsFactory {
     return value.substring(0, 1).toUpperCase(Locale.ROOT) + value.substring(1);
   }
 
-  private static BigDecimal remainder(Map<String, BigDecimal> costs, java.util.Set<String> shown) {
-    return costs.entrySet().stream()
-        .filter(entry -> !shown.contains(entry.getKey()))
-        .map(Map.Entry::getValue)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
+  /// Nonzero costs draw at least one unit high; the scale maximum fills the spark.
+  private static double sparkHeight(LogScale scale, BigDecimal value) {
+    return 1 + (SPARK_HEIGHT - 1) * scale.fraction(value);
   }
 
-  private static BigDecimal sum(java.util.Collection<BigDecimal> values) {
-    return values.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+  private static String modelName(SeriesGrouping series, int index) {
+    return index < series.shown().size() ? series.shown().get(index) : OTHER_MODELS;
+  }
+
+  private static List<BigDecimal> decimals(String... values) {
+    return java.util.Arrays.stream(values).map(BigDecimal::new).toList();
   }
 
   private static BigDecimal decimal(Object value) {

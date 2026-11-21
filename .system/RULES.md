@@ -31,10 +31,11 @@
 - Name every test case
   `given_<camelCaseContext>_when_<camelCaseBehavior>_then_<camelCaseExpectation>`;
   helpers are exempt.
-- After editing unit tests, iterate with `mise run pit --history -- [production
-  source paths...]`, inspect survivors, and strengthen useful tests. If history
-  errors or looks inconsistent, delete `output/pit.history` and rerun without
-  `--history`.
+- After editing unit tests, iterate with `mise run pit -- [production source
+  paths...]`, inspect survivors, and strengthen useful tests. History in
+  `output/pit.history` is on by default and a run on another selection replaces
+  it. If history errors or looks inconsistent, delete `output/pit.history` and
+  rerun.
 - Add meaningful coverage rather than weakening coverage floors.
 - Use Selfie only for stable, reviewable HTML, JSON, text, or protocol output.
   Inspect every `.ss` diff and trace each changed fragment to production code.
@@ -66,6 +67,9 @@
 - Keep interfaces small and define fault behavior.
 - Isolate nondeterministic I/O behind deterministic logic; push control flow
   upward and data transformation downward.
+- Put pure computation (aggregation, binning, geometry) in an exported package
+  with direct unit tests; keep HTTP tests for end-to-end behavior so mutation
+  runs stay fast.
 - Prefer simple signatures and return types. Declare variables near first use.
 - Never use boolean view-model components; use semantic enums or value records.
 - Separate control and data planes; batch I/O and computation.

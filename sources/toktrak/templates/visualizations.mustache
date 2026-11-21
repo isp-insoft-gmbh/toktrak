@@ -191,13 +191,13 @@
 {{#people}}
       <article class="chart-card chart-card-wide" aria-labelledby="per-person-heading">
         <h2 id="per-person-heading">Per person</h2>
-        <p>Cost per person in this range. Each trend uses its own scale; totals and shares carry the comparison and shares add up to 100%. The typical day is the median over days with usage.</p>
+        <p>Cost per person in this range. Trends share one log scale: each faint line is 10× the one below ($1, $10, $100…), so small and large spenders stay visible. Shares add up to 100%; the typical day is the median over days with usage.</p>
         <div class="table-wrap">
           <table class="people-table">
             <thead><tr><th scope="col">Person</th><th scope="col">Trend</th><th scope="col">Total</th><th scope="col">Share</th><th scope="col">Active days</th><th scope="col">Typical day</th><th scope="col">Per calendar day</th></tr></thead>
             <tbody>
 {{#rows}}
-              <tr><th scope="row">{{name}}</th><td><svg class="spark" viewBox="0 0 120 24" preserveAspectRatio="none" role="img" aria-label="Cost trend for {{name}}">{{#spark}}<rect class="{{seriesClass}}" x="{{x}}" y="{{y}}" width="{{width}}" height="{{height}}"><title>{{title}}</title></rect>{{/spark}}</svg></td><td data-usd="{{usd}}">{{total}}</td><td>{{share}}</td><td>{{activeDays}}</td><td>{{typical}}</td><td>{{perDay}}</td></tr>
+              <tr><th scope="row">{{name}}</th><td><svg class="spark" viewBox="0 0 120 24" preserveAspectRatio="none" role="img" aria-label="Cost trend for {{name}}">{{#grid}}<line class="spark-grid" x1="0" y1="{{y}}" x2="120" y2="{{y}}"><title>{{label}}</title></line>{{/grid}}{{#spark}}<rect class="{{seriesClass}}" x="{{x}}" y="{{y}}" width="{{width}}" height="{{height}}"><title>{{title}}</title></rect>{{/spark}}</svg></td><td data-usd="{{usd}}">{{total}}</td><td>{{share}}</td><td>{{activeDays}}</td><td>{{typical}}</td><td>{{perDay}}</td></tr>
 {{/rows}}
             </tbody>
           </table>

@@ -1440,6 +1440,14 @@ path.chart-line.series-6 {
   height: 1.5rem;
 }
 
+.spark-grid {
+  stroke: var(--muted);
+  stroke-opacity: 0.6;
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  vector-effect: non-scaling-stroke;
+}
+
 .people-table th[scope="row"] {
   text-align: left;
 }
