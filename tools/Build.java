@@ -726,6 +726,20 @@ public final class Build {
         .collect(java.util.stream.Collectors.joining(System.getProperty("path.separator")));
   }
 
+  /// An existing file or directory under production sources, not an option or option value.
+  private static boolean isProductionSourcePath(String argument) {
+    assert argument != null;
+    if (argument.isEmpty() || argument.startsWith("-")) return false;
+    Path path;
+    try {
+      path = Path.of(argument);
+    } catch (java.nio.file.InvalidPathException exception) {
+      return false;
+    }
+    path = (path.isAbsolute() ? path : ROOT.resolve(path)).normalize();
+    return path.startsWith(APP_SOURCES) && Files.exists(path, LinkOption.NOFOLLOW_LINKS);
+  }
+
   static PitSelection pitSelectionForTest(List<String> arguments) throws IOException {
     return pitSelection(arguments);
   }
@@ -754,6 +768,12 @@ public final class Build {
       } else if (argument.equals("--no-history")) {
         if (historyDisabled) throw new IllegalStateException("duplicate --no-history");
         historyDisabled = true;
+      } else if (isProductionSourcePath(argument)) {
+        // mise consumes the first `--`, so `mise run pit -- paths` arrives without it. Without this
+        // branch the paths became stray PIT arguments and PIT mutated the whole project.
+        Path path = resolveProjectPath(argument);
+        assert path.startsWith(APP_SOURCES);
+        sources.add(argument);
       } else {
         String option =
             argument.contains("=") ? argument.substring(0, argument.indexOf('=')) : argument;

@@ -760,6 +760,24 @@ public final class BuildTest {
       throw new AssertionError(
           "PIT directory selection is not sorted and deduplicated: " + directory);
     }
+    // mise consumes the first `--`; bare production paths must still select sources.
+    for (List<String> arguments :
+        List.of(
+            List.of("sources/toktrak/toktrak/store/EventEnvelope.java"),
+            List.of("--verbose", "true", "sources/toktrak/toktrak/store/EventEnvelope.java"))) {
+      Build.PitSelection bare = Build.pitSelectionForTest(arguments);
+      if (!bare.targetClasses()
+              .equals(List.of("toktrak.store.EventEnvelope", "toktrak.store.EventEnvelope$*"))
+          || bare.forwardedArguments()
+              .contains("sources/toktrak/toktrak/store/EventEnvelope.java")) {
+        throw new AssertionError("bare PIT source path not selected: " + bare);
+      }
+    }
+    Build.PitSelection globValue =
+        Build.pitSelectionForTest(List.of("--excludedMethods", "*people*"));
+    if (!globValue.forwardedArguments().equals(List.of("--excludedMethods", "*people*"))) {
+      throw new AssertionError("PIT option value mistaken for a path: " + globValue);
+    }
     Build.PitSelection unknown = Build.pitSelectionForTest(List.of("--futurePitFlag", "value"));
     if (!unknown.forwardedArguments().equals(List.of("--futurePitFlag", "value"))) {
       throw new AssertionError("PIT arguments were not forwarded: " + unknown);
