@@ -40,6 +40,8 @@ public final class Json {
             .maxTokenCount(TOKENS_MAX)
             .maxNumberLength(NUMBER_CHARACTERS_MAX)
             .maxStringLength(STRING_CHARACTERS_MAX)
+            // EventEnvelope applies the same string bound to object keys and values.
+            .maxNameLength(STRING_CHARACTERS_MAX)
             .build();
     assert constraints != null;
     JsonFactory factory = JsonFactory.builder().streamReadConstraints(constraints).build();
@@ -69,6 +71,7 @@ public final class Json {
     ObjectMapper mapper =
         new ObjectMapper(factory)
             .registerModule(module)
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
     assert mapper != null;
     return mapper;

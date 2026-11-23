@@ -87,6 +87,27 @@ final class JsonTest {
   }
 
   @Test
+  void given_trailingContent_when_parsingStringAndBytes_then_rejectsEntireDocument() {
+    for (String suffix : List.of(" {}", " null", " []", " true", " garbage")) {
+      String json = "{\"tokens\":1}" + suffix;
+      assertThrows(IllegalStateException.class, () -> Json.read(json, Map.class), suffix);
+      assertThrows(IllegalStateException.class, () -> Json.read(bytes(json), Map.class), suffix);
+    }
+  }
+
+  @Test
+  void given_jsonConfiguration_when_creatingMapper_then_returnsMapper() {
+    assertNotNull(Json.mapper());
+  }
+
+  @Test
+  void given_trailingWhitespace_when_parsingStringAndBytes_then_acceptsDocument() {
+    String json = "{\"tokens\":1} \r\n\t";
+    assertEquals(Map.of("tokens", 1), Json.read(json, Map.class));
+    assertEquals(Map.of("tokens", 1), Json.read(bytes(json), Map.class));
+  }
+
+  @Test
   void given_nullDocument_when_parsingStringAndBytes_then_reportsParseFailure() {
     var fromString = assertThrows(IllegalStateException.class, () -> Json.read("null", Map.class));
     var fromBytes =
@@ -146,6 +167,23 @@ final class JsonTest {
 
     assertParseFailure(
         () -> Json.read(bytes("[\"" + text + "\"]"), List.class), STRING_CHARACTERS_MAX);
+  }
+
+  @Test
+  void given_objectKeyAtCharacterLimit_when_parsingStringAndBytes_then_acceptsDocument() {
+    String key = "k".repeat(STRING_CHARACTERS_MAX);
+    String json = "{\"" + key + "\":1}";
+
+    assertEquals(Map.of(key, 1), Json.read(json, Map.class));
+    assertEquals(Map.of(key, 1), Json.read(bytes(json), Map.class));
+  }
+
+  @Test
+  void given_objectKeyAboveCharacterLimit_when_parsingStringAndBytes_then_rejectsDocument() {
+    String json = "{\"" + "k".repeat(STRING_CHARACTERS_MAX + 1) + "\":1}";
+
+    assertParseFailure(() -> Json.read(json, Map.class), STRING_CHARACTERS_MAX);
+    assertParseFailure(() -> Json.read(bytes(json), Map.class), STRING_CHARACTERS_MAX);
   }
 
   @Test

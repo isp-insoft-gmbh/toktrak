@@ -58,6 +58,24 @@ final class EventLogTest {
   }
 
   @Test
+  void given_twoEventsOnOneLine_when_replayingLog_then_rejectsWithoutDeliveringEvent()
+      throws Exception {
+    var path = dir.resolve("events.ndjson");
+    var event = EventEnvelope.create("event", Instant.EPOCH, "system", Map.of());
+    String json = toktrak.json.Json.write(event);
+    String contents = json + " " + json + "\n";
+    Files.writeString(path, contents);
+    var replayed = new ArrayList<EventEnvelope>();
+
+    try (var log = EventLog.open(path)) {
+      var exception = assertThrows(IllegalStateException.class, () -> log.replay(replayed::add));
+      assertEquals("malformed event line 1", exception.getMessage());
+    }
+    assertTrue(replayed.isEmpty());
+    assertEquals(contents, Files.readString(path));
+  }
+
+  @Test
   void given_eventDataAtNestingLimit_when_replayingLog_then_returnsEvent() {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     Object value = Map.of("leaf", 1);
@@ -69,6 +87,19 @@ final class EventLogTest {
 
     var replayed = new ArrayList<EventEnvelope>();
     assertEquals(1, log.replay(replayed::add));
+    assertEquals(List.of(event), replayed);
+  }
+
+  @Test
+  void given_eventDataKeyAtStringLimit_when_replayingLog_then_returnsEvent() {
+    var event =
+        EventEnvelope.create(
+            "event", Instant.EPOCH, "system", Map.of("k".repeat(1024 * 1024), "value"));
+    var replayed = new ArrayList<EventEnvelope>();
+    try (var log = EventLog.open(dir.resolve("events.ndjson"))) {
+      log.appendAndFsync(event);
+      assertEquals(1, log.replay(replayed::add));
+    }
     assertEquals(List.of(event), replayed);
   }
 
