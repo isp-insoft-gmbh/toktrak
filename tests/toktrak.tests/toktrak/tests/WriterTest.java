@@ -154,6 +154,26 @@ final class WriterTest {
             Duration.ofMinutes(1),
             Duration.ofNanos(1))
         .close();
+    Writer.startForTest(
+            log,
+            Projection.empty(),
+            new HealthState(),
+            ClockSource.system(),
+            1,
+            Duration.ofMillis(1))
+        .close();
+    var subMillisecond =
+        assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                Writer.startForTest(
+                    log,
+                    Projection.empty(),
+                    new HealthState(),
+                    ClockSource.system(),
+                    1,
+                    Duration.ofNanos(999_999)));
+    assertEquals("pollInterval must be at least 1 ms", subMillisecond.getMessage());
     for (Duration timeout :
         new Duration[] {Duration.ZERO, Duration.ofSeconds(-1), Duration.ofSeconds(61)}) {
       assertThrows(
@@ -376,28 +396,30 @@ final class WriterTest {
   @Test
   void given_idleOrPausedWriter_when_submittingOrClosing_then_wakesWithoutWaitingForThePoll()
       throws Exception {
-    // The writer re-checks its state every 100 ms; notifications must wake it well before that.
+    // With a one-minute poll, a missed wake-up blocks write and close past the 5 s test limit,
+    // so the test needs no timing threshold. The short sleeps let the writer go idle first.
     var log = EventLog.open(dir.resolve("events.ndjson"));
-    var writer = Writer.start(log, Projection.empty(), new HealthState(), ClockSource.system());
+    var projection = Projection.empty();
+    var writer =
+        Writer.startForTest(
+            log, projection, new HealthState(), ClockSource.system(), 4, Duration.ofMinutes(1));
     Thread.sleep(20);
-    long writeMillis = millis(() -> writer.write(WriteCommand.devTest("system")));
+    writer.write(WriteCommand.devTest("system"));
+    assertEquals(1, projection.eventCount());
     Thread.sleep(20);
-    long closeMillis = millis(writer::close);
-    assertTrue(writeMillis < 70, "write took " + writeMillis + " ms");
-    assertTrue(closeMillis < 70, "close took " + closeMillis + " ms");
+    writer.close();
 
     var paused =
-        Writer.startForTest(log, Projection.empty(), new HealthState(), ClockSource.system(), 4);
+        Writer.startForTest(
+            log,
+            Projection.empty(),
+            new HealthState(),
+            ClockSource.system(),
+            4,
+            Duration.ofMinutes(1));
     paused.pauseForTest();
     Thread.sleep(20);
-    long pausedCloseMillis = millis(paused::close);
-    assertTrue(pausedCloseMillis < 70, "paused close took " + pausedCloseMillis + " ms");
-  }
-
-  private static long millis(Runnable action) {
-    long start = System.nanoTime();
-    action.run();
-    return (System.nanoTime() - start) / 1_000_000;
+    paused.close();
   }
 
   private static void assertFailed(

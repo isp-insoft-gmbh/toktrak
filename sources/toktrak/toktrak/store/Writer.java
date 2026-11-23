@@ -20,7 +20,7 @@ public final class Writer implements AutoCloseable {
   private static final Duration ABORT_TIMEOUT = Duration.ofSeconds(5);
   private static final Duration WRITE_TIMEOUT = Duration.ofSeconds(10);
   private static final Duration TIMEOUT_MAX = Duration.ofMinutes(1);
-  private static final long POLL_MILLIS = 100;
+  private static final Duration POLL_INTERVAL = Duration.ofMillis(100);
 
   private final EventLog log;
   private final Projection projection;
@@ -29,6 +29,10 @@ public final class Writer implements AutoCloseable {
   private final ArrayBlockingQueue<Request> queue;
   private final Duration drainTimeout;
   private final Duration abortTimeout;
+
+  /// Fallback re-check interval; submissions and close wake the writer at once.
+  private final long pollMillis;
+
   private final Runnable afterClaim;
   private final Runnable afterFsync;
   private final AtomicBoolean closed = new AtomicBoolean();
@@ -49,6 +53,7 @@ public final class Writer implements AutoCloseable {
       int capacity,
       Duration drainTimeout,
       Duration abortTimeout,
+      Duration pollInterval,
       Runnable afterClaim,
       Runnable afterFsync) {
     assert log != null;
@@ -64,6 +69,9 @@ public final class Writer implements AutoCloseable {
     }
     this.drainTimeout = requireTimeout(drainTimeout, "drainTimeout");
     this.abortTimeout = requireTimeout(abortTimeout, "abortTimeout");
+    // Object.wait(0) waits forever, so the interval needs at least one whole millisecond.
+    this.pollMillis = requireTimeout(pollInterval, "pollInterval").toMillis();
+    if (pollMillis < 1) throw new IllegalArgumentException("pollInterval must be at least 1 ms");
     assert afterClaim != null;
     assert afterFsync != null;
     this.afterClaim = afterClaim;
@@ -83,12 +91,24 @@ public final class Writer implements AutoCloseable {
         QUEUE_CAPACITY,
         DRAIN_TIMEOUT,
         ABORT_TIMEOUT,
+        POLL_INTERVAL,
         Writer::noop,
         Writer::noop);
   }
 
   public static Writer startForTest(
       EventLog log, Projection projection, HealthState health, ClockSource clock, int capacity) {
+    return startForTest(log, projection, health, clock, capacity, POLL_INTERVAL);
+  }
+
+  /// A long `pollInterval` turns a missed wake-up into a hang instead of a short delay.
+  public static Writer startForTest(
+      EventLog log,
+      Projection projection,
+      HealthState health,
+      ClockSource clock,
+      int capacity,
+      Duration pollInterval) {
     return new Writer(
         log,
         projection,
@@ -97,6 +117,7 @@ public final class Writer implements AutoCloseable {
         capacity,
         DRAIN_TIMEOUT,
         ABORT_TIMEOUT,
+        pollInterval,
         Writer::noop,
         Writer::noop);
   }
@@ -117,6 +138,7 @@ public final class Writer implements AutoCloseable {
         capacity,
         drainTimeout,
         abortTimeout,
+        POLL_INTERVAL,
         Writer::noop,
         Writer::noop);
   }
@@ -139,6 +161,7 @@ public final class Writer implements AutoCloseable {
         capacity,
         drainTimeout,
         abortTimeout,
+        POLL_INTERVAL,
         afterClaim,
         afterFsync);
   }
@@ -226,7 +249,7 @@ public final class Writer implements AutoCloseable {
       synchronized (stateMonitor) {
         if (queue.isEmpty()) {
           if (closed.get()) return null;
-          stateMonitor.wait(POLL_MILLIS);
+          stateMonitor.wait(pollMillis);
           continue;
         }
         Request request = queue.remove();
@@ -248,7 +271,7 @@ public final class Writer implements AutoCloseable {
           paused = false;
           return;
         }
-        pauseMonitor.wait(POLL_MILLIS);
+        pauseMonitor.wait(pollMillis);
       }
     }
   }
