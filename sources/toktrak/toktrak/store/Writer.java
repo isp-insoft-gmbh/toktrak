@@ -20,7 +20,7 @@ public final class Writer implements AutoCloseable {
   private static final Duration ABORT_TIMEOUT = Duration.ofSeconds(5);
   private static final Duration WRITE_TIMEOUT = Duration.ofSeconds(10);
   private static final Duration TIMEOUT_MAX = Duration.ofMinutes(1);
-  private static final long POLL_MILLIS = 100;
+  private static final Duration POLL_INTERVAL = Duration.ofMillis(100);
 
   private final EventLog log;
   private final Projection projection;
@@ -29,6 +29,10 @@ public final class Writer implements AutoCloseable {
   private final ArrayBlockingQueue<Request> queue;
   private final Duration drainTimeout;
   private final Duration abortTimeout;
+
+  /// Fallback re-check interval; submissions and close wake the writer at once.
+  private final long pollMillis;
+
   private final Runnable afterClaim;
   private final Runnable afterFsync;
   private final AtomicBoolean closed = new AtomicBoolean();
@@ -38,7 +42,11 @@ public final class Writer implements AutoCloseable {
   private final Object commitMonitor = new Object();
   private final Object pauseMonitor = new Object();
   private volatile boolean pauseRequested;
-  private volatile boolean paused;
+  private final AtomicBoolean paused = new AtomicBoolean();
+
+  /// True while the writer waits for work; changes and waits happen under `stateMonitor`.
+  private final AtomicBoolean idle = new AtomicBoolean();
+
   private final Thread thread;
 
   private Writer(
@@ -49,6 +57,7 @@ public final class Writer implements AutoCloseable {
       int capacity,
       Duration drainTimeout,
       Duration abortTimeout,
+      Duration pollInterval,
       Runnable afterClaim,
       Runnable afterFsync) {
     assert log != null;
@@ -64,6 +73,9 @@ public final class Writer implements AutoCloseable {
     }
     this.drainTimeout = requireTimeout(drainTimeout, "drainTimeout");
     this.abortTimeout = requireTimeout(abortTimeout, "abortTimeout");
+    // Object.wait(0) waits forever, so the interval needs at least one whole millisecond.
+    this.pollMillis = requireTimeout(pollInterval, "pollInterval").toMillis();
+    if (pollMillis < 1) throw new IllegalArgumentException("pollInterval must be at least 1 ms");
     assert afterClaim != null;
     assert afterFsync != null;
     this.afterClaim = afterClaim;
@@ -83,12 +95,24 @@ public final class Writer implements AutoCloseable {
         QUEUE_CAPACITY,
         DRAIN_TIMEOUT,
         ABORT_TIMEOUT,
+        POLL_INTERVAL,
         Writer::noop,
         Writer::noop);
   }
 
   public static Writer startForTest(
       EventLog log, Projection projection, HealthState health, ClockSource clock, int capacity) {
+    return startForTest(log, projection, health, clock, capacity, POLL_INTERVAL);
+  }
+
+  /// A long `pollInterval` turns a missed wake-up into a hang instead of a short delay.
+  public static Writer startForTest(
+      EventLog log,
+      Projection projection,
+      HealthState health,
+      ClockSource clock,
+      int capacity,
+      Duration pollInterval) {
     return new Writer(
         log,
         projection,
@@ -97,6 +121,7 @@ public final class Writer implements AutoCloseable {
         capacity,
         DRAIN_TIMEOUT,
         ABORT_TIMEOUT,
+        pollInterval,
         Writer::noop,
         Writer::noop);
   }
@@ -117,6 +142,7 @@ public final class Writer implements AutoCloseable {
         capacity,
         drainTimeout,
         abortTimeout,
+        POLL_INTERVAL,
         Writer::noop,
         Writer::noop);
   }
@@ -139,6 +165,7 @@ public final class Writer implements AutoCloseable {
         capacity,
         drainTimeout,
         abortTimeout,
+        POLL_INTERVAL,
         afterClaim,
         afterFsync);
   }
@@ -190,18 +217,23 @@ public final class Writer implements AutoCloseable {
     return projection;
   }
 
-  public void pauseForTest() throws InterruptedException {
-    synchronized (pauseMonitor) {
-      pauseRequested = true;
-      pauseMonitor.notifyAll();
-      long deadline = deadlineAfter(Duration.ofSeconds(2));
-      while (!paused) {
-        long remainingNanos = deadline - System.nanoTime();
-        if (remainingNanos <= 0) throw new IllegalStateException("writer did not pause");
-        TimeUnit.NANOSECONDS.timedWait(pauseMonitor, remainingNanos);
-      }
+  /// Asks the writer to pause before it claims the next command; tests wait for `pausedForTest`.
+  public void requestPauseForTest() {
+    pauseRequested = true;
+    // An idle writer rechecks the request under stateMonitor before it waits, so this wake-up
+    // cannot be lost.
+    synchronized (stateMonitor) {
+      stateMonitor.notifyAll();
     }
-    assert paused;
+  }
+
+  public boolean pausedForTest() {
+    return paused.get();
+  }
+
+  /// True while the writer waits for work, so a following submission or close must wake it.
+  public boolean idleForTest() {
+    return idle.get();
   }
 
   private void run() {
@@ -226,7 +258,13 @@ public final class Writer implements AutoCloseable {
       synchronized (stateMonitor) {
         if (queue.isEmpty()) {
           if (closed.get()) return null;
-          stateMonitor.wait(POLL_MILLIS);
+          if (pauseRequested) continue;
+          idle.set(true);
+          try {
+            stateMonitor.wait(pollMillis);
+          } finally {
+            idle.set(false);
+          }
           continue;
         }
         Request request = queue.remove();
@@ -238,17 +276,12 @@ public final class Writer implements AutoCloseable {
     }
   }
 
+  /// Holds the writer while a test pause is requested; only close ends a pause.
   private void awaitResume() throws InterruptedException {
-    if (!pauseRequested) return;
-    while (true) {
-      synchronized (pauseMonitor) {
-        paused = true;
-        pauseMonitor.notifyAll();
-        if (!pauseRequested || closed.get()) {
-          paused = false;
-          return;
-        }
-        pauseMonitor.wait(POLL_MILLIS);
+    synchronized (pauseMonitor) {
+      while (pauseRequested && !closed.get()) {
+        paused.set(true);
+        pauseMonitor.wait(pollMillis);
       }
     }
   }
@@ -365,16 +398,6 @@ public final class Writer implements AutoCloseable {
       throw new IllegalArgumentException(name + " must be positive and at most " + TIMEOUT_MAX);
     }
     return timeout;
-  }
-
-  private static long deadlineAfter(Duration timeout) {
-    assert timeout != null && !timeout.isNegative() && !timeout.isZero();
-    long now = System.nanoTime();
-    try {
-      return Math.addExact(now, timeout.toNanos());
-    } catch (ArithmeticException exception) {
-      return Long.MAX_VALUE;
-    }
   }
 
   private record Request(WriteCommand command, CompletableFuture<WriteResult> future) {

@@ -9,6 +9,9 @@ import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
+/// Hang guard for one child process; the outcome never depends on it.
+const COMMAND_TIMEOUT_MILLIS = 30_000;
+
 const exec = promisify(execFile);
 const TRACKER_SOURCE = new URL("../../sources/toktrak/assets/private/tracker.mjs", import.meta.url);
 const TOKEN = `tt_${"A".repeat(43)}`;
@@ -118,7 +121,7 @@ test("given_nodeRuntimeOutsideSchedulerPath_when_collectingUsage_then_usesAdjace
     ["--import", pathToFileURL(bootstrap).href, await realpath(tracker), "full"],
     {
       env: environment,
-      timeout: 30_000,
+      timeout: COMMAND_TIMEOUT_MILLIS,
       maxBuffer: 64 * 1_024,
       windowsHide: true,
     },

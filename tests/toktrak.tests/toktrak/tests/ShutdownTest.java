@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import toktrak.*;
@@ -61,10 +60,11 @@ final class ShutdownTest {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var writer =
         Writer.startForTest(log, Projection.empty(), new HealthState(), ClockSource.system(), 8);
-    writer.pauseForTest();
+    writer.requestPauseForTest();
+    Polling.until(writer::pausedForTest);
     var future = writer.submit(WriteCommand.devTest("system"));
     writer.close();
-    assertTrue(future.get(2, TimeUnit.SECONDS).eventId().isPresent());
+    assertTrue(future.get().eventId().isPresent());
     assertEquals(1, log.replay(_ -> {}));
   }
 }

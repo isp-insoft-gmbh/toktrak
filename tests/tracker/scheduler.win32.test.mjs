@@ -153,10 +153,6 @@ test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreser
     ExecutionTimeLimit: "PT72H",
     StartBoundary: "2020-01-01T09:00:00",
   });
-  await new Promise((resolve) => {
-    setTimeout(resolve, 1_000);
-  });
-  assert.deepEqual(await lines(runLog), []);
 
   await startRun(taskName, runLog, 1);
   await waitForRun(runLog, pidLog, 1);

@@ -9,7 +9,6 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import toktrak.*;
@@ -23,7 +22,7 @@ final class RestartAndLockTest {
     var env =
         Map.of("TOKTRAK_DEV_AUTH", "true", "TOKTRAK_PORT", "0", "TOKTRAK_DATA_DIR", dir.toString());
     try (var app = App.start(new String[] {}, env)) {
-      app.writer().submit(WriteCommand.devTest("system")).get(2, TimeUnit.SECONDS);
+      app.writer().submit(WriteCommand.devTest("system")).get();
       assertEquals(1, app.projection().eventCount());
     }
     try (var app = App.start(new String[] {}, env)) {

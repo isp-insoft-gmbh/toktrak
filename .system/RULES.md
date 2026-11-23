@@ -45,6 +45,31 @@
   Inspect every `.ss` diff and trace each changed fragment to production code.
   Commit the golden file and rewritten Java; never commit update markers.
 
+## Tests, time, and I/O
+
+- Never decide a test by elapsed time: no wall-clock reads and no upper or lower
+  elapsed-time bounds. Performance belongs to `tools/perf`.
+- Never sleep or set a timer in a test to let something happen or to show that
+  it did not happen.
+- Make time controllable: production code takes an injectable clock and, for
+  scheduled work, a trigger or executor that tests drive directly.
+- Synchronize in-process concurrency on events such as latches, futures,
+  monitors, or test hooks. Block without a timeout; the per-test limit is the
+  only hang guard.
+- Prove that something wakes up or never happens by making the alternative a
+  hang, for example with an unreachable fallback poll interval.
+- Poll only state that offers no event, such as other processes or operating
+  system services, through a shared helper with named limits.
+- Name every hang guard for external processes as a constant; never inline
+  durations.
+- Durations passed to production code are allowed when the outcome cannot depend
+  on them, such as a timeout that must fire because its event never comes.
+- Do file I/O in tests in memory, batched, or not at all. Pure logic takes data,
+  not paths. File-handling code takes a `Path` from an in-memory file system.
+  Only tests of real file-system guarantees, such as fsync, cross-process locks,
+  or atomic replacement, touch the disk, with as few operations as the guarantee
+  needs.
+
 ## Safety
 
 - Never put secrets in source control, logs, exception messages, or generated

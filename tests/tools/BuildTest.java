@@ -25,6 +25,9 @@ public final class BuildTest {
   private static final Pattern TEST_NAME =
       Pattern.compile("given_[a-z][A-Za-z0-9]*_when_[a-z][A-Za-z0-9]*_then_[a-z][A-Za-z0-9]*");
 
+  private static final Duration PROCESS_POLL_LIMIT = Duration.ofSeconds(5);
+  private static final Duration PROCESS_POLL_INTERVAL = Duration.ofMillis(10);
+
   private BuildTest() {}
 
   public static void main(String[] args) throws Exception {
@@ -1983,10 +1986,11 @@ public final class BuildTest {
       throws Exception {
     Process process = child("spawn");
     ProcessHandle descendant = null;
-    long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+    // A child process offers no start event, so poll it under named limits.
+    long deadline = System.nanoTime() + PROCESS_POLL_LIMIT.toNanos();
     while (descendant == null && System.nanoTime() < deadline) {
       descendant = process.toHandle().descendants().findFirst().orElse(null);
-      if (descendant == null) Thread.sleep(10);
+      if (descendant == null) Thread.sleep(PROCESS_POLL_INTERVAL);
     }
     if (descendant == null) throw new AssertionError("spawned process has no descendant");
     ProcessHandle captured = descendant;

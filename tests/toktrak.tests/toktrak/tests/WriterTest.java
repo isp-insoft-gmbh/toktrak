@@ -8,7 +8,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import toktrak.*;
@@ -34,7 +33,7 @@ final class WriterTest {
             new HealthState(),
             ClockSource.fixed(Instant.parse("2026-07-10T00:00:00Z")));
     try (writer) {
-      var result = writer.submit(WriteCommand.devTest("system")).get(2, TimeUnit.SECONDS);
+      var result = writer.submit(WriteCommand.devTest("system")).get();
       assertTrue(result.eventId().isPresent());
       assertEquals(1, writer.projection().eventCount());
       assertEquals(1, log.replay(_ -> {}));
@@ -84,9 +83,7 @@ final class WriterTest {
                 "eventCount", Integer.MAX_VALUE)));
     var writer = Writer.start(log, projection, new HealthState(), ClockSource.system());
     try (writer) {
-      assertThrows(
-          Exception.class,
-          () -> writer.submit(WriteCommand.devTest("system")).get(2, TimeUnit.SECONDS));
+      assertThrows(Exception.class, () -> writer.submit(WriteCommand.devTest("system")).get());
       assertEquals(0, log.replay(_ -> {}));
       assertEquals(Integer.MAX_VALUE, projection.eventCount());
     }
@@ -98,7 +95,9 @@ final class WriterTest {
     var writer =
         Writer.startForTest(log, Projection.empty(), new HealthState(), ClockSource.system(), 1);
     try (writer) {
-      writer.pauseForTest();
+      assertFalse(writer.pausedForTest());
+      writer.requestPauseForTest();
+      Polling.until(writer::pausedForTest);
       assertTrue(writer.trySubmit(WriteCommand.devTest("a")).accepted());
       assertFalse(writer.trySubmit(WriteCommand.devTest("b")).accepted());
     }
@@ -119,7 +118,7 @@ final class WriterTest {
             new HealthState(),
             ClockSource.fixed(Instant.parse("2026-07-10T01:00:00Z")));
     try (writer) {
-      var result = writer.submit(WriteCommand.snapshot("system")).get(2, TimeUnit.SECONDS);
+      var result = writer.submit(WriteCommand.snapshot("system")).get();
       assertTrue(result.eventId().isPresent());
       var replayed = new java.util.ArrayList<EventEnvelope>();
       assertEquals(1, log.replay(replayed::add));
@@ -154,6 +153,26 @@ final class WriterTest {
             Duration.ofMinutes(1),
             Duration.ofNanos(1))
         .close();
+    Writer.startForTest(
+            log,
+            Projection.empty(),
+            new HealthState(),
+            ClockSource.system(),
+            1,
+            Duration.ofMillis(1))
+        .close();
+    var subMillisecond =
+        assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                Writer.startForTest(
+                    log,
+                    Projection.empty(),
+                    new HealthState(),
+                    ClockSource.system(),
+                    1,
+                    Duration.ofNanos(999_999)));
+    assertEquals("pollInterval must be at least 1 ms", subMillisecond.getMessage());
     for (Duration timeout :
         new Duration[] {Duration.ZERO, Duration.ofSeconds(-1), Duration.ofSeconds(61)}) {
       assertThrows(
@@ -177,7 +196,7 @@ final class WriterTest {
     writer.close();
 
     var future = writer.submit(WriteCommand.devTest("system"));
-    var ex = assertThrows(Exception.class, () -> future.get(2, TimeUnit.SECONDS));
+    var ex = assertThrows(Exception.class, () -> future.get());
     assertTrue(ex.getMessage().contains("writer is closed"));
   }
 
@@ -190,15 +209,7 @@ final class WriterTest {
     ClockSource blockedClock =
         () -> {
           enteredClock.countDown();
-          boolean interrupted = false;
-          for (int waitCount = 0; waitCount < 1_000; waitCount++) {
-            try {
-              if (releaseClock.await(10, TimeUnit.MILLISECONDS)) break;
-            } catch (InterruptedException ex) {
-              interrupted = true;
-            }
-          }
-          if (interrupted) Thread.currentThread().interrupt();
+          awaitIgnoringInterrupts(releaseClock);
           return at;
         };
     var log = EventLog.open(dir.resolve("events.ndjson"));
@@ -209,9 +220,9 @@ final class WriterTest {
             log, projection, health, blockedClock, 1, Duration.ofMillis(20), Duration.ofMillis(20));
     try {
       var future = writer.submit(WriteCommand.devTest("system"));
-      assertTrue(enteredClock.await(2, TimeUnit.SECONDS));
-      assertTimeoutPreemptively(Duration.ofSeconds(1), writer::close);
-      assertThrows(Exception.class, () -> future.get(2, TimeUnit.SECONDS));
+      enteredClock.await();
+      writer.close();
+      assertThrows(Exception.class, () -> future.get());
       assertEquals(0, projection.eventCount());
       assertEquals(0, log.replay(_ -> {}));
       assertFalse(health.healthy());
@@ -240,9 +251,10 @@ final class WriterTest {
             () -> {});
     try {
       var future = writer.submit(WriteCommand.devTest("system"));
-      assertTrue(claimEntered.await(2, TimeUnit.SECONDS));
-      assertTimeoutPreemptively(Duration.ofSeconds(1), writer::close);
-      assertThrows(Exception.class, () -> future.get(2, TimeUnit.SECONDS));
+      claimEntered.await();
+      assertFalse(writer.idleForTest(), "a writer inside a claim is not idle");
+      writer.close();
+      assertThrows(Exception.class, () -> future.get());
       assertEquals(0, projection.eventCount());
       assertEquals(0, log.replay(_ -> {}));
     } finally {
@@ -271,9 +283,9 @@ final class WriterTest {
             blockingHook(fsyncCompleted, releaseFsync));
     try {
       var future = writer.submit(WriteCommand.devTest("system"));
-      assertTrue(fsyncCompleted.await(2, TimeUnit.SECONDS));
-      assertTimeoutPreemptively(Duration.ofSeconds(1), writer::close);
-      assertThrows(Exception.class, () -> future.get(2, TimeUnit.SECONDS));
+      fsyncCompleted.await();
+      writer.close();
+      assertThrows(Exception.class, () -> future.get());
       assertEquals(0, projection.eventCount());
       assertEquals(1, log.replay(_ -> {}));
     } finally {
@@ -326,7 +338,7 @@ final class WriterTest {
             () -> {});
     try {
       var claimed = writer.submit(WriteCommand.devTest("first"));
-      assertTrue(claimEntered.await(2, TimeUnit.SECONDS));
+      claimEntered.await();
       var queued =
           List.of(
               writer.submit(WriteCommand.devTest("second")),
@@ -363,7 +375,7 @@ final class WriterTest {
             () -> {});
     try {
       var claimed = writer.submit(WriteCommand.devTest("first"));
-      assertTrue(claimEntered.await(2, TimeUnit.SECONDS));
+      claimEntered.await();
       var queued = writer.submit(WriteCommand.devTest("second"));
       releaseClaim.countDown();
       assertFailed("writer stopped", claimed);
@@ -376,51 +388,57 @@ final class WriterTest {
   @Test
   void given_idleOrPausedWriter_when_submittingOrClosing_then_wakesWithoutWaitingForThePoll()
       throws Exception {
-    // The writer re-checks its state every 100 ms; notifications must wake it well before that.
+    // With a one-minute poll, a missed wake-up blocks write or close past the per-test limit.
+    // Each action starts only once the writer waits, so it must be woken.
     var log = EventLog.open(dir.resolve("events.ndjson"));
-    var writer = Writer.start(log, Projection.empty(), new HealthState(), ClockSource.system());
-    Thread.sleep(20);
-    long writeMillis = millis(() -> writer.write(WriteCommand.devTest("system")));
-    Thread.sleep(20);
-    long closeMillis = millis(writer::close);
-    assertTrue(writeMillis < 70, "write took " + writeMillis + " ms");
-    assertTrue(closeMillis < 70, "close took " + closeMillis + " ms");
+    var projection = Projection.empty();
+    var writer =
+        Writer.startForTest(
+            log, projection, new HealthState(), ClockSource.system(), 4, Duration.ofMinutes(1));
+    Polling.until(writer::idleForTest);
+    writer.write(WriteCommand.devTest("system"));
+    assertEquals(1, projection.eventCount());
+    Polling.until(writer::idleForTest);
+    writer.close();
 
     var paused =
-        Writer.startForTest(log, Projection.empty(), new HealthState(), ClockSource.system(), 4);
-    paused.pauseForTest();
-    Thread.sleep(20);
-    long pausedCloseMillis = millis(paused::close);
-    assertTrue(pausedCloseMillis < 70, "paused close took " + pausedCloseMillis + " ms");
-  }
-
-  private static long millis(Runnable action) {
-    long start = System.nanoTime();
-    action.run();
-    return (System.nanoTime() - start) / 1_000_000;
+        Writer.startForTest(
+            log,
+            Projection.empty(),
+            new HealthState(),
+            ClockSource.system(),
+            4,
+            Duration.ofMinutes(1));
+    Polling.until(paused::idleForTest);
+    paused.requestPauseForTest();
+    Polling.until(paused::pausedForTest);
+    paused.close();
   }
 
   private static void assertFailed(
       String message, java.util.concurrent.CompletableFuture<Writer.WriteResult> future) {
-    var failure =
-        assertThrows(
-            java.util.concurrent.ExecutionException.class,
-            () -> future.get(500, TimeUnit.MILLISECONDS));
+    var failure = assertThrows(java.util.concurrent.ExecutionException.class, () -> future.get());
     assertEquals(message, failure.getCause().getMessage());
   }
 
   private static Runnable blockingHook(CountDownLatch entered, CountDownLatch release) {
     return () -> {
       entered.countDown();
-      boolean interrupted = false;
-      for (int waitCount = 0; waitCount < 1_000; waitCount++) {
-        try {
-          if (release.await(10, TimeUnit.MILLISECONDS)) break;
-        } catch (InterruptedException exception) {
-          interrupted = true;
-        }
-      }
-      if (interrupted) Thread.currentThread().interrupt();
+      awaitIgnoringInterrupts(release);
     };
+  }
+
+  /// Blocks like a stuck I/O call until `release` opens: interrupts are remembered, not obeyed.
+  /// Each test opens `release` in `finally`, and the per-test limit bounds the wait.
+  private static void awaitIgnoringInterrupts(CountDownLatch release) {
+    boolean interrupted = false;
+    while (release.getCount() > 0) {
+      try {
+        release.await();
+      } catch (InterruptedException exception) {
+        interrupted = true;
+      }
+    }
+    if (interrupted) Thread.currentThread().interrupt();
   }
 }
