@@ -27,9 +27,8 @@ public record Changelog(String currentLabel, Release current, List<Release> earl
     Objects.requireNonNull(runtimeVersion, "runtimeVersion");
     try (InputStream input = Changelog.class.getModule().getResourceAsStream("CHANGELOG.md")) {
       if (input == null) throw new IllegalStateException("packaged changelog is missing");
+      // One byte past the limit is enough for parse to reject an oversized changelog.
       byte[] bytes = input.readNBytes(BYTES_MAX + 1);
-      if (bytes.length > BYTES_MAX)
-        throw new IllegalStateException("packaged changelog is too large");
       return parse(runtimeVersion, new String(bytes, StandardCharsets.UTF_8));
     } catch (IOException exception) {
       throw new IllegalStateException("packaged changelog cannot be read", exception);
@@ -123,17 +122,20 @@ public record Changelog(String currentLabel, Release current, List<Release> earl
       addText(segments, markdown.substring(textStart, index));
       if (character == '`') {
         int end = markdown.indexOf('`', Math.addExact(index, 1));
-        if (end < 0 || end == index + 1) {
+        // Not found (-1) and empty code both end at or before the next character.
+        if (end <= index + 1) {
           throw new IllegalArgumentException("changelog inline code is invalid");
         }
         addSegment(segments, Segment.code(markdown.substring(index + 1, end)));
         index = Math.addExact(end, 1);
       } else {
         int labelEnd = markdown.indexOf("](", Math.addExact(index, 1));
-        int urlEnd = labelEnd < 0 ? -1 : markdown.indexOf(')', Math.addExact(labelEnd, 2));
-        if (labelEnd <= index + 1 || urlEnd < 0) {
+        // A missing label end and an empty label are both invalid.
+        if (labelEnd == -1 || labelEnd == index + 1) {
           throw new IllegalArgumentException("changelog link is invalid");
         }
+        int urlEnd = markdown.indexOf(')', Math.addExact(labelEnd, 2));
+        if (urlEnd == -1) throw new IllegalArgumentException("changelog link is invalid");
         String label = markdown.substring(index + 1, labelEnd);
         String url = markdown.substring(labelEnd + 2, urlEnd);
         requireLink(url);

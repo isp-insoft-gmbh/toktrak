@@ -21,7 +21,7 @@
       <h2 id="month-heading" class="section-heading">Current period</h2>
       <article class="kpi kpi-primary">
         <span>Estimated cost</span>
-        <strong id="kpi-cost" data-counter="{{dashboard.costCounter}}">{{dashboard.cost}}</strong>
+        <strong id="kpi-cost" data-counter="{{dashboard.costCounter}}" data-usd="{{dashboard.costUsd}}">{{dashboard.cost}}</strong>
         <small>{{dashboard.fx}}</small>
 {{#dashboard.partial}}
         <small class="warning-inline" role="status"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg>Some reports missing</small>
@@ -45,7 +45,7 @@
         <ol class="leaderboard">
 {{#dashboard.leaderboard}}
           <li>
-            <span class="person"><strong>{{name}}</strong><span class="bar" aria-hidden="true">{{bar}}</span></span>
+            <span class="person"><strong>{{name}}</strong><svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bar-track" width="100" height="8"/><rect class="bar-fill" width="{{bar}}" height="8"/></svg></span>
             <span class="values"><strong>{{cost}}</strong><small>{{tokens}} tokens</small></span>
           </li>
 {{/dashboard.leaderboard}}

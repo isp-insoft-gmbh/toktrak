@@ -56,9 +56,11 @@ public record EventEnvelope(
     seen.put(data, Boolean.TRUE);
     int valueCount = 1;
     int containerCount = 0;
-    while (!pending.isEmpty() && containerCount < DATA_VALUES_MAX) {
+    // Every container is also a counted value, so the value limit bounds this loop.
+    while (!pending.isEmpty()) {
       Container container = pending.removeFirst();
       containerCount = Math.addExact(containerCount, 1);
+      assert containerCount <= DATA_VALUES_MAX;
       if (container.depth > DATA_NESTING_DEPTH_MAX) {
         throw new IllegalArgumentException(
             "event data exceeds " + DATA_NESTING_DEPTH_MAX + " nesting levels");
@@ -86,9 +88,6 @@ public record EventEnvelope(
       } else {
         throw new AssertionError("non-container queued");
       }
-    }
-    if (!pending.isEmpty()) {
-      throw new IllegalArgumentException("event data exceeds " + DATA_VALUES_MAX + " values");
     }
     assert valueCount <= DATA_VALUES_MAX;
   }

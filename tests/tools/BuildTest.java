@@ -731,8 +731,11 @@ public final class BuildTest {
   private static void given_pitArguments_when_selectingTargets_then_parsesOptions()
       throws Exception {
     Build.PitSelection all = Build.pitSelectionForTest(List.of());
+    if (!Build.PIT_TIMEOUT.equals(Duration.ofMinutes(20))) {
+      throw new AssertionError("PIT lacks the 20-minute limit: " + Build.PIT_TIMEOUT);
+    }
     if (all.dryRun()
-        || all.history()
+        || !all.history()
         || all.pitHelp()
         || !all.forwardedArguments().isEmpty()
         || !all.targetClasses().contains("toktrak.http.Router")
@@ -760,6 +763,24 @@ public final class BuildTest {
       throw new AssertionError(
           "PIT directory selection is not sorted and deduplicated: " + directory);
     }
+    // mise consumes the first `--`; bare production paths must still select sources.
+    for (List<String> arguments :
+        List.of(
+            List.of("sources/toktrak/toktrak/store/EventEnvelope.java"),
+            List.of("--verbose", "true", "sources/toktrak/toktrak/store/EventEnvelope.java"))) {
+      Build.PitSelection bare = Build.pitSelectionForTest(arguments);
+      if (!bare.targetClasses()
+              .equals(List.of("toktrak.store.EventEnvelope", "toktrak.store.EventEnvelope$*"))
+          || bare.forwardedArguments()
+              .contains("sources/toktrak/toktrak/store/EventEnvelope.java")) {
+        throw new AssertionError("bare PIT source path not selected: " + bare);
+      }
+    }
+    Build.PitSelection globValue =
+        Build.pitSelectionForTest(List.of("--excludedMethods", "*people*"));
+    if (!globValue.forwardedArguments().equals(List.of("--excludedMethods", "*people*"))) {
+      throw new AssertionError("PIT option value mistaken for a path: " + globValue);
+    }
     Build.PitSelection unknown = Build.pitSelectionForTest(List.of("--futurePitFlag", "value"));
     if (!unknown.forwardedArguments().equals(List.of("--futurePitFlag", "value"))) {
       throw new AssertionError("PIT arguments were not forwarded: " + unknown);
@@ -784,6 +805,30 @@ public final class BuildTest {
     if (!history.history() || !history.forwardedArguments().isEmpty()) {
       throw new AssertionError("PIT history shorthand not detected: " + history);
     }
+    Build.PitSelection noHistory = Build.pitSelectionForTest(List.of("--no-history"));
+    if (noHistory.history() || !noHistory.forwardedArguments().isEmpty()) {
+      throw new AssertionError("PIT history opt-out not detected: " + noHistory);
+    }
+    try {
+      Build.explainingPitTimeout(
+              Duration.ofMinutes(3),
+              _ -> {
+                throw new Build.ProcessTimeoutException(Duration.ofMinutes(3));
+              })
+          .build(Path.of("output/mutations"));
+      throw new AssertionError("PIT timeout not reported");
+    } catch (IllegalStateException explained) {
+      if (!(explained.getCause() instanceof Build.ProcessTimeoutException)
+          || !explained.getMessage().equals(Build.pitTimeoutMessage(Duration.ofMinutes(3)))) {
+        throw explained;
+      }
+    }
+    String timeout = Build.pitTimeoutMessage(Duration.ofMinutes(3));
+    if (!timeout.startsWith("PIT exceeded PT3M")
+        || !timeout.contains("rerunning the same selection skips them")
+        || !timeout.contains("select fewer production source paths")) {
+      throw new AssertionError("PIT timeout message lacks remediation: " + timeout);
+    }
   }
 
   private static void given_invalidPitArguments_when_selectingTargets_then_rejectsInput() {
@@ -806,6 +851,12 @@ public final class BuildTest {
         "duplicate --dryRun");
     expectFailure(
         () -> Build.pitSelectionForTest(List.of("--history", "--history")), "duplicate --history");
+    expectFailure(
+        () -> Build.pitSelectionForTest(List.of("--no-history", "--no-history")),
+        "duplicate --no-history");
+    expectFailure(
+        () -> Build.pitSelectionForTest(List.of("--history", "--no-history")),
+        "--history conflicts with --no-history");
     expectFailure(
         () -> Build.pitSelectionForTest(List.of("--historyInputLocation", "somewhere")),
         "Build owns PIT option: --historyInputLocation");
@@ -881,11 +932,31 @@ public final class BuildTest {
     List<String> history =
         Build.pitArgumentsForTest(
             Build.pitSelectionForTest(List.of("--history")), Path.of("output/mutations"));
+    for (List<String> options : List.of(List.of("--dryRun"), List.of("-h"))) {
+      List<String> idle =
+          Build.pitArgumentsForTest(
+              Build.pitSelectionForTest(options), Path.of("output/mutations"));
+      if (idle.contains("--historyInputLocation") || idle.contains("--historyOutputLocation")) {
+        throw new AssertionError("idle PIT run would rewrite history: " + options);
+      }
+    }
+    List<String> flagless =
+        Build.pitArgumentsForTest(
+            Build.pitSelectionForTest(List.of()), Path.of("output/mutations"));
+    List<String> optedOut =
+        Build.pitArgumentsForTest(
+            Build.pitSelectionForTest(List.of("--no-history")), Path.of("output/mutations"));
+    if (optedOut.contains("--historyInputLocation")
+        || optedOut.contains("--historyOutputLocation")) {
+      throw new AssertionError("--no-history still passes history: " + optedOut);
+    }
     String historyPath = Path.of("output/pit.history").toAbsolutePath().normalize().toString();
-    for (String option : List.of("--historyInputLocation", "--historyOutputLocation")) {
-      int index = history.indexOf(option);
-      if (index < 0 || !history.get(index + 1).equals(historyPath)) {
-        throw new AssertionError("missing PIT history shorthand argument: " + history);
+    for (List<String> withHistory : List.of(history, flagless)) {
+      for (String option : List.of("--historyInputLocation", "--historyOutputLocation")) {
+        int index = withHistory.indexOf(option);
+        if (index < 0 || !withHistory.get(index + 1).equals(historyPath)) {
+          throw new AssertionError("missing default PIT history argument: " + withHistory);
+        }
       }
     }
   }
@@ -1898,9 +1969,13 @@ public final class BuildTest {
   private static void given_runningProcess_when_timeoutExpires_then_terminatesProcess()
       throws Exception {
     Process process = child("sleep");
-    expectFailure(
-        () -> Build.waitForProcessForTest(process, Duration.ofMillis(20), Duration.ofSeconds(2)),
-        "process timed out");
+    try {
+      Build.waitForProcessForTest(process, Duration.ofMillis(20), Duration.ofSeconds(2));
+      throw new AssertionError("process timeout not reported");
+    } catch (Build.ProcessTimeoutException expected) {
+      // A typed failure lets callers such as PIT explain their own time limit.
+      if (!expected.getMessage().startsWith("process timed out")) throw expected;
+    }
     if (process.isAlive()) throw new AssertionError("timed-out child remains alive");
   }
 

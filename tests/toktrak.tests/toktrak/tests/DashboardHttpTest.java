@@ -15,6 +15,8 @@ import org.junit.jupiter.api.io.TempDir;
 import toktrak.App;
 
 final class DashboardHttpTest {
+  private static final Path CORPUS = Path.of("tests/corpus/dev.jsonl");
+
   @TempDir Path directory;
 
   @Test
@@ -86,7 +88,9 @@ final class DashboardHttpTest {
           ingestion.indexOf("<strong>Synthetic User 5</strong>")
               < ingestion.indexOf("<strong>Synthetic User 1</strong>"),
           ingestion);
-      assertTrue(overview.body().contains(">██████████</span>"), overview.body());
+      assertTrue(
+          overview.body().contains("<rect class=\"bar-fill\" width=\"100\" height=\"8\"/>"),
+          overview.body());
       assertTrue(overview.body().contains("datastar-patch-signals"), overview.body());
       assertTrue(
           overview.body().matches("(?s).*src=\"/assets/datastar\\.[0-9a-f]{32}\\.js\".*"),
@@ -118,18 +122,18 @@ final class DashboardHttpTest {
           new String[] {
             "Daily projected cost",
             "Where tokens go",
-            "Usage rhythm by UTC weekday",
+            "Usage by day of the week",
             "Model and harness mix",
             "Individual streams, shared context",
             "Costliest sessions",
-            "Recent coding blocks"
+            "Recent usage windows"
           }) {
         assertTrue(visualizations.body().contains(heading), heading);
       }
       assertTrue(visualizations.body().contains("<svg class=\"chart-rule\""));
       assertTrue(
           visualizations.body().contains("<time datetime=\"2026-07-14\">14 Jul 2026</time>"));
-      assertTrue(visualizations.body().contains("4,263,701,600"));
+      assertTrue(visualizations.body().contains("4,263,701,684"));
       assertTrue(visualizations.body().contains(">Monday<"));
       assertTrue(visualizations.body().contains("<strong>claude-fable-5</strong>"));
       assertTrue(visualizations.body().contains("<strong>opencode</strong>"));
@@ -167,27 +171,81 @@ final class DashboardHttpTest {
     }
   }
 
+  /// The page checks from the end-to-end test, rendered without a server so that mutation testing
+  /// reaches them quickly.
+  @Test
+  void given_developmentCorpus_when_renderingPages_then_showsCanonicalNarrative() throws Exception {
+    var pages = PageFixture.corpus(directory.resolve("pages"), CORPUS, "2026-07-15T00:00:00Z");
+    String overview = pages.overview();
+    assertTrue(overview.contains("<h1>Overview</h1>"), overview);
+    assertTrue(overview.contains("href=\"/\" aria-current=\"page\">Overview</a>"));
+    assertTrue(overview.contains("href=\"/tokens\">My Tracker</a>"));
+    assertTrue(overview.contains("$1,068.19"), overview);
+    assertTrue(overview.contains("560,418,883"), overview);
+    assertTrue(overview.contains("Some reports missing"), overview);
+    assertFalse(overview.contains("Read-only mode"), overview);
+    assertTrue(overview.contains("role=\"status\""), overview);
+    assertTrue(
+        overview.contains("<details class=\"ingestion-details\"><summary>Details</summary>"),
+        overview);
+    assertTrue(overview.contains("Synthetic User 1"), overview);
+    assertTrue(overview.contains("<div id=\"dashboard\""), overview);
+    assertTrue(overview.contains("id=\"kpi-cost\" data-counter=\"1068.19\""), overview);
+    assertTrue(overview.contains("id=\"kpi-tokens\" data-counter=\"560418883\""), overview);
+    assertTrue(overview.contains("id=\"kpi-average\" data-counter=\"213.64\""), overview);
+    assertTrue(overview.contains("<time class=\"period\" datetime=\"2026-07\">"), overview);
+    assertTrue(overview.contains("</svg> July 2026</time>"), overview);
+    assertTrue(overview.contains("class=\"status status-ok\" aria-label=\"Complete\""), overview);
+    assertTrue(overview.contains("Tracker vdev-corpus</small></details>"), overview);
+    assertTrue(overview.contains("class=\"status status-warn\" aria-label=\"Partial\""), overview);
+    int ingestionStart = overview.indexOf("<ul class=\"ingestion-list\">");
+    int ingestionEnd = overview.indexOf("</ul>", ingestionStart);
+    String ingestion = overview.substring(ingestionStart, ingestionEnd);
+    assertTrue(ingestion.contains("</svg> Partial</span>"), ingestion);
+    assertFalse(ingestion.contains("</svg> Complete</span>"), ingestion);
+    assertTrue(
+        ingestion.indexOf("<strong>Synthetic User 5</strong>")
+            < ingestion.indexOf("<strong>Synthetic User 1</strong>"),
+        ingestion);
+    assertTrue(
+        overview.contains("<rect class=\"bar-fill\" width=\"100\" height=\"8\"/>"), overview);
+    assertTrue(overview.contains("datastar-patch-signals"), overview);
+    assertTrue(overview.matches("(?s).*src=\"/assets/datastar\\.[0-9a-f]{32}\\.js\".*"), overview);
+    assertTrue(overview.matches("(?s).*src=\"/assets/dashboard\\.[0-9a-f]{32}\\.js\".*"), overview);
+    assertTrue(overview.contains("data-signals__ifmissing"), overview);
+    assertTrue(overview.contains("_observedUsageRevision"), overview);
+    assertTrue(overview.contains("_renderedUsageRevision"), overview);
+    assertTrue(overview.contains("data-on:toktrak-dashboard-revision__document"), overview);
+    assertTrue(overview.contains("data-on:datastar-fetch__document"), overview);
+    assertTrue(overview.contains("@peek(() => document.dispatchEvent"), overview);
+    assertTrue(overview.contains("@get(window.location.pathname, {retry: 'never'})"), overview);
+    assertFalse(overview.contains("location.reload()"), overview);
+
+    String visualizations = pages.visualizations(null);
+    assertTrue(visualizations.contains("<svg class=\"chart-rule\""));
+    assertTrue(visualizations.contains("<time datetime=\"2026-07-14\">14 Jul 2026</time>"));
+    assertTrue(visualizations.contains("4,263,701,684"));
+    assertTrue(visualizations.contains(">Monday<"));
+    assertTrue(visualizations.contains("<strong>claude-fable-5</strong>"));
+    assertTrue(visualizations.contains("<strong>opencode</strong>"));
+    assertTrue(visualizations.contains("Synthetic User 4"));
+    assertTrue(visualizations.contains("<td>$940.18</td>"));
+    assertTrue(visualizations.contains("synthetic-project-4-045"));
+    assertFalse(visualizations.contains("synthetic-project-4-045.jsonl"));
+    assertTrue(visualizations.contains("<th>Source</th><th>Project</th>"));
+    assertFalse(visualizations.contains("Unknown project"));
+    assertTrue(visualizations.contains("2026-07-14T07:00:00.000Z"));
+  }
+
   @Test
   void given_degradedCorpus_when_openingOverview_then_warnsWithoutHidingStoredUsage()
       throws Exception {
-    try (var app =
-        App.start(
-            new String[] {
-              "--corpus",
-              "tests/corpus/dev.jsonl",
-              "--clock",
-              "2026-07-15T00:00:00Z",
-              "--fail-writes"
-            },
-            environment(true))) {
-      URI base = URI.create("http://127.0.0.1:" + app.port());
-      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
-      String session = login(client, base);
+    var pages = PageFixture.corpus(directory.resolve("degraded"), CORPUS, "2026-07-15T00:00:00Z");
+    pages.degradeWrites();
 
-      String body = send(client, base.resolve("/"), session).body();
-      assertTrue(body.contains("Read-only mode"), body);
-      assertTrue(body.contains("$1,068.19"), body);
-    }
+    String body = pages.overview();
+    assertTrue(body.contains("Read-only mode"), body);
+    assertTrue(body.contains("$1,068.19"), body);
   }
 
   @Test
@@ -221,29 +279,21 @@ final class DashboardHttpTest {
                     : line)
             .toList();
     Files.write(corpus, events);
-    try (var app =
-        App.start(
-            new String[] {"--corpus", corpus.toString(), "--clock", "2026-12-01T00:00:00Z"},
-            environment(false))) {
-      URI base = URI.create("http://127.0.0.1:" + app.port());
-      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
-      String body = send(client, base.resolve("/"), login(client, base)).body();
-      int start = body.indexOf("<ul class=\"ingestion-list\">");
-      assertTrue(start >= 0, body);
-      int end = body.indexOf("</ul>", start);
-      assertTrue(end > start, body);
-      String ingestion = body.substring(start, end);
-      assertTrue(body.contains("2026-07"), body);
-      assertTrue(ingestion.contains("<strong>Synthetic User 1</strong>"), ingestion);
-      assertTrue(
-          ingestion.contains("class=\"status status-warn\" aria-label=\"Stale\""), ingestion);
-      for (int user = 2; user <= 5; user++) {
-        assertFalse(ingestion.contains("<strong>Synthetic User " + user + "</strong>"), ingestion);
-      }
-      String visualizations =
-          send(client, base.resolve("/visualizations"), login(client, base)).body();
-      assertTrue(visualizations.contains("Synthetic User 4"), visualizations);
+    var pages = PageFixture.corpus(directory.resolve("monthly"), corpus, "2026-12-01T00:00:00Z");
+    String body = pages.overview();
+    int start = body.indexOf("<ul class=\"ingestion-list\">");
+    assertTrue(start >= 0, body);
+    int end = body.indexOf("</ul>", start);
+    assertTrue(end > start, body);
+    String ingestion = body.substring(start, end);
+    assertTrue(body.contains("2026-07"), body);
+    assertTrue(ingestion.contains("<strong>Synthetic User 1</strong>"), ingestion);
+    assertTrue(ingestion.contains("class=\"status status-warn\" aria-label=\"Stale\""), ingestion);
+    for (int user = 2; user <= 5; user++) {
+      assertFalse(ingestion.contains("<strong>Synthetic User " + user + "</strong>"), ingestion);
     }
+    String visualizations = pages.visualizations(null);
+    assertTrue(visualizations.contains("Synthetic User 4"), visualizations);
   }
 
   @Test
@@ -308,17 +358,7 @@ final class DashboardHttpTest {
   }
 
   private String corpusOverview(Path corpus, String clock, String dataName) throws Exception {
-    try (var app =
-        App.start(
-            new String[] {"--corpus", corpus.toString(), "--clock", clock},
-            Map.of(
-                "TOKTRAK_DEV_AUTH", "true",
-                "TOKTRAK_PORT", "0",
-                "TOKTRAK_DATA_DIR", directory.resolve(dataName).toString()))) {
-      URI base = URI.create("http://127.0.0.1:" + app.port());
-      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
-      return send(client, base.resolve("/"), login(client, base)).body();
-    }
+    return PageFixture.corpus(directory.resolve(dataName), corpus, clock).overview();
   }
 
   private Map<String, String> environment(boolean degraded) {

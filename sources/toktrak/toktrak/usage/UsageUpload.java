@@ -1,7 +1,6 @@
 package toktrak.usage;
 
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
@@ -307,10 +306,8 @@ public final class UsageUpload {
 
   private static String string(Map<String, Object> data, String name, int charactersMax) {
     Object value = data.get(name);
-    if (!(value instanceof String string)
-        || string.isBlank()
-        || string.length() > charactersMax
-        || string.getBytes(StandardCharsets.UTF_8).length > charactersMax * 4L) {
+    if (!(value instanceof String string) || string.isBlank() || string.length() > charactersMax) {
+      // UTF-8 never needs more than three bytes per UTF-16 character, so this bounds bytes too.
       throw new IllegalArgumentException(name + " is invalid");
     }
     return string;

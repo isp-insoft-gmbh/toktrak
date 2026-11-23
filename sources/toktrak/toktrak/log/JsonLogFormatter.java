@@ -34,7 +34,6 @@ public final class JsonLogFormatter extends Formatter {
 
   private static String boundedMessage(String message) {
     if (message == null) return "null";
-    if (message.length() <= MESSAGE_CHARACTERS_MAX) return message;
-    return message.substring(0, MESSAGE_CHARACTERS_MAX);
+    return message.substring(0, Math.min(message.length(), MESSAGE_CHARACTERS_MAX));
   }
 }

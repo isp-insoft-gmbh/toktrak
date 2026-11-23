@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -93,6 +93,25 @@ export function relevantChecks(paths) {
   return selected;
 }
 
+const MUTABLE_SOURCE = /^sources\/toktrak\/[A-Za-z0-9_\/-]+\.java$/u;
+const MUTATION_TARGETS_MAX = 200;
+// Mutated when only tests, corpus or PIT tooling change: proves PIT still runs end to end.
+const MUTATION_SMOKE = ["sources/toktrak/toktrak/charts"];
+
+/// Production sources a pull request's mutation run mutates: the changed ones, a small smoke
+/// selection when none changed, or an empty list, meaning everything, for very large changes.
+export function mutationTargets(paths, exists = existsSync) {
+  const sources = paths.filter(
+    (path) =>
+      MUTABLE_SOURCE.test(path) &&
+      !path.endsWith("/module-info.java") &&
+      !path.endsWith("/package-info.java") &&
+      exists(path),
+  );
+  if (sources.length > MUTATION_TARGETS_MAX) return [];
+  return sources.length > 0 ? sources : MUTATION_SMOKE;
+}
+
 export function changedPaths(directory) {
   const changed = execFileSync("git", ["diff", "--name-only", "--no-renames", "-z", "HEAD^1", "HEAD"], {
     cwd: directory,
@@ -108,9 +127,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
   }
   const paths = changedPaths(process.cwd());
   const checks = relevantChecks(paths);
+  const targets = mutationTargets(paths);
   appendFileSync(
     process.env.GITHUB_OUTPUT,
-    `${CHECKS.map((name) => `${name}=${checks[name]}`).join("\n")}\nchanged=${paths.length}\n`,
+    `${CHECKS.map((name) => `${name}=${checks[name]}`).join("\n")}\nchanged=${paths.length}\n` +
+      `pit_paths=${targets.join(" ")}\n`,
   );
   console.log(
     `Changed files: ${paths.length}; selected: ${CHECKS.filter((name) => checks[name]).join(", ") || "core only"}`,

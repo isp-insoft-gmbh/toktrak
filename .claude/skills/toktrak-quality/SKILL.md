@@ -34,9 +34,17 @@ description: "Use when adding or updating TokTrak Java tests, Selfie snapshots, 
   snapshots; normalize at the test boundary.
 - Run `mise run coverage` after changing tests; open
   `output/coverage/report/index.html`. Do not weaken coverage floors.
-- When editing tests, run `mise run pit --history -- <production paths>` and
-  inspect `output/mutations/index.html`. Delete `output/pit.history` and rerun
-  without history if results are inconsistent.
+- When editing tests, run `mise run pit -- <production paths>` and inspect
+  `output/mutations/index.html`. History in `output/pit.history` is on by
+  default: rerunning the same selection skips analysed mutants, a run on another
+  selection replaces it, and a run stopped at the time limit keeps at most the
+  mutants it finished. Delete `output/pit.history` if results look inconsistent;
+  `--no-history` ignores it for one run. PIT boolean options take values, such
+  as `--verbose true`.
+- Pull-request CI mutates only the production sources a PR changes; the weekly
+  run mutates everything. Every PIT run may take up to 20 minutes.
+- Unit tests share PIT's 5s per-test limit. Check the `slowest tests` list that
+  `mise run test` prints and split or shrink a test long before it nears 5s.
 - Before pushing, run `mise run ci` from a clean tree. CI rejects Refaster
   rewrites without applying them, keeps Selfie readonly, and publishes
   coverage/PIT summaries plus downloadable HTML reports.

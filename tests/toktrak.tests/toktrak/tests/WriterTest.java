@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
@@ -131,12 +132,28 @@ final class WriterTest {
   void given_invalidWriterSettings_when_startingWriter_then_rejectsSettings() {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     for (int capacity : new int[] {0, 1_025}) {
-      assertThrows(
-          IllegalArgumentException.class,
-          () ->
-              Writer.startForTest(
-                  log, Projection.empty(), new HealthState(), ClockSource.system(), capacity));
+      var exception =
+          assertThrows(
+              IllegalArgumentException.class,
+              () ->
+                  Writer.startForTest(
+                      log, Projection.empty(), new HealthState(), ClockSource.system(), capacity));
+      assertEquals("capacity must be 1..1024", exception.getMessage());
     }
+    for (int capacity : new int[] {1, 1_024}) {
+      Writer.startForTest(
+              log, Projection.empty(), new HealthState(), ClockSource.system(), capacity)
+          .close();
+    }
+    Writer.startForTest(
+            log,
+            Projection.empty(),
+            new HealthState(),
+            ClockSource.system(),
+            1,
+            Duration.ofMinutes(1),
+            Duration.ofNanos(1))
+        .close();
     for (Duration timeout :
         new Duration[] {Duration.ZERO, Duration.ofSeconds(-1), Duration.ofSeconds(61)}) {
       assertThrows(
@@ -289,6 +306,107 @@ final class WriterTest {
       assertEquals(0, projection.eventCount());
       assertEquals(0, log.replay(_ -> {}));
     }
+  }
+
+  @Test
+  void given_commandsQueuedBehindStuckClaim_when_forcingClose_then_failsEveryCommandAtOnce()
+      throws Exception {
+    var claimEntered = new CountDownLatch(1);
+    var releaseClaim = new CountDownLatch(1);
+    var writer =
+        Writer.startForTest(
+            EventLog.open(dir.resolve("events.ndjson")),
+            Projection.empty(),
+            new HealthState(),
+            ClockSource.system(),
+            4,
+            Duration.ofMillis(20),
+            Duration.ofMillis(20),
+            blockingHook(claimEntered, releaseClaim),
+            () -> {});
+    try {
+      var claimed = writer.submit(WriteCommand.devTest("first"));
+      assertTrue(claimEntered.await(2, TimeUnit.SECONDS));
+      var queued =
+          List.of(
+              writer.submit(WriteCommand.devTest("second")),
+              writer.submit(WriteCommand.devTest("third")));
+      // The claim ignores interrupts, so close itself must fail what is still waiting.
+      writer.close();
+      for (var future : queued) assertFailed("writer is closed", future);
+      assertFailed("writer is closed", claimed);
+    } finally {
+      releaseClaim.countDown();
+      writer.close();
+    }
+  }
+
+  @Test
+  void given_writerThreadCrashes_when_commandsAreWaiting_then_failsThemWithoutClose()
+      throws Exception {
+    var claimEntered = new CountDownLatch(1);
+    var releaseClaim = new CountDownLatch(1);
+    Runnable blocking = blockingHook(claimEntered, releaseClaim);
+    var writer =
+        Writer.startForTest(
+            EventLog.open(dir.resolve("events.ndjson")),
+            Projection.empty(),
+            new HealthState(),
+            ClockSource.system(),
+            4,
+            Duration.ofSeconds(1),
+            Duration.ofSeconds(1),
+            () -> {
+              blocking.run();
+              throw new IllegalStateException("simulated writer crash");
+            },
+            () -> {});
+    try {
+      var claimed = writer.submit(WriteCommand.devTest("first"));
+      assertTrue(claimEntered.await(2, TimeUnit.SECONDS));
+      var queued = writer.submit(WriteCommand.devTest("second"));
+      releaseClaim.countDown();
+      assertFailed("writer stopped", claimed);
+      assertFailed("writer stopped", queued);
+    } finally {
+      writer.close();
+    }
+  }
+
+  @Test
+  void given_idleOrPausedWriter_when_submittingOrClosing_then_wakesWithoutWaitingForThePoll()
+      throws Exception {
+    // The writer re-checks its state every 100 ms; notifications must wake it well before that.
+    var log = EventLog.open(dir.resolve("events.ndjson"));
+    var writer = Writer.start(log, Projection.empty(), new HealthState(), ClockSource.system());
+    Thread.sleep(20);
+    long writeMillis = millis(() -> writer.write(WriteCommand.devTest("system")));
+    Thread.sleep(20);
+    long closeMillis = millis(writer::close);
+    assertTrue(writeMillis < 70, "write took " + writeMillis + " ms");
+    assertTrue(closeMillis < 70, "close took " + closeMillis + " ms");
+
+    var paused =
+        Writer.startForTest(log, Projection.empty(), new HealthState(), ClockSource.system(), 4);
+    paused.pauseForTest();
+    Thread.sleep(20);
+    long pausedCloseMillis = millis(paused::close);
+    assertTrue(pausedCloseMillis < 70, "paused close took " + pausedCloseMillis + " ms");
+  }
+
+  private static long millis(Runnable action) {
+    long start = System.nanoTime();
+    action.run();
+    return (System.nanoTime() - start) / 1_000_000;
+  }
+
+  private static void assertFailed(
+      String message, java.util.concurrent.CompletableFuture<Writer.WriteResult> future) {
+    var failure =
+        assertThrows(
+            java.util.concurrent.ExecutionException.class,
+            () -> future.get(500, TimeUnit.MILLISECONDS));
+    assertEquals(message, failure.getCause().getMessage());
   }
 
   private static Runnable blockingHook(CountDownLatch entered, CountDownLatch release) {

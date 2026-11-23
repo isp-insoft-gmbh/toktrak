@@ -1,10 +1,12 @@
 package toktrak.tests;
 
 import static com.diffplug.selfie.Selfie.expectSelfie;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +14,7 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import toktrak.http.BaseView;
 import toktrak.http.BaseView.CurrencySwitch;
 import toktrak.http.BaseView.CurrentPage;
@@ -183,6 +186,26 @@ final class SnapshotTest {
             PLATFORM);
     expectSelfie(decode(HttpSupport.renderEncoded(CreatedTokenViewRenderer.of(), view)))
         .toMatchDisk();
+  }
+
+  @Test
+  void given_twoToolsOverEightDays_when_renderingDailyCostChart_then_matchesApprovedMarkup(
+      @TempDir Path directory) throws Exception {
+    try (var usage = new UsageFixture(directory)) {
+      usage.upload(
+          UsageFixture.daily(
+              "2026-07-01",
+              "12.5",
+              "{\"agent\":\"alpha\",\"totalCost\":10},{\"agent\":\"beta\",\"totalCost\":2.5}",
+              ""),
+          UsageFixture.daily("2026-07-03", "4", "{\"agent\":\"beta\",\"totalCost\":4}", ""),
+          UsageFixture.daily("2026-07-08", "1", "", ""));
+      String page = usage.visualizations("range=custom&from=2026-07-01&to=2026-07-08");
+      int start = page.indexOf("<article class=\"chart-card");
+      int end = page.indexOf("</article>", start);
+      assertTrue(start >= 0 && end > start, page);
+      expectSelfie(page.substring(start, end + "</article>".length())).toMatchDisk();
+    }
   }
 
   @Test

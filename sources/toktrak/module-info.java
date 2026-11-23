@@ -10,6 +10,7 @@ module toktrak {
 
   exports toktrak;
   exports toktrak.auth;
+  exports toktrak.charts;
   exports toktrak.fx;
   exports toktrak.health;
   exports toktrak.identity;

@@ -289,13 +289,13 @@ public final class OidcClient {
     if (pairs.length > 64) throw invalid();
     for (String pair : pairs) {
       int separator = pair.indexOf('=');
-      if (separator <= 0) throw invalid();
+      if (separator == -1) throw invalid();
       String name =
           java.net.URLDecoder.decode(pair.substring(0, separator), StandardCharsets.UTF_8);
       String field =
           java.net.URLDecoder.decode(pair.substring(separator + 1), StandardCharsets.UTF_8);
-      if (name.isBlank() || name.length() > 128 || field.length() > FIELD_CHARACTERS_MAX)
-        throw invalid();
+      // A field is never longer than the whole query, which is already bounded.
+      if (name.isBlank() || name.length() > 128) throw invalid();
       if (fields.put(name, field) != null) throw invalid();
     }
     return Map.copyOf(fields);

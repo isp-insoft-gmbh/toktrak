@@ -21,6 +21,9 @@ public final class AuthService {
   public static final String TRANSACTION_COOKIE = "toktrak_oidc";
   private static final Duration SESSION_LIFETIME = Duration.ofHours(12);
   private static final Duration TRANSACTION_LIFETIME = Duration.ofMinutes(10);
+  private static final java.util.regex.Pattern RETURN_PATH =
+      java.util.regex.Pattern.compile(
+          "/(?:visualizations|tokens|scope|changes)?(?:\\?[A-Za-z0-9=&%._~-]{1,1024})?");
 
   private static final UserKey DEVELOPMENT_KEY = new UserKey("urn:toktrak:development", "viewer");
   private static final String DEVELOPMENT_EMAIL = "viewer@development.invalid";
@@ -81,31 +84,37 @@ public final class AuthService {
         Objects.requireNonNull(oidc, "oidc"));
   }
 
-  public Login beginLogin() {
+  /// Starts a login. `returnPath` is a validated local page to open afterwards, or null to land on
+  /// the default page.
+  public Login beginLogin(String returnPath) {
+    if (returnPath != null) requireReturnPath(returnPath);
     if (dev) {
       User user = developmentUser();
-      return new Login(tokensUri(), null, issueSession(user.key()));
+      return new Login(landing(user.key(), returnPath), null, issueSession(user.key()));
     }
     OidcClient.Authorization authorization = oidc.begin(callbackUri());
     OidcClient.Transaction transaction = authorization.transaction();
-    String transactionCookie =
-        cookies.sign(
-            Map.of(
-                "kind", "transaction",
-                "state", transaction.state(),
-                "nonce", transaction.nonce(),
-                "verifier", transaction.verifier()),
-            now().plus(TRANSACTION_LIFETIME));
+    var fields = new java.util.HashMap<String, String>();
+    fields.put("kind", "transaction");
+    fields.put("state", transaction.state());
+    fields.put("nonce", transaction.nonce());
+    fields.put("verifier", transaction.verifier());
+    if (returnPath != null) fields.put("return", returnPath);
+    String transactionCookie = cookies.sign(fields, now().plus(TRANSACTION_LIFETIME));
     return new Login(authorization.redirectUri(), transactionCookie, null);
   }
 
   public CompletedLogin completeLogin(String rawQuery, String transactionCookie) {
     if (dev) throw new IllegalStateException("OIDC callback is disabled in development");
     Map<String, String> fields = cookies.verify(transactionCookie, now());
-    if (!fields.keySet().equals(java.util.Set.of("kind", "state", "nonce", "verifier"))
-        || !"transaction".equals(fields.get("kind"))) {
+    var transactionFields = java.util.Set.of("kind", "state", "nonce", "verifier");
+    var keys = new java.util.HashSet<>(fields.keySet());
+    keys.remove("return");
+    if (!keys.equals(transactionFields) || !"transaction".equals(fields.get("kind"))) {
       throw new IllegalArgumentException("OIDC transaction is invalid");
     }
+    String returnPath = fields.get("return");
+    if (returnPath != null) requireReturnPath(returnPath);
     OidcClient.Profile profile =
         oidc.complete(
             callbackUri(),
@@ -114,7 +123,7 @@ public final class AuthService {
                 fields.get("state"), fields.get("nonce"), fields.get("verifier")));
     User user =
         identities.authenticateUser(profile.key(), profile.email(), profile.displayName(), null);
-    return new CompletedLogin(tokensUri(), issueSession(user.key()));
+    return new CompletedLogin(landing(user.key(), returnPath), issueSession(user.key()));
   }
 
   public Session requireSession(String cookieHeader) {
@@ -212,8 +221,22 @@ public final class AuthService {
     return baseUri.resolve("/oauth/callback");
   }
 
-  private URI tokensUri() {
-    return baseUri.resolve("/tokens");
+  /// The requested page, or tracker onboarding until the user has a tracker token, then Overview.
+  private URI landing(UserKey key, String returnPath) {
+    assert key != null;
+    if (returnPath != null) return baseUri.resolve(returnPath);
+    boolean tracking =
+        projection.trackerTokens(key).stream().anyMatch(token -> token.revokedAt() == null);
+    return baseUri.resolve(tracking ? "/" : "/tokens");
+  }
+
+  /// Local page path with an optional query; never a scheme, authority, or other origin.
+  public static boolean returnPath(String value) {
+    return value != null && RETURN_PATH.matcher(value).matches();
+  }
+
+  private static void requireReturnPath(String value) {
+    if (!returnPath(value)) throw new IllegalArgumentException("return path is invalid");
   }
 
   private String randomValue() {
@@ -224,13 +247,15 @@ public final class AuthService {
 
   public static Optional<String> cookie(String header, String name) {
     Objects.requireNonNull(name, "name");
+    // A non-empty name never matches the empty name before a leading '='.
+    if (name.isEmpty()) throw new IllegalArgumentException("cookie name is empty");
     if (header == null || header.length() > 16 * 1024) return Optional.empty();
     String match = null;
     String[] values = header.split(";", 65);
     if (values.length > 64) return Optional.empty();
     for (String value : values) {
       int separator = value.indexOf('=');
-      if (separator <= 0 || !name.equals(value.substring(0, separator).strip())) continue;
+      if (separator == -1 || !name.equals(value.substring(0, separator).strip())) continue;
       if (match != null) return Optional.empty();
       match = value.substring(separator + 1).strip();
     }

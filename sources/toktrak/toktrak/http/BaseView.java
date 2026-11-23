@@ -141,7 +141,11 @@ public record BaseView(
       Objects.requireNonNull(url, "url");
       Objects.requireNonNull(label, "label");
       if (state == CurrencySwitchState.ENABLED) {
-        if (!url.matches("/(?:visualizations|scope)?\\?currency=(?:USD|EUR)")
+        if (!url.matches(
+                "/(?:scope|visualizations)?\\?currency=(?:USD|EUR)"
+                    + "|/visualizations\\?range=(?:month&month=\\d{4}-\\d{2}|year&year=\\d{4}|all"
+                    + "|custom&from=\\d{4}-\\d{2}-\\d{2}&to=\\d{4}-\\d{2}-\\d{2})"
+                    + "&currency=(?:USD|EUR)")
             || !label.matches("USD|EUR")
             || label.equals(current.name())) {
           throw new IllegalArgumentException("currency switch is invalid");

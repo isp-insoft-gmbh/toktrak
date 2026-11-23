@@ -435,4 +435,64 @@
 ╔═ given_requestLog_when_formattingJson_then_matchesApprovedLine ═╗
 {"timestamp":"1970-01-01T00:00:00Z","level":"INFO","message":"request complete","requestId":"request-1","method":"GET","path":"/health","mode":"production","userId":"user-1","tokenId":"token-1"}
 
+╔═ given_twoToolsOverEightDays_when_renderingDailyCostChart_then_matchesApprovedMarkup ═╗
+<article class="chart-card chart-card-wide" aria-labelledby="daily-cost-heading">
+        <h2 id="daily-cost-heading">Cost per day by tool</h2>
+        <p>Estimated cost per day, stacked by coding tool. Line: 7-day average. Empty columns are days without usage.</p>
+        <svg class="chart" viewBox="0 0 960 260" role="img" aria-labelledby="daily-cost-heading">
+          <line class="chart-grid-line" x1="64" y1="236" x2="952" y2="236"/>
+          <text class="chart-axis" x="58" y="240" text-anchor="end">$0.00</text>
+          <line class="chart-grid-line" x1="64" y1="179.5" x2="952" y2="179.5"/>
+          <text class="chart-axis" x="58" y="183.5" text-anchor="end">$5.00</text>
+          <line class="chart-grid-line" x1="64" y1="123" x2="952" y2="123"/>
+          <text class="chart-axis" x="58" y="127" text-anchor="end">$10</text>
+          <line class="chart-grid-line" x1="64" y1="66.5" x2="952" y2="66.5"/>
+          <text class="chart-axis" x="58" y="70.5" text-anchor="end">$15</text>
+          <line class="chart-grid-line" x1="64" y1="10" x2="952" y2="10"/>
+          <text class="chart-axis" x="58" y="14" text-anchor="end">$20</text>
+          <rect class="series-2" x="64.5" y="207.8" width="110" height="28.3" data-usd="2.5"><title>1 Jul 2026 · beta · $2.50</title></rect>
+          <rect class="series-1" x="64.5" y="94.8" width="110" height="113" data-usd="10"><title>1 Jul 2026 · alpha · $10.00</title></rect>
+          <rect class="series-2" x="286.5" y="190.8" width="110" height="45.2" data-usd="4"><title>3 Jul 2026 · beta · $4.00</title></rect>
+          <rect class="series-3" x="841.5" y="224.7" width="110" height="11.3" data-usd="1"><title>8 Jul 2026 · Not reported · $1.00</title></rect>
+          <path class="chart-average" d="M785.5 209.4L896.5 227.9"><title>7-day average</title></path>
+          <text class="chart-axis" x="119.5" y="254" text-anchor="middle">1 Jul</text>
+          <text class="chart-axis" x="230.5" y="254" text-anchor="middle">2 Jul</text>
+          <text class="chart-axis" x="341.5" y="254" text-anchor="middle">3 Jul</text>
+          <text class="chart-axis" x="452.5" y="254" text-anchor="middle">4 Jul</text>
+          <text class="chart-axis" x="563.5" y="254" text-anchor="middle">5 Jul</text>
+          <text class="chart-axis" x="674.5" y="254" text-anchor="middle">6 Jul</text>
+          <text class="chart-axis" x="785.5" y="254" text-anchor="middle">7 Jul</text>
+          <text class="chart-axis" x="896.5" y="254" text-anchor="middle">8 Jul</text>
+        </svg>
+        <ul class="chart-legend">
+          <li data-usd="10"><span class="swatch series-1" aria-hidden="true"></span>alpha <strong>$10.00</strong></li>
+          <li data-usd="6.5"><span class="swatch series-2" aria-hidden="true"></span>beta <strong>$6.50</strong></li>
+          <li data-usd="1"><span class="swatch series-3" aria-hidden="true"></span>Not reported <strong>$1.00</strong></li>
+          <li><span class="swatch swatch-line" aria-hidden="true"></span>7-day average</li>
+        </ul>
+        <dl class="chart-stats">
+          <div><dt>Peak day</dt><dd data-usd="12.5">$12.50 · 1 Jul 2026</dd></div>
+          <div><dt>Typical day with usage</dt><dd data-usd="4">$4.00</dd></div>
+          <div><dt>Total</dt><dd data-usd="17.5">$17.50</dd></div>
+        </dl>
+        <details class="chart-data">
+          <summary>Data table</summary>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th scope="col">Period</th><th scope="col">Estimated cost</th></tr></thead>
+              <tbody>
+                <tr data-usd="12.5"><td>1 Jul 2026</td><td>$12.50</td></tr>
+                <tr data-usd="0"><td>2 Jul 2026</td><td>$0.00</td></tr>
+                <tr data-usd="4"><td>3 Jul 2026</td><td>$4.00</td></tr>
+                <tr data-usd="0"><td>4 Jul 2026</td><td>$0.00</td></tr>
+                <tr data-usd="0"><td>5 Jul 2026</td><td>$0.00</td></tr>
+                <tr data-usd="0"><td>6 Jul 2026</td><td>$0.00</td></tr>
+                <tr data-usd="0"><td>7 Jul 2026</td><td>$0.00</td></tr>
+                <tr data-usd="1"><td>8 Jul 2026</td><td>$1.00</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+        <p class="chart-note">Tool totals add up to the estimated cost above. Costs without a reported tool appear as Not reported.</p>
+      </article>
 ╔═ [end of file] ═╗

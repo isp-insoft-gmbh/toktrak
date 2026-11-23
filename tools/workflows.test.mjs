@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { changedPaths, relevantChecks } from "./ci-scope.mjs";
+import { changedPaths, mutationTargets, relevantChecks } from "./ci-scope.mjs";
 
 const workflowDirectory = join(process.cwd(), ".github", "workflows");
 const workflow = (name) => readFileSync(join(workflowDirectory, `${name}.yml`), "utf8");
@@ -131,9 +131,46 @@ test("given_pullRequest_when_checkingReports_then_uploadsOnlyFailedMutationXml",
   assert.match(pit, /include-hidden-files: true\n          if-no-files-found: warn/u);
 });
 
+test("given_changedFiles_when_selectingMutationTargets_then_mutatesOnlyChangedProductionSources", () => {
+  const exists = (path) => !path.includes("Deleted");
+  assert.deepEqual(
+    mutationTargets(
+      [
+        "sources/toktrak/toktrak/App.java",
+        "sources/toktrak/module-info.java",
+        "sources/toktrak/toktrak/http/package-info.java",
+        "sources/toktrak/toktrak/Deleted.java",
+        "sources/toktrak/templates/overview.mustache",
+        "tests/toktrak.tests/toktrak/tests/AppTest.java",
+        "sources/toktrak/toktrak/Odd name.java",
+      ],
+      exists,
+    ),
+    ["sources/toktrak/toktrak/App.java"],
+  );
+  // Only tests or tooling changed: a small selection proves PIT still runs.
+  assert.deepEqual(mutationTargets(["tests/toktrak.tests/toktrak/tests/AppTest.java"], exists), [
+    "sources/toktrak/toktrak/charts",
+  ]);
+  const many = Array.from({ length: 201 }, (_, index) => `sources/toktrak/toktrak/F${index}.java`);
+  assert.deepEqual(mutationTargets(many, exists), []);
+  assert.equal(mutationTargets(many.slice(0, 200), exists).length, 200);
+});
+
 test("given_pullRequest_when_pitRuns_then_recomputesMutationsWithoutSharedHistory", () => {
   const pit = workflow("pit");
-  assert.match(pit, /- if: github\.event_name == 'pull_request'\n        run: mise run pit\n/u);
+  // History is on by default, so pull requests must opt out explicitly.
+  assert.match(
+    pit,
+    /- if: github\.event_name == 'pull_request'\n        env:\n          PIT_PATHS: \$\{\{ inputs\.paths \}\}\n        run: mise run pit --no-history -- \$PIT_PATHS\n/u,
+  );
+  assert.match(pit, /^  workflow_call:\n    inputs:\n      paths:\n/mu);
+  const ci = workflow("ci");
+  assert.ok(ci.includes("pit_paths: ${{ steps.changed.outputs.pit_paths }}"));
+  assert.match(
+    ci,
+    /uses: \.\/\.github\/workflows\/pit\.yml\n    with:\n      paths: \$\{\{ needs\.scope\.outputs\.pit_paths \}\}/u,
+  );
   assert.match(pit, /- if: github\.event_name != 'pull_request'\n        run: mise run pit --history\n/u);
   assert.equal(
     (pit.match(/- if: github\.event_name != 'pull_request'\n        uses: actions\/cache\//gu) ?? []).length,

@@ -64,6 +64,10 @@ public final class FxService implements AutoCloseable {
     }
   }
 
+  public boolean runningForTest() {
+    return !executor.isShutdown();
+  }
+
   @Override
   public void close() {
     refreshTask.cancel(true);

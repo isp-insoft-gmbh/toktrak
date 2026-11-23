@@ -63,6 +63,10 @@ final class AuthServiceTest {
     assertThrows(
         IllegalArgumentException.class,
         () -> cookies.verify(forge("%20=a&exp=" + NOW.plusSeconds(60).getEpochSecond()), NOW));
+    assertThrows(IllegalArgumentException.class, () -> AuthService.cookie("=v", ""));
+    assertEquals(
+        java.util.Optional.of("x"),
+        AuthService.cookie("=v; " + AuthService.SESSION_COOKIE + "=x", AuthService.SESSION_COOKIE));
     assertTrue(AuthService.cookie(null, AuthService.SESSION_COOKIE).isEmpty());
     assertTrue(AuthService.cookie("x".repeat(16 * 1024 + 1), AuthService.SESSION_COOKIE).isEmpty());
     String atHeaderLimit =
@@ -183,7 +187,7 @@ final class AuthServiceTest {
                   ClockSource.fixed(NOW)));
       assertTrue(production.sessionCookie("value").endsWith("; Secure"));
       assertTrue(production.clearSessionCookie().endsWith("; Secure"));
-      AuthService.Login login = auth.beginLogin();
+      AuthService.Login login = auth.beginLogin(null);
       AuthService.Session session =
           auth.requireSession(AuthService.SESSION_COOKIE + "=" + login.session());
       String extraFieldSession =
@@ -206,11 +210,39 @@ final class AuthServiceTest {
       assertThrows(
           IllegalStateException.class, () -> auth.completeLogin("code=valid&state=any", "cookie"));
 
+      assertEquals(URI.create("http://127.0.0.1:8080/tokens"), auth.beginLogin(null).redirectUri());
+      assertEquals(
+          URI.create("http://127.0.0.1:8080/visualizations?range=all"),
+          auth.beginLogin("/visualizations?range=all").redirectUri());
+      assertThrows(IllegalArgumentException.class, () -> auth.beginLogin("//evil.example"));
+      var token =
+          identities.commitTrackerToken(identities.prepareTrackerToken(session.key(), "Laptop"));
+      assertEquals(URI.create("http://127.0.0.1:8080/"), auth.beginLogin(null).redirectUri());
+      identities.revokeTrackerToken(session.key(), token.token().id());
+      assertEquals(URI.create("http://127.0.0.1:8080/tokens"), auth.beginLogin(null).redirectUri());
+
+      var signer = new SignedCookie(new byte[32]);
+      var transaction =
+          new java.util.HashMap<>(
+              Map.of("kind", "transaction", "state", "s", "nonce", "n", "verifier", "v"));
+      String plain = signer.sign(transaction, NOW.plusSeconds(60));
+      transaction.put("return", "//evil.example");
+      String forged = signer.sign(transaction, NOW.plusSeconds(60));
+      var rejected =
+          assertThrows(
+              IllegalArgumentException.class,
+              () -> production.completeLogin("code=c&state=other", forged));
+      assertEquals("return path is invalid", rejected.getMessage());
+      var stateMismatch =
+          assertThrows(
+              RuntimeException.class, () -> production.completeLogin("code=c&state=other", plain));
+      assertNotEquals("return path is invalid", stateMismatch.getMessage());
+
       identities.deactivate(session.key());
       assertThrows(
           IllegalArgumentException.class,
           () -> auth.requireSession(AuthService.SESSION_COOKIE + "=" + login.session()));
-      AuthService.Login reactivated = auth.beginLogin();
+      AuthService.Login reactivated = auth.beginLogin(null);
       AuthService.Session reactivatedSession =
           auth.requireSession(AuthService.SESSION_COOKIE + "=" + reactivated.session());
       assertEquals(session.key(), reactivatedSession.key());
