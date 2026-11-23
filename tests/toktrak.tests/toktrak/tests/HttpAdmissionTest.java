@@ -86,7 +86,7 @@ final class HttpAdmissionTest {
           }
         });
       }
-      assertTrue(workersStarted.await(2, TimeUnit.SECONDS));
+      workersStarted.await();
       for (int index = 0; index < QUEUE_CAPACITY; index++) workers.execute(() -> {});
       assertEquals(WORKER_COUNT, workers.getActiveCount());
       assertEquals(QUEUE_CAPACITY, workers.getQueue().size());
@@ -138,7 +138,7 @@ final class HttpAdmissionTest {
       releaseWorkers.countDown();
       server.stop(0);
       workers.shutdownNow();
-      assertTrue(workers.awaitTermination(2, TimeUnit.SECONDS));
+      workers.close();
     }
   }
 }

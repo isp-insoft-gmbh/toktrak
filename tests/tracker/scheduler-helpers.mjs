@@ -9,6 +9,11 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const TRACKER_SOURCE = new URL("../../sources/toktrak/assets/private/tracker.mjs", import.meta.url);
 const TOKEN = `tt_${"A".repeat(43)}`;
+/// Hang guard for one native command such as schtasks or systemctl.
+export const COMMAND_TIMEOUT_MILLIS = 30_000;
+// Operating-system schedulers offer no completion event, so tests poll under these limits.
+const POLL_LIMIT_MILLIS = 15_000;
+const POLL_INTERVAL_MILLIS = 100;
 
 export async function renderedTracker(directory) {
   const template = await readFile(TRACKER_SOURCE, "utf8");
@@ -24,7 +29,7 @@ export async function renderedTracker(directory) {
 export async function command(executable, arguments_, tolerateFailure = false) {
   try {
     return await exec(executable, arguments_, {
-      timeout: 30_000,
+      timeout: COMMAND_TIMEOUT_MILLIS,
       maxBuffer: 64 * 1_024,
       windowsHide: true,
     });
@@ -35,13 +40,13 @@ export async function command(executable, arguments_, tolerateFailure = false) {
 }
 
 export async function waitFor(predicate, message) {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + POLL_LIMIT_MILLIS;
   while (Date.now() < deadline) {
     // oxlint-disable-next-line no-await-in-loop -- Each poll observes state after the prior delay.
     if (await predicate()) return;
     // oxlint-disable-next-line no-await-in-loop -- Serial delay bounds the polling rate.
     await new Promise((resolve) => {
-      setTimeout(resolve, 100);
+      setTimeout(resolve, POLL_INTERVAL_MILLIS);
     });
   }
   assert.fail(message);

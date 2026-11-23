@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { generate } from "./release-notes.mjs";
 
+/// Hang guard for one child process; the outcome never depends on it.
+const COMMAND_TIMEOUT_MILLIS = 30_000;
+
 const SHA = "a".repeat(40);
 const frozen = `# Changelog
 
@@ -27,7 +30,7 @@ const fixture = (archive = false) => {
   try {
     writeFileSync(join(root, "CHANGELOG.md"), frozen);
     if (!archive) {
-      const result = spawnSync("git", ["init", "--quiet", root], { encoding: "utf8", timeout: 30_000 });
+      const result = spawnSync("git", ["init", "--quiet", root], { encoding: "utf8", timeout: COMMAND_TIMEOUT_MILLIS });
       assert.equal(result.status, 0, result.stderr || result.error?.message);
     }
     return root;
@@ -43,7 +46,7 @@ const archiveCli = (root, arguments_) => {
   return spawnSync(process.execPath, [join(root, "tools/release-notes.mjs"), ...arguments_], {
     cwd: tmpdir(),
     encoding: "utf8",
-    timeout: 30_000,
+    timeout: COMMAND_TIMEOUT_MILLIS,
     maxBuffer: 1024 * 1024,
   });
 };

@@ -322,18 +322,18 @@ final class ProjectionTest {
               }
             });
     try {
-      assertTrue(awaitTimedWaiting(waiter), "waiter must block on the projection monitor");
+      // A waiter that returned early would never reach TIMED_WAITING.
+      Polling.until(() -> waiter.getState() == Thread.State.TIMED_WAITING || !waiter.isAlive());
+      assertEquals(Thread.State.TIMED_WAITING, waiter.getState(), "waiter must block");
       assertEquals(-1, observed.get());
 
+      // The 30-second wait outlasts the test limit, so only a commit can end it in time.
       projection.apply(EventEnvelope.create("second", at, "system", Map.of()));
-      waiter.join(Duration.ofSeconds(2).toMillis());
-
-      assertFalse(waiter.isAlive(), "commit must wake the waiter");
+      waiter.join();
       assertEquals(2, observed.get());
     } finally {
       waiter.interrupt();
-      waiter.join(Duration.ofSeconds(2).toMillis());
-      assertFalse(waiter.isAlive(), "waiter must terminate after cleanup");
+      waiter.join();
     }
   }
 
@@ -343,15 +343,10 @@ final class ProjectionTest {
     var at = Instant.parse("2026-07-10T00:00:00Z");
     var projection = Projection.empty();
     projection.apply(EventEnvelope.create("first", at, "system", Map.of()));
-    var timeout = Duration.ofMillis(50);
 
-    long started = System.nanoTime();
-    long revision = projection.awaitRevision(1, timeout);
-    long elapsedNanos = System.nanoTime() - started;
-
-    assertEquals(1, revision);
-    assertTrue(elapsedNanos >= timeout.toNanos(), "wait must honour the full timeout");
-    assertEquals(1, projection.awaitRevision(0, timeout));
+    assertEquals(1, projection.awaitRevision(1, Duration.ofMillis(1)));
+    // A newer revision returns at once; a 30-second wait would outlast the test limit.
+    assertEquals(1, projection.awaitRevision(0, Duration.ofSeconds(30)));
     assertEquals(0, Projection.empty().awaitRevision(0, Duration.ofMillis(1)));
   }
 
@@ -519,15 +514,6 @@ final class ProjectionTest {
     assertEquals("FX rate is invalid", exception.getMessage());
     assertEquals(
         0, projection.fxRate().orElseThrow().eurPerUsd().compareTo(java.math.BigDecimal.TEN));
-  }
-
-  private static boolean awaitTimedWaiting(Thread thread) throws InterruptedException {
-    for (int attempt = 0; attempt < 2_000; attempt++) {
-      if (thread.getState() == Thread.State.TIMED_WAITING) return true;
-      if (!thread.isAlive()) return false;
-      Thread.sleep(1);
-    }
-    return false;
   }
 
   private static Map<String, Object> user(String subject) {

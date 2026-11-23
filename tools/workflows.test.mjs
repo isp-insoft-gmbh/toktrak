@@ -5,6 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { changedPaths, mutationTargets, relevantChecks } from "./ci-scope.mjs";
 
+/// Hang guard for one child process; the outcome never depends on it.
+const COMMAND_TIMEOUT_MILLIS = 30_000;
+
 const workflowDirectory = join(process.cwd(), ".github", "workflows");
 const workflow = (name) => readFileSync(join(workflowDirectory, `${name}.yml`), "utf8");
 
@@ -47,7 +50,7 @@ test("given_changedPaths_when_classifyingPr_then_runsOnlyRelevantChecks", () => 
 
 test("given_oldPrAndRenamedSource_when_diffingMerge_then_ignoresBaseDriftAndPreservesDeletedPaths", () => {
   const directory = mkdtempSync(join(process.cwd(), "output", "ci-scope-"));
-  const git = (args, input) => execFileSync("git", args, { cwd: directory, input, timeout: 30_000 });
+  const git = (args, input) => execFileSync("git", args, { cwd: directory, input, timeout: COMMAND_TIMEOUT_MILLIS });
   const blob = (mark, content) => `blob\nmark :${mark}\ndata ${Buffer.byteLength(content)}\n${content}\n`;
   const commit = (branch, mark, parents, changes) =>
     `commit refs/heads/${branch}\nmark :${mark}\ncommitter Fixture <fixture@example.invalid> 0 +0000\n` +

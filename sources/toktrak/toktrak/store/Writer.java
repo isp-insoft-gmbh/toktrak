@@ -42,7 +42,11 @@ public final class Writer implements AutoCloseable {
   private final Object commitMonitor = new Object();
   private final Object pauseMonitor = new Object();
   private volatile boolean pauseRequested;
-  private volatile boolean paused;
+  private final AtomicBoolean paused = new AtomicBoolean();
+
+  /// True while the writer waits for work; changes and waits happen under `stateMonitor`.
+  private final AtomicBoolean idle = new AtomicBoolean();
+
   private final Thread thread;
 
   private Writer(
@@ -213,18 +217,23 @@ public final class Writer implements AutoCloseable {
     return projection;
   }
 
-  public void pauseForTest() throws InterruptedException {
-    synchronized (pauseMonitor) {
-      pauseRequested = true;
-      pauseMonitor.notifyAll();
-      long deadline = deadlineAfter(Duration.ofSeconds(2));
-      while (!paused) {
-        long remainingNanos = deadline - System.nanoTime();
-        if (remainingNanos <= 0) throw new IllegalStateException("writer did not pause");
-        TimeUnit.NANOSECONDS.timedWait(pauseMonitor, remainingNanos);
-      }
+  /// Asks the writer to pause before it claims the next command; tests wait for `pausedForTest`.
+  public void requestPauseForTest() {
+    pauseRequested = true;
+    // An idle writer rechecks the request under stateMonitor before it waits, so this wake-up
+    // cannot be lost.
+    synchronized (stateMonitor) {
+      stateMonitor.notifyAll();
     }
-    assert paused;
+  }
+
+  public boolean pausedForTest() {
+    return paused.get();
+  }
+
+  /// True while the writer waits for work, so a following submission or close must wake it.
+  public boolean idleForTest() {
+    return idle.get();
   }
 
   private void run() {
@@ -249,7 +258,13 @@ public final class Writer implements AutoCloseable {
       synchronized (stateMonitor) {
         if (queue.isEmpty()) {
           if (closed.get()) return null;
-          stateMonitor.wait(pollMillis);
+          if (pauseRequested) continue;
+          idle.set(true);
+          try {
+            stateMonitor.wait(pollMillis);
+          } finally {
+            idle.set(false);
+          }
           continue;
         }
         Request request = queue.remove();
@@ -261,16 +276,11 @@ public final class Writer implements AutoCloseable {
     }
   }
 
+  /// Holds the writer while a test pause is requested; only close ends a pause.
   private void awaitResume() throws InterruptedException {
-    if (!pauseRequested) return;
-    while (true) {
-      synchronized (pauseMonitor) {
-        paused = true;
-        pauseMonitor.notifyAll();
-        if (!pauseRequested || closed.get()) {
-          paused = false;
-          return;
-        }
+    synchronized (pauseMonitor) {
+      while (pauseRequested && !closed.get()) {
+        paused.set(true);
         pauseMonitor.wait(pollMillis);
       }
     }
@@ -388,16 +398,6 @@ public final class Writer implements AutoCloseable {
       throw new IllegalArgumentException(name + " must be positive and at most " + TIMEOUT_MAX);
     }
     return timeout;
-  }
-
-  private static long deadlineAfter(Duration timeout) {
-    assert timeout != null && !timeout.isNegative() && !timeout.isZero();
-    long now = System.nanoTime();
-    try {
-      return Math.addExact(now, timeout.toNanos());
-    } catch (ArithmeticException exception) {
-      return Long.MAX_VALUE;
-    }
   }
 
   private record Request(WriteCommand command, CompletableFuture<WriteResult> future) {

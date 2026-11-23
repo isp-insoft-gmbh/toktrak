@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -28,6 +29,9 @@ final class FxServiceTest {
   void given_redirectThenSuccessThenFxFailure_when_refreshing_then_persistsAndRetainsLastGoodRate()
       throws Exception {
     var fail = new AtomicBoolean();
+    // The service refreshes on one thread, so a second failing request proves the refresh that
+    // received the first failure has finished.
+    var failingRequests = new CountDownLatch(2);
     HttpServer server =
         HttpServer.create(new InetSocketAddress(InetAddress.ofLiteral("127.0.0.1"), 0), 8);
     server.createContext(
@@ -40,6 +44,7 @@ final class FxServiceTest {
     server.createContext(
         "/v1/latest",
         exchange -> {
+          if (fail.get()) failingRequests.countDown();
           byte[] body =
               (fail.get() ? "unavailable" : "{\"date\":\"2026-07-14\",\"rates\":{\"EUR\":0.92}}")
                   .getBytes(StandardCharsets.UTF_8);
@@ -73,9 +78,11 @@ final class FxServiceTest {
       assertThrows(
           IllegalArgumentException.class,
           () -> FxService.start(writer, client, Duration.ofHours(25), Duration.ofMillis(100)));
-      awaitRate(projection);
+      // FX updates are the only writes, so the first new revision carries the rate.
+      projection.awaitRevision(0, Duration.ofSeconds(30));
+      assertTrue(projection.fxRate().isPresent());
       fail.set(true);
-      Thread.sleep(250);
+      failingRequests.await();
 
       assertEquals("0.92", projection.fxRate().orElseThrow().eurPerUsd().toPlainString());
       assertEquals("2026-07-14", projection.fxRate().orElseThrow().date().toString());
@@ -83,11 +90,5 @@ final class FxServiceTest {
     } finally {
       server.stop(0);
     }
-  }
-
-  private static void awaitRate(Projection projection) throws InterruptedException {
-    long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
-    while (projection.fxRate().isEmpty() && System.nanoTime() < deadline) Thread.sleep(10);
-    assertTrue(projection.fxRate().isPresent());
   }
 }
