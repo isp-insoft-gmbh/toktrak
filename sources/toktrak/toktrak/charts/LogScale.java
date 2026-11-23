@@ -21,8 +21,10 @@ public record LogScale(BigDecimal floor, BigDecimal maximum) {
   public double fraction(BigDecimal value) {
     Objects.requireNonNull(value, "value");
     if (value.compareTo(floor) <= 0) return 0;
-    if (maximum.compareTo(floor) <= 0) return 1;
-    double span = Math.log10(maximum.doubleValue()) - Math.log10(floor.doubleValue());
+    // A maximum at or below the floor leaves no span, so any value above the floor fills.
+    double span =
+        Math.max(
+            Math.log10(maximum.doubleValue()) - Math.log10(floor.doubleValue()), Double.MIN_NORMAL);
     double position = Math.log10(value.doubleValue()) - Math.log10(floor.doubleValue());
     double result = Math.min(1, position / span);
     assert result > 0 && result <= 1;

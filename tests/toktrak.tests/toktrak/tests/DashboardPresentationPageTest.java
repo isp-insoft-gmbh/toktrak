@@ -81,6 +81,7 @@ final class DashboardPresentationPageTest {
 
     String spikes = section(visualizations, "Largest individual daily cost rows", "</table>");
     assertTrue(spikes.contains("<td>$0.13</td><td>1,234,567</td>"), spikes);
+    assertTrue(spikes.contains("14 Jul 2026"), spikes);
   }
 
   private static String upload() {

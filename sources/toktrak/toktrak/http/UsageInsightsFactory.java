@@ -963,8 +963,7 @@ final class UsageInsightsFactory {
   private static BigDecimal decimal(Object value) {
     if (!(value instanceof Number number)) return BigDecimal.ZERO;
     try {
-      BigDecimal result = new BigDecimal(number.toString());
-      return result.signum() < 0 ? BigDecimal.ZERO : result;
+      return new BigDecimal(number.toString()).max(BigDecimal.ZERO);
     } catch (NumberFormatException exception) {
       return BigDecimal.ZERO;
     }
@@ -973,8 +972,7 @@ final class UsageInsightsFactory {
   private static BigInteger whole(Object value) {
     if (!(value instanceof Number number)) return BigInteger.ZERO;
     try {
-      BigInteger result = new BigDecimal(number.toString()).toBigIntegerExact();
-      return result.signum() < 0 ? BigInteger.ZERO : result;
+      return new BigDecimal(number.toString()).toBigIntegerExact().max(BigInteger.ZERO);
     } catch (ArithmeticException | NumberFormatException exception) {
       return BigInteger.ZERO;
     }

@@ -460,7 +460,9 @@ final class RenderingTest {
     @Override
     public <A extends Output.EncodedOutput<ExceptionType>, ExceptionType extends Exception> A write(
         String model, A output) throws ExceptionType {
-      output.write(new byte[size]);
+      // Two writes, so the limit check also sees bytes already written.
+      output.write(new byte[size - 1]);
+      output.write(new byte[1]);
       return output;
     }
 

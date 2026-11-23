@@ -584,8 +584,7 @@ final class DashboardFactory {
   private static BigDecimal decimal(Object value) {
     if (!(value instanceof Number number)) return BigDecimal.ZERO;
     try {
-      BigDecimal result = new BigDecimal(number.toString());
-      return result.signum() < 0 ? BigDecimal.ZERO : result;
+      return new BigDecimal(number.toString()).max(BigDecimal.ZERO);
     } catch (NumberFormatException exception) {
       return BigDecimal.ZERO;
     }

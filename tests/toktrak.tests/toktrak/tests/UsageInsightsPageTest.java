@@ -256,6 +256,15 @@ final class UsageInsightsPageTest {
         active);
 
     assertEquals(4, active.split("y=\"214\" text-anchor=\"middle\"", -1).length - 1, active);
+    assertTrue(active.contains("<title>6 Jul 2026 · 2 people</title>"), active);
+    assertTrue(active.contains("<title>8 Jul 2026 · 1 person</title>"), active);
+    // Up to five buckets get a label each.
+    String fiveDays =
+        section(
+            usage.visualizations("range=custom&from=2026-07-06&to=2026-07-10"),
+            "people-active-heading",
+            "sizes-heading");
+    assertEquals(5, fiveDays.split("y=\"214\" text-anchor=\"middle\"", -1).length - 1, fiveDays);
     // A $50 axis in four steps of 186 / 4.
     assertTrue(
         cumulative.contains(
@@ -293,6 +302,7 @@ final class UsageInsightsPageTest {
             "<dt>Top 50% of person-days</dt><dd data-usd=\"\">88.9% of cost</dd>"),
         concentration);
     assertEquals(3, concentration.split("<dt>Top ", -1).length - 1, concentration);
+    assertEquals(5, concentration.split("chart-grid-line", -1).length - 1, concentration);
     assertTrue(
         concentration.contains(
             "<text class=\"chart-axis\" x=\"159.5\" y=\"214\" text-anchor=\"middle\">25%</text>"),
@@ -302,6 +312,7 @@ final class UsageInsightsPageTest {
 
     // Cache reads over input-side tokens: 300 of 400, a gap, then 100 of 200.
     String cache = section(body, "cache-heading", "sessions-heading");
+    assertEquals(5, cache.split("chart-grid-line", -1).length - 1, cache);
     assertTrue(cache.contains("d=\"M85.6 56.5M203.9 103\""), cache);
     assertTrue(cache.contains("<dt>Across the range</dt><dd data-usd=\"\">66.7%</dd>"), cache);
 
