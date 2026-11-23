@@ -114,6 +114,7 @@ pseudonyms. Keep one key per deployment in your team's secret manager.
 
 - First import for a deployment: run `mise run corpus-import <events.ndjson>
   --new-key`, then store the created key file's content in your secret manager.
+
 - New developer: copy the key from the secret manager into a private file
   outside the repository. Either use the default path or point
   `TOKTRAK_CORPUS_KEY_FILE` at it, for example in the Git-ignored
