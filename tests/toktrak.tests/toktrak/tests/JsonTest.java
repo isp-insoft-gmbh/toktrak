@@ -170,6 +170,23 @@ final class JsonTest {
   }
 
   @Test
+  void given_objectKeyAtCharacterLimit_when_parsingStringAndBytes_then_acceptsDocument() {
+    String key = "k".repeat(STRING_CHARACTERS_MAX);
+    String json = "{\"" + key + "\":1}";
+
+    assertEquals(Map.of(key, 1), Json.read(json, Map.class));
+    assertEquals(Map.of(key, 1), Json.read(bytes(json), Map.class));
+  }
+
+  @Test
+  void given_objectKeyAboveCharacterLimit_when_parsingStringAndBytes_then_rejectsDocument() {
+    String json = "{\"" + "k".repeat(STRING_CHARACTERS_MAX + 1) + "\":1}";
+
+    assertParseFailure(() -> Json.read(json, Map.class), STRING_CHARACTERS_MAX);
+    assertParseFailure(() -> Json.read(bytes(json), Map.class), STRING_CHARACTERS_MAX);
+  }
+
+  @Test
   void given_tokenCountAtLimit_when_parsingBytes_then_acceptsDocument() {
     List<?> parsed = Json.read(bytes(numberArray(TOKENS_MAX - 2)), List.class);
 

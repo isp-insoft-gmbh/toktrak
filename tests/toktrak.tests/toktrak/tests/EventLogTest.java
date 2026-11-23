@@ -91,6 +91,19 @@ final class EventLogTest {
   }
 
   @Test
+  void given_eventDataKeyAtStringLimit_when_replayingLog_then_returnsEvent() {
+    var event =
+        EventEnvelope.create(
+            "event", Instant.EPOCH, "system", Map.of("k".repeat(1024 * 1024), "value"));
+    var replayed = new ArrayList<EventEnvelope>();
+    try (var log = EventLog.open(dir.resolve("events.ndjson"))) {
+      log.appendAndFsync(event);
+      assertEquals(1, log.replay(replayed::add));
+    }
+    assertEquals(List.of(event), replayed);
+  }
+
+  @Test
   void given_replayLimitMatchingEventCount_when_replayingLog_then_returnsAllEvents() {
     var log = EventLog.open(dir.resolve("events.ndjson"));
     var at = Instant.parse("2026-07-10T00:00:00Z");
