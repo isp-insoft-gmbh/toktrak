@@ -55,9 +55,17 @@ public final class Assets {
     this.privateAssets = Map.copyOf(privateAssets);
   }
 
+  /// The packaged runtime assets. They cannot change while the process runs, so they are read and
+  /// verified once and then shared.
   public static Assets load() {
-    byte[] index = readModuleResource("assets/index.tsv", ASSET_INDEX_BYTES_MAX);
-    return load(index, Assets::readModuleResource);
+    return Packaged.ASSETS;
+  }
+
+  private static final class Packaged {
+    private static final Assets ASSETS =
+        load(
+            readModuleResource("assets/index.tsv", ASSET_INDEX_BYTES_MAX),
+            Assets::readModuleResource);
   }
 
   public static Assets loadForTest(byte[] index, Map<String, byte[]> resources) {

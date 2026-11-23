@@ -28,6 +28,7 @@ final class UsageFixture implements AutoCloseable {
   private final URI base;
   private final HttpClient client;
   private final String cookie;
+  private String trackerToken;
 
   UsageFixture(Path dataDirectory) throws Exception {
     this(dataDirectory, List.of());
@@ -143,7 +144,13 @@ final class UsageFixture implements AutoCloseable {
     return client.send(request, BodyHandlers.ofString());
   }
 
+  /// Created once: each upload reuses the same token, as a tracker does.
   private String trackerToken() throws Exception {
+    if (trackerToken == null) trackerToken = createTrackerToken();
+    return trackerToken;
+  }
+
+  private String createTrackerToken() throws Exception {
     HttpResponse<String> tokens =
         client.send(
             HttpRequest.newBuilder(base.resolve("/tokens"))

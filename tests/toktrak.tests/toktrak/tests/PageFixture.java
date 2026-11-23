@@ -28,29 +28,29 @@ final class PageFixture {
   private static final String VIEWER = "viewer";
 
   private final Path events;
+  private final Path corpus;
   private final Instant now;
   private final HealthState health = new HealthState();
   private final Assets assets = Assets.load();
   private Projection projection;
 
-  private PageFixture(Path events, Instant now) {
+  private PageFixture(Path events, Path corpus, Instant now) {
     this.events = events;
+    this.corpus = corpus;
     this.now = now;
   }
 
-  /// A copy of `corpus` in `directory`, rendered at `clock`.
+  /// `corpus` rendered at `clock`; it is copied into `directory` only before the first append.
   static PageFixture corpus(Path directory, Path corpus, String clock) throws Exception {
     Files.createDirectories(directory);
-    Path events = directory.resolve("events.ndjson");
-    Files.copy(corpus, events);
-    return new PageFixture(events, Instant.parse(clock));
+    return new PageFixture(directory.resolve("events.ndjson"), corpus, Instant.parse(clock));
   }
 
   /// Only the signed-in development viewer, rendered at the shared test clock.
   static PageFixture viewer(Path directory) throws Exception {
     Files.createDirectories(directory);
     Path events = directory.resolve("events.ndjson");
-    var fixture = new PageFixture(events, Instant.parse(UsageFixture.CLOCK));
+    var fixture = new PageFixture(events, null, Instant.parse(UsageFixture.CLOCK));
     fixture.append(
         EventEnvelope.create(
             EventTypes.IDENTITY_USER_AUTHENTICATED,
@@ -142,7 +142,8 @@ final class PageFixture {
     return now;
   }
 
-  private void append(EventEnvelope event) {
+  private void append(EventEnvelope event) throws Exception {
+    if (corpus != null && Files.notExists(events)) Files.copy(corpus, events);
     try (EventLog log = EventLog.open(events)) {
       log.appendAndFsync(event);
     }
@@ -152,7 +153,9 @@ final class PageFixture {
   Projection projection() {
     if (projection == null) {
       var replayed = Projection.empty();
-      try (EventLog log = EventLog.open(events)) {
+      // Read the committed corpus in place until something is appended.
+      Path source = corpus != null && Files.notExists(events) ? corpus : events;
+      try (EventLog log = EventLog.open(source)) {
         log.replay(replayed::apply);
       }
       projection = replayed;
