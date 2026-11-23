@@ -49,10 +49,10 @@ final class VisualizationsConsistencyTest {
   private static final Pattern SESSION_KPI =
       Pattern.compile("<dt>([^<]+)</dt><dd data-session-usd=\"([^\"]*)\">([^<]+)</dd>");
   private static final String INSIGHTS = "aria-labelledby=\"cumulative-heading\"";
-  // Each test renders at most about 40 pages so it stays well inside the 5s per-test limit,
-  // which also applies under PIT's instrumentation.
-  private static final int RANDOM_RANGES = 30;
-  private static final int RANDOM_SPLITS = 12;
+  // Mutation testing reruns these broad tests for many mutants, so each renders at most about
+  // 20 pages; the calendar test still covers every month and year in the window.
+  private static final int RANDOM_RANGES = 12;
+  private static final int RANDOM_SPLITS = 6;
   private static final LocalDate FIRST = LocalDate.parse("2025-10-01");
   private static final LocalDate LAST = LocalDate.parse("2026-08-31");
   private static final int RANDOM_ROWS = 160;

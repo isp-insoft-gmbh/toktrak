@@ -69,17 +69,6 @@ final class ApiErrorHttpTest {
           send(client, base.resolve("/api/usage"), "POST", "text/plain", null, USAGE, token);
       assertEquals(415, wrongMediaType.statusCode(), wrongMediaType.body());
       assertApiError(wrongMediaType, "unsupported_media_type", "application/json is required");
-      HttpResponse<String> tooLarge =
-          send(
-              client,
-              base.resolve("/api/usage"),
-              "POST",
-              "application/json",
-              null,
-              "x".repeat(HttpSupport.MAX_REQUEST_BODY_BYTES + 1),
-              token);
-      assertEquals(413, tooLarge.statusCode(), tooLarge.body());
-      assertApiError(tooLarge, "payload_too_large", "usage upload is too large");
       for (String body : new String[] {"{", "null", "[]"}) {
         HttpResponse<String> unparsable =
             send(client, base.resolve("/api/usage"), "POST", "application/json", null, body, token);
@@ -118,6 +107,28 @@ final class ApiErrorHttpTest {
               token);
       assertEquals(503, verify.statusCode(), verify.body());
       assertApiError(verify, "write_unavailable", "tracker verification is unavailable");
+    }
+  }
+
+  // Separate from the other error cases: sending 5 MiB is this suite's slowest request, and
+  // mutation testing reruns whole test methods.
+  @Test
+  void given_uploadAboveBodyLimit_when_posting_then_rejectsAsTooLarge() throws Exception {
+    try (var app = start(new String[] {})) {
+      URI base = URI.create("http://127.0.0.1:" + app.port());
+      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+      String token = createTrackerToken(client, base, login(client, base));
+      HttpResponse<String> tooLarge =
+          send(
+              client,
+              base.resolve("/api/usage"),
+              "POST",
+              "application/json",
+              null,
+              "x".repeat(HttpSupport.MAX_REQUEST_BODY_BYTES + 1),
+              token);
+      assertEquals(413, tooLarge.statusCode(), tooLarge.body());
+      assertApiError(tooLarge, "payload_too_large", "usage upload is too large");
     }
   }
 
