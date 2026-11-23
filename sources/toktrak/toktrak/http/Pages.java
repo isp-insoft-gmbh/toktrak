@@ -153,12 +153,15 @@ public final class Pages {
     Objects.requireNonNull(projection, "projection");
     Objects.requireNonNull(range, "range");
     Objects.requireNonNull(now, "now");
+    // Read the revision before the rows: a page may then be older than its rows, which only
+    // causes one extra refresh, but never newer, which would hide an upload until the next one.
+    long revision = projection.revision();
     List<Row> daily = projection.usageRows(Report.DAILY);
     LocalDate today = now.atZone(ZoneOffset.UTC).toLocalDate();
     var view =
         new VisualizationsView(
             base,
-            projection.revision(),
+            revision,
             signedInName,
             DashboardFactory.create(projection, health, currency, now),
             UsageChartsFactory.create(
