@@ -7,7 +7,6 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import toktrak.ClockSource;
 import toktrak.health.HealthState;
 import toktrak.identity.IdentityService;
@@ -19,7 +18,7 @@ import toktrak.store.Writer;
 final class IdentityServiceTest {
   private static final Instant NOW = Instant.parse("2026-07-10T12:00:00Z");
   private static final UserKey USER = new UserKey("https://issuer.example", "subject-1");
-  @TempDir Path directory;
+  @MemoryTempDir Path directory;
 
   @Test
   void given_activeUser_when_usingAndRevokingTrackerToken_then_enforcesLifecycle() {

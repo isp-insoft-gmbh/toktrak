@@ -14,12 +14,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import toktrak.store.EventEnvelope;
 import toktrak.store.EventLog;
 
 final class EventLogTest {
-  @TempDir Path dir;
+  @MemoryTempDir Path dir;
 
   @Test
   void given_newEnvelope_when_appendingAndReplaying_then_returnsNewlineTerminatedEvent()
@@ -284,6 +283,16 @@ final class EventLogTest {
 
     assertEquals("event line exceeds 10485760 bytes", ex.getMessage());
     assertEquals(EventLog.MAX_LINE_BYTES + 2L, Files.size(path));
+  }
+
+  @Test
+  void given_negativeReportedSize_when_validatingLog_then_rejectsSize() {
+    var ex =
+        assertThrows(
+            IllegalStateException.class, () -> EventLog.requireFileBytesWithinLimitForTest(-1));
+
+    assertEquals("event log size is invalid", ex.getMessage());
+    assertEquals(0, EventLog.requireFileBytesWithinLimitForTest(0));
   }
 
   @Test

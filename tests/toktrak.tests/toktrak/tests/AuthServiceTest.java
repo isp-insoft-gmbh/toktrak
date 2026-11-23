@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import toktrak.ClockSource;
 import toktrak.auth.AuthService;
 import toktrak.auth.OidcClient;
@@ -20,7 +19,7 @@ import toktrak.store.Writer;
 
 final class AuthServiceTest {
   private static final Instant NOW = Instant.parse("2026-07-10T12:00:00Z");
-  @TempDir Path directory;
+  @MemoryTempDir Path directory;
 
   @Test
   void given_signedCookie_when_tamperedOrExpired_then_rejectsCookie() {

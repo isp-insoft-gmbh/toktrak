@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import toktrak.health.HealthState;
 import toktrak.http.DashboardCurrency;
 import toktrak.http.DashboardFactory;
@@ -20,7 +19,7 @@ final class DashboardFactoryTest {
   private static final String SESSION_MODEL_AT_LIMIT = "x".repeat(256);
   private static final String SESSION_MODEL_BEYOND_LIMIT = "y".repeat(257);
 
-  @TempDir Path directory;
+  @MemoryTempDir Path directory;
 
   @Test
   void given_uploadAtLabelAndRoundingBoundaries_when_building_then_formatsEveryValue()

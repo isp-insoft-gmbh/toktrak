@@ -20,7 +20,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.IntFunction;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import toktrak.BuildInfo;
 import toktrak.ClockSource;
 import toktrak.auth.AuthService;
@@ -39,7 +38,7 @@ final class DevelopmentAuthorityHttpTest {
   private static final int HOST_CHARACTERS_MAX = 512;
   private static final int RESPONSE_BYTES_MAX = 64 * 1024;
   private static final String MISDIRECTED_CODE = "\"code\":\"misdirected_request\"";
-  @TempDir Path directory;
+  @MemoryTempDir Path directory;
 
   @Test
   void given_developmentAuthority_when_hostNamesLoopbackOnDevelopmentPort_then_servesRequest()
