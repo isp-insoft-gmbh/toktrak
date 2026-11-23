@@ -121,6 +121,7 @@ export function compare(base, candidate, { sameFixture = true, baseHostKey, cand
       !sameFixture ||
       !sameHost ||
       settings.some((key) => left[key] !== right[key]) ||
+      JSON.stringify(left.jvmArgs ?? null) !== JSON.stringify(right.jvmArgs ?? null) ||
       JSON.stringify(left.params ?? null) !== JSON.stringify(right.params ?? null) ||
       left.primaryMetric.scoreUnit !== right.primaryMetric.scoreUnit
     ) {
