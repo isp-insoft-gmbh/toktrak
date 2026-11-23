@@ -147,10 +147,7 @@ public final class HttpSupport {
 
     @Override
     public void write(byte[] bytes, int offset, int length) throws IOException {
-      Objects.requireNonNull(bytes, "bytes");
-      if (offset < 0 || length < 0 || offset > bytes.length - length) {
-        throw new IndexOutOfBoundsException();
-      }
+      Objects.checkFromIndexSize(offset, length, bytes.length);
       requireCapacity(length);
       output.write(bytes, offset, length);
     }

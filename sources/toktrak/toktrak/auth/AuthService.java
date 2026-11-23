@@ -247,13 +247,15 @@ public final class AuthService {
 
   public static Optional<String> cookie(String header, String name) {
     Objects.requireNonNull(name, "name");
+    // A non-empty name never matches the empty name before a leading '='.
+    if (name.isEmpty()) throw new IllegalArgumentException("cookie name is empty");
     if (header == null || header.length() > 16 * 1024) return Optional.empty();
     String match = null;
     String[] values = header.split(";", 65);
     if (values.length > 64) return Optional.empty();
     for (String value : values) {
       int separator = value.indexOf('=');
-      if (separator <= 0 || !name.equals(value.substring(0, separator).strip())) continue;
+      if (separator == -1 || !name.equals(value.substring(0, separator).strip())) continue;
       if (match != null) return Optional.empty();
       match = value.substring(separator + 1).strip();
     }

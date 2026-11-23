@@ -64,6 +64,19 @@ final class ConfigTest {
   }
 
   @Test
+  void given_argumentsAtLimits_when_parsingConfig_then_passesLimitChecks() {
+    var args = new String[64];
+    java.util.Arrays.fill(args, "--help");
+    assertDoesNotThrow(() -> Config.from(args, Map.of("TOKTRAK_DEV_AUTH", "true")));
+    var length =
+        assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                Config.from(new String[] {"x".repeat(8_192)}, Map.of("TOKTRAK_DEV_AUTH", "true")));
+    assertNotEquals("argument 0 exceeds 8192 characters", length.getMessage());
+  }
+
+  @Test
   void given_optionsWithoutValues_when_parsingConfig_then_rejectsArguments() {
     for (String option : new String[] {"--corpus", "--clock"}) {
       var exception =

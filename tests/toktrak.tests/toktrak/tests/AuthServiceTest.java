@@ -63,6 +63,10 @@ final class AuthServiceTest {
     assertThrows(
         IllegalArgumentException.class,
         () -> cookies.verify(forge("%20=a&exp=" + NOW.plusSeconds(60).getEpochSecond()), NOW));
+    assertThrows(IllegalArgumentException.class, () -> AuthService.cookie("=v", ""));
+    assertEquals(
+        java.util.Optional.of("x"),
+        AuthService.cookie("=v; " + AuthService.SESSION_COOKIE + "=x", AuthService.SESSION_COOKIE));
     assertTrue(AuthService.cookie(null, AuthService.SESSION_COOKIE).isEmpty());
     assertTrue(AuthService.cookie("x".repeat(16 * 1024 + 1), AuthService.SESSION_COOKIE).isEmpty());
     String atHeaderLimit =
