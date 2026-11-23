@@ -160,6 +160,37 @@ final class UsageInsightsPageTest {
   }
 
   @Test
+  void given_sessionsWithoutValidCost_when_openingRange_then_leavesThemOutAndWarns()
+      throws Exception {
+    Path corpus =
+        corpus(
+            upload(
+                1,
+                "viewer",
+                "UTC",
+                List.of(
+                    usageDay("2026-07-11", "10", 100, 300, ""),
+                    usageDay("2026-07-12", "5", 100, 100, "")),
+                List.of(
+                    session("s-good", "10", "2026-07-11T10:00:00Z"),
+                    session("s-negative", "-1", "2026-07-11T11:00:00Z"),
+                    session("s-text", "\"ten\"", "2026-07-11T12:00:00Z"),
+                    session("s-good-2", "5", "2026-07-12T10:00:00Z"),
+                    session("s-missing", "null", "2026-07-12T11:00:00Z"))));
+    var usage = PageFixture.corpus(directory.resolve("bad-sessions"), corpus, UsageFixture.CLOCK);
+    assertCoverage(usage, "2026-07-11", "(100.0%)", true);
+    assertCoverage(usage, "2026-07-11", " 2 sessions have no valid cost and are left out.", true);
+    assertCoverage(usage, "2026-07-12", " 1 session has no valid cost and is left out.", true);
+
+    // Neighbouring observations form one line: 75% then 50% cache reads.
+    String body = usage.visualizations(custom("2026-07-11", "2026-07-12"));
+    String cache = section(body, "cache-heading", "sessions-heading");
+    assertTrue(
+        Pattern.compile("d=\"M[0-9.]+ [0-9.]+L[0-9.]+ [0-9.]+\"").matcher(cache).find(), cache);
+    assertTrue(body.contains("<dt>Sessions</dt><dd data-usd=\"\">2</dd>"), body);
+  }
+
+  @Test
   void given_sessionNearMidnightInBerlin_when_openingDay_then_countsItInLocalDayAndHour()
       throws Exception {
     Path corpus =
@@ -313,7 +344,12 @@ final class UsageInsightsPageTest {
     // Cache reads over input-side tokens: 300 of 400, a gap, then 100 of 200.
     String cache = section(body, "cache-heading", "sessions-heading");
     assertEquals(5, cache.split("chart-grid-line", -1).length - 1, cache);
-    assertTrue(cache.contains("d=\"M85.6 56.5M203.9 103\""), cache);
+    // Isolated observations have no segment to draw, so each becomes a ring of radius 2.
+    assertTrue(
+        cache.contains(
+            "d=\"M83.6 56.5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"
+                + "M201.9 103a2 2 0 1 0 4 0a2 2 0 1 0 -4 0\""),
+        cache);
     assertTrue(cache.contains("<dt>Across the range</dt><dd data-usd=\"\">66.7%</dd>"), cache);
 
     // Heatmap 960 wide: 24 cells of 920 / 24 after a 40-unit label column, rows of 20.

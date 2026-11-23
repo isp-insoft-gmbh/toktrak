@@ -69,6 +69,7 @@ final class UsageInsightsFactory {
   private static final double PAD_TOP = 10;
   private static final double PAD_BOTTOM = 24;
   private static final int Y_TICKS = 4;
+  private static final double POINT_RADIUS = 2;
   private static final int X_LABELS_MAX = 5;
   private static final int SERIES_MAX = 6;
   private static final int MODEL_ENTRIES_PER_ROW_MAX = 64;
@@ -679,24 +680,21 @@ final class UsageInsightsFactory {
     }
     int count = read.size();
     var path = new StringBuilder();
+    var run = new ArrayList<PathPoint>();
     int index = 0;
-    boolean open = false;
     for (LocalDate start : read.keySet()) {
       BigInteger side = input.get(start);
       if (side.signum() == 0) {
-        open = false;
+        appendRun(path, run);
       } else {
         BigDecimal share =
             Statistics.percent(
                 new BigDecimal(read.get(start)), new BigDecimal(side), Statistics.SCALE);
-        path.append(open ? 'L' : 'M')
-            .append(x(index + 0.5, count))
-            .append(' ')
-            .append(percentY(share));
-        open = true;
+        run.add(new PathPoint(x(index + 0.5, count), percentY(share)));
       }
       index++;
     }
+    appendRun(path, run);
     var ticks = new ArrayList<SvgTick>();
     for (int value = 0; value <= 100; value += 25) {
       ticks.add(tick(Double.parseDouble(percentY(BigDecimal.valueOf(value))), value + "%"));
@@ -718,6 +716,36 @@ final class UsageInsightsFactory {
         List.of(new Kpi("Across the range", overall, "")));
   }
 
+  /// Appends one gap-free run of points and clears it. A lone point has no segment to draw, so it
+  /// becomes a small ring that the line stroke renders as a dot.
+  private static void appendRun(StringBuilder path, List<PathPoint> run) {
+    if (run.size() == 1) {
+      PathPoint point = run.getFirst();
+      String radius = number(POINT_RADIUS);
+      String arc = "a" + radius + " " + radius + " 0 1 0 ";
+      path.append('M')
+          .append(number(Double.parseDouble(point.x()) - POINT_RADIUS))
+          .append(' ')
+          .append(point.y())
+          .append(arc)
+          .append(number(2 * POINT_RADIUS))
+          .append(" 0")
+          .append(arc)
+          .append(number(-2 * POINT_RADIUS))
+          .append(" 0");
+    } else {
+      for (int index = 0; index < run.size(); index++) {
+        path.append(index == 0 ? 'M' : 'L')
+            .append(run.get(index).x())
+            .append(' ')
+            .append(run.get(index).y());
+      }
+    }
+    run.clear();
+  }
+
+  private record PathPoint(String x, String y) {}
+
   private static SessionInsights sessions(
       List<Row> sessionRows,
       Map<UserKey, ZoneId> zones,
@@ -729,12 +757,18 @@ final class UsageInsightsFactory {
     long[][] heat = new long[7][24];
     BigDecimal[][] heatCost = new BigDecimal[7][24];
     for (BigDecimal[] row : heatCost) java.util.Arrays.fill(row, BigDecimal.ZERO);
+    int unreadable = 0;
     for (Row row : sessionRows) {
       Instant last = lastActivity(row);
       if (last == null) continue;
       ZonedDateTime local = last.atZone(zones.getOrDefault(row.owner(), ZoneOffset.UTC));
       if (!range.contains(local.toLocalDate())) continue;
-      BigDecimal cost = UsageUpload.nonnegativeDecimal(row.data(), "totalCost");
+      // Uploads do not validate session costs, so one bad row must not break the page.
+      BigDecimal cost = sessionCost(row);
+      if (cost == null) {
+        unreadable++;
+        continue;
+      }
       if (cost.signum() == 0) continue;
       costs.add(cost);
       int weekday = local.getDayOfWeek().getValue() - 1;
@@ -758,9 +792,19 @@ final class UsageInsightsFactory {
               + "%). Sessions count on the day of their last activity, so ranges can differ"
               + " slightly; large gaps mean incomplete or inconsistent session reports.";
     }
+    Coverage.Level level = coverage.level();
+    if (unreadable > 0) {
+      note +=
+          " "
+              + unreadable
+              + (unreadable == 1
+                  ? " session has no valid cost and is left out."
+                  : " sessions have no valid cost and are left out.");
+      level = Coverage.Level.WARNING;
+    }
     return new SessionInsights(
         note,
-        coverage.level(),
+        level,
         List.of(
             UsageChartsFactory.money("Session total", total, currency, rate),
             new Kpi("Sessions", Integer.toString(costs.size()), "")),
@@ -825,6 +869,15 @@ final class UsageInsightsFactory {
         List.of(
             new Kpi("Busiest hour", busiestLabel, ""),
             UsageChartsFactory.money("Its cost", busiest, currency, rate)));
+  }
+
+  /// The nonnegative session cost, or null when the stored value is missing or invalid.
+  private static BigDecimal sessionCost(Row row) {
+    try {
+      return UsageUpload.nonnegativeDecimal(row.data(), "totalCost");
+    } catch (IllegalStateException exception) {
+      return null;
+    }
   }
 
   private static Instant lastActivity(Row row) {
