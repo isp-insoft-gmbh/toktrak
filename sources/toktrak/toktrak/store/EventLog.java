@@ -293,6 +293,10 @@ public final class EventLog implements AutoCloseable {
     writeFully(channel, buffer);
   }
 
+  public boolean openForTest() {
+    return !closed.get();
+  }
+
   private void requireOpen() {
     if (closed.get()) throw new IllegalStateException("event log is closed");
   }

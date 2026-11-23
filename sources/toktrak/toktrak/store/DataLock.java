@@ -49,6 +49,10 @@ public final class DataLock implements AutoCloseable {
     }
   }
 
+  public boolean heldForTest() {
+    return lock.isValid();
+  }
+
   private void closeChannel() throws IOException {
     channel.close();
   }
@@ -57,7 +61,7 @@ public final class DataLock implements AutoCloseable {
   public void close() {
     if (!closed.compareAndSet(false, true)) return;
     try {
-      lock.release();
+      // Closing the channel releases its lock.
       channel.close();
       assert !lock.isValid();
       assert !channel.isOpen();

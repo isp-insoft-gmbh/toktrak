@@ -54,7 +54,6 @@ public final class App implements AutoCloseable {
   private Writer writer;
   private Projection projection;
   private FxService fxService;
-  private boolean serverStarted;
   private int port;
   private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -126,13 +125,11 @@ public final class App implements AutoCloseable {
             config.clock(),
             baseUri,
             config.buildInfo()));
-    server.setExecutor(Runnable::run);
+    // Without an executor, handlers run on the server's dispatcher thread; Router hands work on.
     server.start();
-    serverStarted = true;
     if (!config.devAuth()) fxService = FxService.start(writer);
     port = server.getAddress().getPort();
-    if (port < 0 || port > 65_535)
-      throw new IllegalStateException("HTTP server returned invalid port");
+    assert port >= 0 && port <= 65_535;
     String readyUrl = baseUri.toString();
     LOG.info(
         "TokTrak "
@@ -140,8 +137,7 @@ public final class App implements AutoCloseable {
             + " ("
             + config.buildInfo().shortRevision()
             + ") ready at "
-            + readyUrl
-            + (readyUrl.endsWith("/") ? "" : "/"));
+            + readyUrl.replaceFirst("/?$", "/"));
   }
 
   private static URI baseUri(Config config, int boundPort) {
@@ -179,9 +175,7 @@ public final class App implements AutoCloseable {
 
   private static void configureLogging() {
     Logger root = Logger.getLogger("");
-    Handler[] handlers = root.getHandlers();
-    if (handlers.length > 16) throw new IllegalStateException("logging handlers exceed 16 entries");
-    for (Handler handler : handlers) root.removeHandler(handler);
+    for (Handler handler : root.getHandlers()) root.removeHandler(handler);
     var console = new ConsoleHandler();
     boolean quiet = Boolean.getBoolean("toktrak.quiet");
     console.setLevel(quiet ? Level.OFF : Level.ALL);
@@ -227,11 +221,23 @@ public final class App implements AutoCloseable {
     return projection;
   }
 
+  /// Names of the resources this app still holds; empty once `close` has finished.
+  public java.util.List<String> openResourcesForTest() {
+    var open = new java.util.ArrayList<String>();
+    if (executor != null && !executor.isTerminated()) open.add("http executor");
+    if (fxService != null && fxService.runningForTest()) open.add("fx service");
+    if (writer != null && writer.runningForTest()) open.add("writer");
+    if (eventLog != null && eventLog.openForTest()) open.add("event log");
+    if (dataLock.heldForTest()) open.add("data lock");
+    return java.util.List.copyOf(open);
+  }
+
   @Override
   public void close() {
     if (!closed.compareAndSet(false, true)) return;
     try {
-      if (server != null) server.stop(serverStarted ? 5 : 0);
+      // Without open exchanges, which is always the case before start, stop returns at once.
+      if (server != null) server.stop(5);
     } finally {
       closeExecutorAndStorage();
     }

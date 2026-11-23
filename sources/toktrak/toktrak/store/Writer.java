@@ -181,6 +181,10 @@ public final class Writer implements AutoCloseable {
     return new Submission(true, future);
   }
 
+  public boolean runningForTest() {
+    return thread.isAlive();
+  }
+
   public Projection projection() {
     assert projection != null;
     return projection;
@@ -345,13 +349,10 @@ public final class Writer implements AutoCloseable {
     synchronized (stateMonitor) {
       Request current = inFlight.get();
       if (current != null) current.future.completeExceptionally(failure);
-      int drained = 0;
-      Request request = queue.poll();
-      while (drained < QUEUE_CAPACITY && request != null) {
-        request.future.completeExceptionally(failure);
-        drained = Math.addExact(drained, 1);
-        request = queue.poll();
-      }
+      // The queue holds at most its capacity, so draining it is bounded.
+      var waiting = new java.util.ArrayList<Request>(queue.size());
+      queue.drainTo(waiting);
+      for (Request request : waiting) request.future.completeExceptionally(failure);
       assert queue.isEmpty();
     }
   }
