@@ -35,6 +35,7 @@ async function writeFakeNpx(commandDirectory) {
         `echo %*>>"%FAKE_LOG%"\r\n` +
         `echo %PI_AGENT_DIR%>>"%FAKE_PI_LOG%"\r\n` +
         `if "%3"=="daily" echo {"daily":[{"period":"2026-08-15","agent":"all","inputTokens":1,"outputTokens":1,"cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":2,"totalCost":0.1}]}\r\n` +
+        `if "%3"=="session" if "%FAKE_SESSION_FAIL%"=="1" exit /b 7\r\n` +
         `if "%3"=="session" echo {"session":[{"period":"codex-session","agent":"codex","metadata":{"lastActivity":"2999-01-01T00:00:00Z"}},{"period":"old-session","agent":"codex","metadata":{"lastActivity":"2000-01-01T00:00:00Z"}}]}\r\n` +
         `if "%3"=="blocks" if "%FAKE_PARTIAL%"=="1" exit /b 7\r\n` +
         `if "%3"=="blocks" echo {"blocks":[]}\r\n` +
@@ -51,7 +52,7 @@ async function writeFakeNpx(commandDirectory) {
       `printf '%s\\n' "$PI_AGENT_DIR" >>"$FAKE_PI_LOG"\n` +
       `case "$3" in\n` +
       `daily) printf '%s\\n' '{"daily":[{"period":"2026-08-15","agent":"all","inputTokens":1,"outputTokens":1,"cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":2,"totalCost":0.1}]}' ;;\n` +
-      `session) printf '%s\\n' '{"session":[{"period":"codex-session","agent":"codex","metadata":{"lastActivity":"2999-01-01T00:00:00Z"}},{"period":"old-session","agent":"codex","metadata":{"lastActivity":"2000-01-01T00:00:00Z"}}]}' ;;\n` +
+      `session) [ "$FAKE_SESSION_FAIL" = 1 ] && exit 7; printf '%s\\n' '{"session":[{"period":"codex-session","agent":"codex","metadata":{"lastActivity":"2999-01-01T00:00:00Z"}},{"period":"old-session","agent":"codex","metadata":{"lastActivity":"2000-01-01T00:00:00Z"}}]}' ;;\n` +
       `blocks) [ "$FAKE_PARTIAL" = 1 ] && exit 7; printf '%s\\n' '{"blocks":[]}' ;;\n` +
       `codex) if [ "$4" = daily ]; then printf '%s\\n' '{"daily":[{"date":"2026-08-15","reasoningOutputTokens":7}],"totals":{}}'; else printf '%s\\n' '{"sessions":[{"sessionId":"codex-session","directory":"/work/project","futureField":{"preserved":true}},{"sessionId":"old-source-session","lastActivity":"2000-01-01T00:00:00Z"}],"totals":{}}'; fi ;;\n` +
       `esac\n`,
@@ -59,7 +60,17 @@ async function writeFakeNpx(commandDirectory) {
   await chmod(command, 0o700);
 }
 
-async function runTracker(tracker, commandDirectory, commandLog, piLog, piAgent, partial, mode, sessionDirectory) {
+async function runTracker(
+  tracker,
+  commandDirectory,
+  commandLog,
+  piLog,
+  piAgent,
+  partial,
+  mode,
+  sessionDirectory,
+  extraEnvironment = {},
+) {
   const bootstrap = path.join(commandDirectory, "runtime-bootstrap.mjs");
   const scheduledNode = path.join(commandDirectory, path.basename(process.execPath));
   await writeFile(bootstrap, `process.execPath = ${JSON.stringify(scheduledNode)};\n`);
@@ -70,6 +81,7 @@ async function runTracker(tracker, commandDirectory, commandLog, piLog, piAgent,
     FAKE_PI_LOG: piLog,
     FAKE_PARTIAL: partial,
     PI_CODING_AGENT_DIR: piAgent,
+    ...extraEnvironment,
   };
   delete environment.PI_AGENT_DIR;
   if (sessionDirectory === undefined) delete environment.PI_CODING_AGENT_SESSION_DIR;
@@ -267,7 +279,7 @@ async function prepareTracker(context, accept) {
   const { uploads, script } = await startUsageServer(context, accept);
   const tracker = path.join(directory, "toktrak.mjs");
   await writeFile(tracker, script);
-  const run = () =>
+  const run = (extraEnvironment = {}) =>
     runTracker(
       tracker,
       commandDirectory,
@@ -277,6 +289,7 @@ async function prepareTracker(context, accept) {
       "0",
       "daily",
       undefined,
+      extraEnvironment,
     );
   return { uploads, run, marker: path.join(directory, "usage-repair-revision") };
 }
@@ -296,6 +309,24 @@ test("given_updatedTrackerWithoutRepair_when_runningDaily_then_uploadsFullOnceAn
   assert.ok(uploads[1].includes('"full":false'));
   assert.ok(!uploads[1].includes('"old-session"'));
   assert.ok(uploads.every((body) => body.includes('"trackerVersion":"1"')));
+});
+
+test("given_failingSessionReport_when_repairing_then_keepsRepairPendingAndRetries", async (context) => {
+  const { uploads, run, marker } = await prepareTracker(context, () => true);
+
+  const failed = await run({ FAKE_SESSION_FAIL: "1" });
+  assert.match(failed, /session report missing; the session repair is retried on the next run/u);
+  await assert.rejects(readFile(marker), { code: "ENOENT" });
+  // The full upload still carries the daily usage, so no extra incremental upload follows.
+  assert.deepEqual(
+    uploads.map((body) => JSON.parse(body).full),
+    [true],
+  );
+  assert.equal(JSON.parse(uploads[0]).reports.session.ok, false);
+
+  await run();
+  assert.equal(JSON.parse(uploads[1]).full, true);
+  assert.equal(await readFile(marker, "utf8"), "1");
 });
 
 test("given_rejectedRepairUpload_when_runningDaily_then_stillUploadsIncrementallyAndRetriesLater", async (context) => {

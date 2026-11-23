@@ -257,7 +257,16 @@ export async function usageRepairPending(scriptPath) {
   }
 }
 
-async function completeUsageRepair(scriptPath) {
+/// A full upload repairs stored sessions only when its session report was collected.
+export function repairsSessions(reports) {
+  return reports?.session?.ok === true;
+}
+
+async function completeUsageRepair(scriptPath, reports) {
+  if (!repairsSessions(reports)) {
+    log("warning", "session report missing; the session repair is retried on the next run");
+    return;
+  }
   await atomicWrite(usageRepairPath(scriptPath), Buffer.from(USAGE_REPAIR_REVISION));
 }
 
@@ -754,14 +763,15 @@ async function runUpload(full, updateTarget, fallback) {
   const reports = await collectReports(full, fallback);
   const successful = Object.values(reports).filter((report) => report.ok).length;
   log("info", `${successful}/${REPORTS.length} usage reports ready`);
-  await upload({
+  const payload = {
     trackerVersion: TRACKER_VERSION,
     ccusageVersion: CCUSAGE_VERSION,
     clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     full,
     generatedAt: new Date().toISOString(),
     reports,
-  });
+  };
+  await upload(payload);
   log("info", "usage uploaded");
   try {
     log("info", "checking for tracker update");
@@ -770,6 +780,7 @@ async function runUpload(full, updateTarget, fallback) {
   } catch (error) {
     log("warning", `self-update failed: ${error?.message || "unknown error"}`);
   }
+  return reports;
 }
 
 async function install() {
@@ -783,8 +794,7 @@ async function install() {
   }
   await installScheduler(target, sessions?.value);
   log("info", "scheduler installed; running initial upload");
-  await runUpload(true, target);
-  await completeUsageRepair(target);
+  await completeUsageRepair(target, await runUpload(true, target));
   log("info", `installation complete at ${target}`);
 }
 
@@ -818,8 +828,7 @@ async function main() {
       await install();
       break;
     case "full":
-      await runUpload(true, CURRENT_SCRIPT);
-      await completeUsageRepair(CURRENT_SCRIPT);
+      await completeUsageRepair(CURRENT_SCRIPT, await runUpload(true, CURRENT_SCRIPT));
       break;
     case "daily": {
       let macSchedule = { status: "untracked" };
@@ -838,9 +847,9 @@ async function main() {
       if (await usageRepairPending(CURRENT_SCRIPT)) {
         log("info", "running one-time full upload to repair stored usage");
         try {
-          await runUpload(true, CURRENT_SCRIPT, fallback);
-          await completeUsageRepair(CURRENT_SCRIPT);
+          const reports = await runUpload(true, CURRENT_SCRIPT, fallback);
           uploaded = true;
+          await completeUsageRepair(CURRENT_SCRIPT, reports);
         } catch (error) {
           // Keep daily usage flowing; the repair is retried on the next run.
           log("warning", `repair upload failed: ${error?.message || "unknown error"}`);
