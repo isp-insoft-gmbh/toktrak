@@ -731,6 +731,9 @@ public final class BuildTest {
   private static void given_pitArguments_when_selectingTargets_then_parsesOptions()
       throws Exception {
     Build.PitSelection all = Build.pitSelectionForTest(List.of());
+    if (!all.wholeProject() || !Build.pitTimeout(all).equals(Duration.ofMinutes(20))) {
+      throw new AssertionError("whole-project PIT lacks the longest limit: " + all);
+    }
     if (all.dryRun()
         || !all.history()
         || all.pitHelp()
@@ -766,6 +769,9 @@ public final class BuildTest {
             List.of("sources/toktrak/toktrak/store/EventEnvelope.java"),
             List.of("--verbose", "true", "sources/toktrak/toktrak/store/EventEnvelope.java"))) {
       Build.PitSelection bare = Build.pitSelectionForTest(arguments);
+      if (bare.wholeProject() || !Build.pitTimeout(bare).equals(Duration.ofMinutes(10))) {
+        throw new AssertionError("selected PIT run lacks the normal limit: " + bare);
+      }
       if (!bare.targetClasses()
               .equals(List.of("toktrak.store.EventEnvelope", "toktrak.store.EventEnvelope$*"))
           || bare.forwardedArguments()

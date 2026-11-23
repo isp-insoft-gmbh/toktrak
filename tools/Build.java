@@ -615,12 +615,20 @@ public final class Build {
                       classpath,
                       PIT_MAIN));
           launchArguments.addAll(pitArguments(selection, staging));
+          Duration timeout = pitTimeout(selection);
           explainingPitTimeout(
-                  PROCESS_TIMEOUT,
-                  _ -> runArgFile(javaExecutable(), "pit", launchArguments, PROCESS_TIMEOUT, false))
+                  timeout,
+                  _ -> runArgFile(javaExecutable(), "pit", launchArguments, timeout, false))
               .build(staging);
           validatePitReport(staging, selection.dryRun());
         });
+  }
+
+  /// Selected sources must finish within the normal process limit; mutating the whole project, as
+  /// the weekly run does, gets the longest limit Build allows.
+  static Duration pitTimeout(PitSelection selection) {
+    assert selection != null;
+    return selection.wholeProject() ? PROCESS_TIMEOUT_MAX : PROCESS_TIMEOUT;
   }
 
   /// Replaces a bare process timeout with what it means for PIT and how to recover.
@@ -795,7 +803,8 @@ public final class Build {
     boolean pitHelp = forwarded.contains("-h") || forwarded.contains("-?");
     List<String> targets =
         sources.isEmpty() ? pitTargets(List.of(APP_SOURCES.toString())) : pitTargets(sources);
-    return new PitSelection(List.copyOf(forwarded), targets, dryRun, history, pitHelp);
+    return new PitSelection(
+        List.copyOf(forwarded), targets, dryRun, history, pitHelp, sources.isEmpty());
   }
 
   private static boolean dryRun(List<String> arguments) {
@@ -972,7 +981,8 @@ public final class Build {
       List<String> targetClasses,
       boolean dryRun,
       boolean history,
-      boolean pitHelp) {
+      boolean pitHelp,
+      boolean wholeProject) {
     PitSelection {
       assert forwardedArguments != null;
       assert targetClasses != null && !targetClasses.isEmpty();
