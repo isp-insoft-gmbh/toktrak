@@ -34,17 +34,22 @@ export async function command(executable, arguments_, tolerateFailure = false) {
   }
 }
 
-export async function waitFor(predicate, message) {
-  const deadline = Date.now() + 15_000;
+/// True once `predicate` holds, false after `timeoutMillis`.
+export async function eventually(predicate, timeoutMillis) {
+  const deadline = Date.now() + timeoutMillis;
   while (Date.now() < deadline) {
     // oxlint-disable-next-line no-await-in-loop -- Each poll observes state after the prior delay.
-    if (await predicate()) return;
+    if (await predicate()) return true;
     // oxlint-disable-next-line no-await-in-loop -- Serial delay bounds the polling rate.
     await new Promise((resolve) => {
       setTimeout(resolve, 100);
     });
   }
-  assert.fail(message);
+  return false;
+}
+
+export async function waitFor(predicate, message) {
+  if (!(await eventually(predicate, 15_000))) assert.fail(message);
 }
 
 export async function lines(file) {
