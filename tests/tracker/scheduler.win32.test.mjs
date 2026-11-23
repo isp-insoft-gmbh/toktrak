@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
-import { command, eventually, lines, renderedTracker, waitFor } from "./scheduler-helpers.mjs";
+import { command, lines, renderedTracker, waitFor } from "./scheduler-helpers.mjs";
 
 // Task Scheduler omits settings that equal these schema defaults from exported XML.
 const SETTING_DEFAULTS = {
@@ -15,11 +15,9 @@ const SETTING_DEFAULTS = {
   StopIfGoingOnBatteries: "true",
   ExecutionTimeLimit: "PT72H",
 };
-const RUN_ATTEMPTS_MAX = 3;
-const RUN_START_MILLIS_MAX = 5_000;
 
 // schtasks exports locale-independent XML in a fraction of a second; PowerShell's
-// Get-ScheduledTask needs seconds per call and stalled past 30 seconds under load.
+// Get-ScheduledTask took 3 to 5 seconds per call, and one PowerShell call hung past 30 seconds.
 async function taskSettings(taskName) {
   const { stdout } = await command("schtasks.exe", ["/Query", "/TN", taskName, "/XML"]);
   const element = (name) => stdout.match(new RegExp(`<${name}>([^<]*)</${name}>`, "u"))?.[1];
@@ -33,7 +31,7 @@ async function taskSettings(taskName) {
   };
 }
 
-/// Only an elevated process may open the raw disk device.
+/// Opening the raw disk device for reading requires an elevated token.
 function elevated() {
   try {
     closeSync(openSync("\\\\.\\PHYSICALDRIVE0", "r"));
@@ -54,20 +52,14 @@ function running(pid) {
   }
 }
 
-/// Starts run number `count`. The task ignores a start request while an instance runs, and
-/// Task Scheduler may notice a process exit a moment late, so an ignored request is repeated.
+// The task ignores a start request while an instance runs, so callers wait for the previous
+// run's process to exit first; 120 immediate requests after such an exit all started a run.
 async function startRun(taskName, runLog, count) {
-  for (let attempt = 0; attempt < RUN_ATTEMPTS_MAX; attempt++) {
-    // oxlint-disable-next-line no-await-in-loop -- A repeated request must follow the ignored one.
-    await command("schtasks.exe", ["/Run", "/TN", taskName]);
-    // oxlint-disable-next-line no-await-in-loop -- Each attempt waits for its own run to start.
-    const started = await eventually(
-      async () => (await lines(runLog)).filter((line) => line === "run-start").length === count,
-      RUN_START_MILLIS_MAX,
-    );
-    if (started) return;
-  }
-  assert.fail(`scheduled run ${count} did not start`);
+  await command("schtasks.exe", ["/Run", "/TN", taskName]);
+  await waitFor(
+    async () => (await lines(runLog)).filter((line) => line === "run-start").length === count,
+    `scheduled run ${count} did not start`,
+  );
 }
 
 async function waitForRun(runLog, pidLog, count) {
@@ -91,7 +83,9 @@ test("given_windowsProcess_when_verifyingInstallPrivileges_then_matchesWindowsPr
   context.after(() => rm(directory, { recursive: true, force: true }));
   const { module: tracker } = await renderedTracker(directory);
 
-  if (elevated()) {
+  const elevatedProcess = elevated();
+  context.diagnostic(`elevated: ${elevatedProcess}`);
+  if (elevatedProcess) {
     await assert.rejects(() => tracker.verifyWindowsInstallPrivileges(), /must run without administrator privileges/u);
   } else {
     await assert.doesNotReject(() => tracker.verifyWindowsInstallPrivileges());
