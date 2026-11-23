@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
-record DashboardSnapshot(
+public record DashboardSnapshot(
     String period,
     String cost,
     String costCounter,
@@ -33,7 +33,7 @@ record DashboardSnapshot(
     List<DashboardSpikeRow> spikes,
     List<DashboardSessionRow> sessions,
     List<DashboardBlockRow> blocks) {
-  DashboardSnapshot {
+  public DashboardSnapshot {
     Objects.requireNonNull(period, "period");
     Objects.requireNonNull(cost, "cost");
     Objects.requireNonNull(costCounter, "costCounter");
@@ -80,25 +80,25 @@ record DashboardSnapshot(
     return reportCompleteness == ReportCompleteness.PARTIAL;
   }
 
-  enum DashboardHealth {
+  public enum DashboardHealth {
     HEALTHY,
     DEGRADED
   }
 
-  enum ReportCompleteness {
+  public enum ReportCompleteness {
     COMPLETE,
     PARTIAL
   }
 
-  record DashboardMetricRow(String label, String value, String detail, String bar) {}
+  public record DashboardMetricRow(String label, String value, String detail, String bar) {}
 
-  record DashboardTrendRow(String date, String cost, String tokens, String bar) {
+  public record DashboardTrendRow(String date, String cost, String tokens, String bar) {
     String humanReadableDate() {
       return DashboardSnapshot.humanReadableDate(date);
     }
   }
 
-  record DashboardUserRow(
+  public record DashboardUserRow(
       int rank,
       String initials,
       String name,
@@ -106,19 +106,19 @@ record DashboardSnapshot(
       String cost,
       String tokens,
       String bar) {
-    DashboardUserRow {
+    public DashboardUserRow {
       if (!colorClass.matches("color-[1-8]")) {
         throw new IllegalArgumentException("colorClass is invalid");
       }
     }
   }
 
-  enum IngestionFreshness {
+  public enum IngestionFreshness {
     FRESH,
     STALE
   }
 
-  record DashboardIngestionRow(
+  public record DashboardIngestionRow(
       String initials,
       String name,
       String colorClass,
@@ -140,7 +140,7 @@ record DashboardSnapshot(
       return statusClass.equals("status-warn");
     }
 
-    DashboardIngestionRow {
+    public DashboardIngestionRow {
       assert freshness != null;
       if (!colorClass.matches("color-[1-8]") || !statusClass.matches("status-(?:ok|warn)")) {
         throw new IllegalArgumentException("ingestion class is invalid");
@@ -148,13 +148,13 @@ record DashboardSnapshot(
     }
   }
 
-  record DashboardSpikeRow(String date, String user, String cost, String tokens) {
+  public record DashboardSpikeRow(String date, String user, String cost, String tokens) {
     String humanReadableDate() {
       return DashboardSnapshot.humanReadableDate(date);
     }
   }
 
-  record DashboardSessionRow(
+  public record DashboardSessionRow(
       String user,
       String source,
       String project,
@@ -163,6 +163,6 @@ record DashboardSnapshot(
       String tokens,
       String lastActivity) {}
 
-  record DashboardBlockRow(
+  public record DashboardBlockRow(
       String start, String models, String cost, String tokens, String entries) {}
 }

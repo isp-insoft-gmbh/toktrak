@@ -138,6 +138,10 @@ final class PageFixture {
         StandardCharsets.UTF_8);
   }
 
+  Instant now() {
+    return now;
+  }
+
   private void append(EventEnvelope event) {
     try (EventLog log = EventLog.open(events)) {
       log.appendAndFsync(event);
@@ -145,7 +149,7 @@ final class PageFixture {
     projection = null;
   }
 
-  private Projection projection() {
+  Projection projection() {
     if (projection == null) {
       var replayed = Projection.empty();
       try (EventLog log = EventLog.open(events)) {

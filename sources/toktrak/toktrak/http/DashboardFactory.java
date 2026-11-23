@@ -43,7 +43,7 @@ import toktrak.usage.UsageProjection.Summary;
 import toktrak.usage.UsageUpload;
 import toktrak.usage.UsageUpload.Report;
 
-final class DashboardFactory {
+public final class DashboardFactory {
   private static final int DETAIL_ROWS_MAX = 20;
   private static final int NESTED_ENTRIES_MAX = 100;
   private static final int INGESTION_FRESH_WEEKDAYS = 5;
@@ -60,12 +60,12 @@ final class DashboardFactory {
 
   private DashboardFactory() {}
 
-  static DashboardSnapshot create(
+  public static DashboardSnapshot create(
       Projection projection, HealthState health, DashboardCurrency currency, Instant now) {
-    assert projection != null;
-    assert health != null;
-    assert currency != null;
-    assert now != null;
+    Objects.requireNonNull(projection, "projection");
+    Objects.requireNonNull(health, "health");
+    Objects.requireNonNull(currency, "currency");
+    Objects.requireNonNull(now, "now");
     List<Row> daily = projection.usageRows(Report.DAILY);
     List<Row> sessions = projection.usageRows(Report.SESSION);
     List<Row> blocks = projection.usageRows(Report.BLOCKS);
