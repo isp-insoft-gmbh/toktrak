@@ -101,10 +101,9 @@ public final class EventLog implements AutoCloseable {
       int eventCount = 0;
       try (var input = Files.newInputStream(path)) {
         while (fileBytesRead < fileBytes) {
-          int requestedBytes =
-              Math.toIntExact(Math.min(inputBuffer.length, fileBytes - fileBytesRead));
-          int readBytes = input.read(inputBuffer, 0, requestedBytes);
-          if (readBytes <= 0) throw new IllegalStateException("event log changed during replay");
+          // A file that grows past the measured size fails the size check below either way.
+          int readBytes = input.read(inputBuffer);
+          if (readBytes == -1) throw new IllegalStateException("event log changed during replay");
           fileBytesRead = Math.addExact(fileBytesRead, readBytes);
           int segmentStart = 0;
           for (int index = 0; index < readBytes; index++) {
@@ -256,15 +255,11 @@ public final class EventLog implements AutoCloseable {
     assert channel != null;
     assert buffer != null;
     assert position >= 0;
-    int readOperations = 0;
-    int readOperationsMax = Math.addExact(buffer.remaining(), 1);
+    // Every pass reads at least one byte, so the buffer bounds the loop.
     while (buffer.hasRemaining()) {
       int readBytes = channel.read(buffer, position);
       if (readBytes <= 0) throw new IllegalStateException("event log changed during read");
       position = Math.addExact(position, readBytes);
-      readOperations = Math.addExact(readOperations, 1);
-      if (readOperations > readOperationsMax)
-        throw new IllegalStateException("event log read made insufficient progress");
     }
     assert !buffer.hasRemaining();
   }
@@ -273,15 +268,10 @@ public final class EventLog implements AutoCloseable {
       throws IOException {
     assert channel != null;
     assert buffer != null;
-    int writeOperations = 0;
-    int writeOperationsMax = Math.addExact(buffer.remaining(), 1);
+    // Every pass writes at least one byte, so the buffer bounds the loop.
     while (buffer.hasRemaining()) {
       int writtenBytes = channel.write(buffer);
       if (writtenBytes <= 0) throw new IllegalStateException("event log write made no progress");
-      writeOperations = Math.addExact(writeOperations, 1);
-      if (writeOperations > writeOperationsMax) {
-        throw new IllegalStateException("event log write made insufficient progress");
-      }
     }
     assert !buffer.hasRemaining();
   }
