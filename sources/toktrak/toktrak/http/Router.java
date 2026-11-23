@@ -8,6 +8,7 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.HashMap;
@@ -23,7 +24,6 @@ import toktrak.ClockSource;
 import toktrak.auth.AuthService;
 import toktrak.auth.AuthService.Session;
 import toktrak.health.HealthState;
-import toktrak.http.BaseView.Currency;
 import toktrak.http.BaseView.CurrencySwitch;
 import toktrak.http.BaseView.CurrentPage;
 import toktrak.http.BaseView.RuntimeMode;
@@ -610,41 +610,23 @@ public final class Router implements HttpHandler {
     DashboardCurrency currency = dashboardCurrency(exchange, "/");
     if (currency == null) return;
     DashboardCurrency effective = effectiveCurrency(currency);
-    var view =
-        new OverviewView(
-            dashboardBase("Overview · TokTrak", "/", CurrentPage.OVERVIEW, effective),
-            projection.revision(),
-            session.user().displayName(),
-            DashboardFactory.create(projection, health, effective, clock.instant()));
     HttpSupport.encodedHtml(
         exchange,
         200,
-        render(
-            OverviewViewRenderer.of(),
-            view,
-            "overview.mustache",
-            "OverviewView",
-            "OverviewViewRenderer"));
+        Pages.overview(
+            projection,
+            health,
+            dashboardBase("Overview · TokTrak", "/", CurrentPage.OVERVIEW, effective),
+            session.user().displayName(),
+            effective,
+            clock.instant()));
   }
 
   private void visualizations(HttpExchange exchange) throws IOException {
     Session session = browserSession(exchange);
     if (session == null) return;
-    var daily = projection.usageRows(Report.DAILY);
-    LocalDate today = clock.instant().atZone(ZoneOffset.UTC).toLocalDate();
-    LocalDate earliest =
-        daily.stream()
-            .map(row -> LocalDate.parse(row.firstKey()))
-            .min(LocalDate::compareTo)
-            .orElse(today);
-    // Future-dated uploads must not move the default month or the all-time range end.
-    LocalDate latest =
-        daily.stream()
-            .map(row -> LocalDate.parse(row.firstKey()))
-            .filter(date -> !date.isAfter(today))
-            .max(LocalDate::compareTo)
-            .orElse(today);
-    if (earliest.isAfter(latest)) earliest = latest;
+    Instant now = clock.instant();
+    LocalDate today = now.atZone(ZoneOffset.UTC).toLocalDate();
     UsageRange range;
     String requestedCurrency;
     try {
@@ -657,7 +639,7 @@ public final class Router implements HttpHandler {
         throw new IllegalArgumentException("datastar query is invalid");
       }
       requestedCurrency = fields.remove("currency");
-      range = UsageRange.parse(fields, earliest, latest);
+      range = Pages.visualizationsRange(projection, fields, today);
     } catch (IllegalArgumentException exception) {
       badRequest(exchange, "visualizations query is invalid");
       return;
@@ -676,28 +658,21 @@ public final class Router implements HttpHandler {
       return;
     }
     DashboardCurrency effective = effectiveCurrency(currencyCookie(exchange));
-    var view =
-        new VisualizationsView(
-            dashboardBase(
-                "Visualizations · TokTrak",
-                UsageChartsFactory.PATH + "?" + range.query() + "&",
-                CurrentPage.VISUALIZATIONS,
-                effective),
-            projection.revision(),
-            session.user().displayName(),
-            DashboardFactory.create(projection, health, effective, clock.instant()),
-            UsageChartsFactory.create(
-                daily, range, today, effective, projection.fxRate().orElse(null)),
-            insights(daily, range, today, effective));
     HttpSupport.encodedHtml(
         exchange,
         200,
-        render(
-            VisualizationsViewRenderer.of(),
-            view,
-            "visualizations.mustache",
-            "VisualizationsView",
-            "VisualizationsViewRenderer"));
+        Pages.visualizations(
+            projection,
+            health,
+            dashboardBase(
+                "Visualizations · TokTrak",
+                Pages.visualizationsPath(range),
+                CurrentPage.VISUALIZATIONS,
+                effective),
+            session.user().displayName(),
+            range,
+            effective,
+            now));
   }
 
   private void scope(HttpExchange exchange) throws IOException {
@@ -730,28 +705,6 @@ public final class Router implements HttpHandler {
             "changes.mustache",
             "ChangesView",
             "ChangesViewRenderer"));
-  }
-
-  private UsageInsights insights(
-      List<toktrak.usage.UsageProjection.Row> daily,
-      UsageRange range,
-      LocalDate today,
-      DashboardCurrency currency) {
-    var users = new HashMap<UserKey, toktrak.projection.Projection.User>();
-    for (var user : projection.users()) users.put(user.key(), user);
-    var zones = new HashMap<UserKey, java.time.ZoneId>();
-    for (var ingestion : projection.ingestion()) {
-      zones.put(ingestion.owner(), UsageInsightsFactory.zone(ingestion.clientTimeZone()));
-    }
-    return UsageInsightsFactory.create(
-        daily,
-        projection.usageRows(Report.SESSION),
-        users,
-        zones,
-        range,
-        today,
-        currency,
-        projection.fxRate().orElse(null));
   }
 
   private DashboardCurrency dashboardCurrency(HttpExchange exchange, String path)
@@ -806,27 +759,13 @@ public final class Router implements HttpHandler {
   }
 
   private DashboardCurrency effectiveCurrency(DashboardCurrency currency) {
-    assert currency != null;
-    return currency == DashboardCurrency.EUR && projection.fxRate().isEmpty()
-        ? DashboardCurrency.USD
-        : currency;
+    return Pages.effectiveCurrency(projection, currency);
   }
 
   private BaseView dashboardBase(
       String title, String path, CurrentPage currentPage, DashboardCurrency currency) {
-    assert path.equals("/")
-        || path.equals("/scope")
-        || (path.startsWith(UsageChartsFactory.PATH + "?") && path.endsWith("&"));
-    DashboardCurrency alternative =
-        currency == DashboardCurrency.USD ? DashboardCurrency.EUR : DashboardCurrency.USD;
-    String separator = path.endsWith("&") ? "" : "?";
-    return base(
-        title,
-        currentPage,
-        CurrencySwitch.enabled(
-            Currency.from(currency),
-            path + separator + "currency=" + alternative,
-            Currency.from(alternative)));
+    return Pages.dashboardBase(
+        assets, runtimeMode(), buildInfo.version(), title, path, currentPage, currency);
   }
 
   private BaseView trackerBase(String title) {
@@ -838,23 +777,12 @@ public final class Router implements HttpHandler {
   }
 
   private BaseView base(String title, CurrentPage currentPage, CurrencySwitch currencyControl) {
-    assert title != null;
-    assert currentPage != null;
-    assert currencyControl != null;
-    return new BaseView(
-        title,
-        assets.publicUrl("main.css"),
-        assets.publicUrl("datastar.js"),
-        assets.publicUrl("dashboard.js"),
-        assets.publicUrl("favicon.svg"),
-        assets.publicUrl("logo-wordmark.svg"),
-        assets.publicUrl("logo-wordmark-dark.svg"),
-        assets.publicUrl("logo-lockup.svg"),
-        assets.publicUrl("logo-lockup-dark.svg"),
-        devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION,
-        currentPage,
-        currencyControl,
-        buildInfo.version());
+    return Pages.base(
+        assets, runtimeMode(), buildInfo.version(), title, currentPage, currencyControl);
+  }
+
+  private RuntimeMode runtimeMode() {
+    return devAuth ? RuntimeMode.DEVELOPMENT : RuntimeMode.PRODUCTION;
   }
 
   private Session optionalBrowserSession(HttpExchange exchange) {
@@ -1013,13 +941,7 @@ public final class Router implements HttpHandler {
       String templateName,
       String modelName,
       String rendererName) {
-    try {
-      return HttpSupport.renderEncoded(renderer, model);
-    } catch (HttpSupport.EncodedHtmlTooLargeException exception) {
-      throw new RenderFailure(templateName, modelName, rendererName, "output_limit", exception);
-    } catch (IOException exception) {
-      throw new RenderFailure(templateName, modelName, rendererName, "renderer_failure", exception);
-    }
+    return Pages.render(renderer, model, templateName, modelName, rendererName);
   }
 
   private void authFailure(HttpExchange exchange, RuntimeException exception) throws IOException {

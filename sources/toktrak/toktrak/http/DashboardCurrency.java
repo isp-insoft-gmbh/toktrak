@@ -1,6 +1,6 @@
 package toktrak.http;
 
-enum DashboardCurrency {
+public enum DashboardCurrency {
   USD("$"),
   EUR("€");
 

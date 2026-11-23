@@ -6,6 +6,7 @@ import static toktrak.tests.UsageFixture.session;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.file.Path;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.LocalDate;
@@ -61,68 +62,63 @@ final class VisualizationsConsistencyTest {
     "claude-opus-4-8", "gpt-5.5", "[pi] gpt-5.5", "gemini-3", "glm-5", "kimi-k3", "Other models"
   };
 
-  @TempDir java.nio.file.Path directory;
+  @TempDir Path directory;
 
   @Test
   void given_developmentCorpus_when_openingCalendarRanges_then_everyFigureReconciles()
       throws Exception {
-    try (var usage = corpus("corpus-calendar")) {
-      calendar(usage);
-      Page month = Page.of(usage.visualizations(null).replaceAll(">\\s+<", "><"));
-      assertEquals(
-          new BigDecimal(attribute(usage.overview(), "id=\"kpi-cost\"[^>]*data-usd=\"([^\"]+)\"")),
-          month.total(),
-          "Overview and the default visualizations month disagree");
-    }
+    var usage = corpus("corpus-calendar");
+    calendar(usage);
+    Page month = Page.of(usage.visualizations(null).replaceAll(">\\s+<", "><"));
+    assertEquals(
+        new BigDecimal(attribute(usage.overview(), "id=\"kpi-cost\"[^>]*data-usd=\"([^\"]+)\"")),
+        month.total(),
+        "Overview and the default visualizations month disagree");
   }
 
   @Test
   void given_developmentCorpus_when_openingRandomRanges_then_everyFigureReconciles()
       throws Exception {
-    try (var usage = corpus("corpus-random")) {
-      randomRanges(usage, 11);
-    }
+    var usage = corpus("corpus-random");
+    randomRanges(usage, 11);
   }
 
   @Test
   void given_developmentCorpus_when_splittingRanges_then_partsAddUpToWhole() throws Exception {
-    try (var usage = corpus("corpus-splits")) {
-      splits(usage, 12);
-    }
+    var usage = corpus("corpus-splits");
+    splits(usage, 12);
   }
 
   @Test
   void given_randomUploadsWithToolNoise_when_openingCalendarRanges_then_everyFigureReconciles()
       throws Exception {
-    try (var usage = randomUploads("random-calendar")) {
-      calendar(usage);
-    }
+    var usage = randomUploads("random-calendar");
+    calendar(usage);
   }
 
   @Test
   void given_randomUploadsWithToolNoise_when_openingRandomRanges_then_everyFigureReconciles()
       throws Exception {
-    try (var usage = randomUploads("random-random")) {
-      randomRanges(usage, 13);
-    }
+    var usage = randomUploads("random-random");
+    randomRanges(usage, 13);
   }
 
   @Test
   void given_randomUploadsWithToolNoise_when_splittingRanges_then_partsAddUpToWhole()
       throws Exception {
-    try (var usage = randomUploads("random-splits")) {
-      splits(usage, 14);
-    }
+    var usage = randomUploads("random-splits");
+    splits(usage, 14);
   }
 
-  private UsageFixture corpus(String name) throws Exception {
-    return new UsageFixture(directory.resolve(name), List.of("--corpus", "tests/corpus/dev.jsonl"));
+  private PageFixture corpus(String name) throws Exception {
+    return PageFixture.corpus(
+        directory.resolve(name), Path.of("tests/corpus/dev.jsonl"), UsageFixture.CLOCK);
   }
 
   /// Three overlapping uploads with a fixed seed, so every test sees the same data.
-  private UsageFixture randomUploads(String name) throws Exception {
+  private PageFixture randomUploads(String name) throws Exception {
     var random = new Random(20_260_715L);
-    var usage = new UsageFixture(directory.resolve(name));
+    var usage = PageFixture.viewer(directory.resolve(name));
     for (int upload = 0; upload < 3; upload++) {
       var rows = new java.util.TreeMap<LocalDate, String>();
       for (int row = 0; row < RANDOM_ROWS; row++) {
@@ -148,7 +144,7 @@ final class VisualizationsConsistencyTest {
   }
 
   /// Every month and year in the window, plus all time; months add up to their year.
-  private static void calendar(UsageFixture usage) throws Exception {
+  private static void calendar(PageFixture usage) throws Exception {
     var months = new java.util.HashMap<YearMonth, BigDecimal>();
     for (YearMonth month = YearMonth.from(FIRST);
         !month.isAfter(YearMonth.from(LAST));
@@ -166,10 +162,11 @@ final class VisualizationsConsistencyTest {
       }
       assertEquals(0, whole.total().compareTo(monthSum), "months of " + year + " != year");
     }
-    check(usage, "range=all");
+    // Guards against reconciling nothing: both data sets hold usage.
+    assertTrue(check(usage, "range=all").total().signum() > 0, "range=all has no usage");
   }
 
-  private static void randomRanges(UsageFixture usage, int seed) throws Exception {
+  private static void randomRanges(PageFixture usage, int seed) throws Exception {
     var random = new Random(seed);
     long span = ChronoUnit.DAYS.between(FIRST, LAST);
     for (int index = 0; index < RANDOM_RANGES; index++) {
@@ -179,7 +176,7 @@ final class VisualizationsConsistencyTest {
     }
   }
 
-  private static void splits(UsageFixture usage, int seed) throws Exception {
+  private static void splits(PageFixture usage, int seed) throws Exception {
     var random = new Random(seed);
     long span = ChronoUnit.DAYS.between(FIRST, LAST);
     for (int index = 0; index < RANDOM_SPLITS; index++) {
@@ -196,7 +193,7 @@ final class VisualizationsConsistencyTest {
   }
 
   /// Checks one range in isolation and returns its figures.
-  private static Page check(UsageFixture usage, String query) throws Exception {
+  private static Page check(PageFixture usage, String query) throws Exception {
     // Compact once: the regular expressions below then scan one string without line breaks.
     String compact = usage.visualizations(query).replaceAll(">\\s+<", "><");
     Page page = Page.of(compact);

@@ -157,72 +157,30 @@ final class UsageHttpTest {
   @Test
   void given_dailyUsageWithAgentOnly_when_renderingVisualizations_then_labelsSourceFromAgent()
       throws Exception {
-    try (var app = start()) {
-      URI base = URI.create("http://127.0.0.1:" + app.port());
-      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
-      String cookie = login(client, base);
-      String token = createTrackerToken(client, base, cookie);
-
-      HttpResponse<String> uploaded =
-          send(
-              client,
-              base.resolve("/api/usage"),
-              "POST",
-              "application/json",
-              null,
-              usage("2026-07-14T23:00:00Z", "1", true),
-              token);
-      assertEquals(200, uploaded.statusCode(), uploaded.body());
-
-      HttpResponse<String> visualizations =
-          send(client, base.resolve("/visualizations"), "GET", null, cookie, null);
-      assertEquals(200, visualizations.statusCode());
-      assertTrue(visualizations.body().contains("<h3>Sources</h3>"), visualizations.body());
-      assertTrue(visualizations.body().contains("<strong>claude</strong>"), visualizations.body());
-      assertFalse(
-          visualizations.body().contains("<strong>Unknown source</strong>"), visualizations.body());
-    }
+    var pages = PageFixture.viewer(directory.resolve("agent-only"));
+    pages.uploadBody(usage("2026-07-14T23:00:00Z", "1", true));
+    String visualizations = pages.visualizations(null);
+    assertTrue(visualizations.contains("<h3>Sources</h3>"), visualizations);
+    assertTrue(visualizations.contains("<strong>claude</strong>"), visualizations);
+    assertFalse(visualizations.contains("<strong>Unknown source</strong>"), visualizations);
   }
 
   @Test
   void given_dailyUsageWithAgentBreakdowns_when_renderingVisualizations_then_splitsHarnessMix()
       throws Exception {
-    try (var app = start()) {
-      URI base = URI.create("http://127.0.0.1:" + app.port());
-      var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
-      String cookie = login(client, base);
-      String token = createTrackerToken(client, base, cookie);
-
-      HttpResponse<String> uploaded =
-          send(
-              client,
-              base.resolve("/api/usage"),
-              "POST",
-              "application/json",
-              null,
-              usageWithAgentBreakdowns(),
-              token);
-      assertEquals(200, uploaded.statusCode(), uploaded.body());
-
-      HttpResponse<String> visualizations =
-          send(client, base.resolve("/visualizations"), "GET", null, cookie, null);
-      assertEquals(200, visualizations.statusCode());
-      assertTrue(
-          visualizations
-              .body()
-              .matches(
-                  "(?s).*<strong>claude</strong>.*?<span>\\$0\\.75</span><small>15"
-                      + " tokens</small>.*"),
-          visualizations.body());
-      assertTrue(
-          visualizations
-              .body()
-              .matches(
-                  "(?s).*<strong>codex</strong>.*?<span>\\$0\\.25</span><small>4 tokens</small>.*"),
-          visualizations.body());
-      assertFalse(
-          visualizations.body().contains("<strong>claude + codex</strong>"), visualizations.body());
-    }
+    var pages = PageFixture.viewer(directory.resolve("agent-breakdowns"));
+    pages.uploadBody(usageWithAgentBreakdowns());
+    String visualizations = pages.visualizations(null);
+    assertTrue(
+        visualizations.matches(
+            "(?s).*<strong>claude</strong>.*?<span>\\$0\\.75</span><small>15"
+                + " tokens</small>.*"),
+        visualizations);
+    assertTrue(
+        visualizations.matches(
+            "(?s).*<strong>codex</strong>.*?<span>\\$0\\.25</span><small>4 tokens</small>.*"),
+        visualizations);
+    assertFalse(visualizations.contains("<strong>claude + codex</strong>"), visualizations);
   }
 
   @Test

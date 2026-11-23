@@ -70,6 +70,21 @@ final class UsageFixture implements AutoCloseable {
         + "}";
   }
 
+  /// A full tracker upload with daily and, when present, session rows.
+  static String uploadBody(List<String> dailyRows, List<String> sessionRows) {
+    return "{\"trackerVersion\":\"1\",\"ccusageVersion\":\"20.0.17\",\"clientTimeZone\":\"UTC\","
+        + "\"full\":true,\"generatedAt\":\"2026-07-14T23:00:00Z\",\"reports\":{"
+        + "\"daily\":{\"ok\":true,\"json\":{\"daily\":["
+        + String.join(",", dailyRows)
+        + "]}}"
+        + (sessionRows.isEmpty()
+            ? ""
+            : ",\"session\":{\"ok\":true,\"json\":{\"session\":["
+                + String.join(",", sessionRows)
+                + "]}}")
+        + "}}";
+  }
+
   /// A session report row counted on the day of `lastActivity`.
   static String session(String id, String cost, String lastActivity) {
     return "{\"period\":\""
@@ -88,18 +103,7 @@ final class UsageFixture implements AutoCloseable {
 
   /// Uploads daily rows and, when present, session rows in one full report.
   void upload(List<String> dailyRows, List<String> sessionRows) throws Exception {
-    String body =
-        "{\"trackerVersion\":\"1\",\"ccusageVersion\":\"20.0.17\",\"clientTimeZone\":\"UTC\","
-            + "\"full\":true,\"generatedAt\":\"2026-07-14T23:00:00Z\",\"reports\":{"
-            + "\"daily\":{\"ok\":true,\"json\":{\"daily\":["
-            + String.join(",", dailyRows)
-            + "]}}"
-            + (sessionRows.isEmpty()
-                ? ""
-                : ",\"session\":{\"ok\":true,\"json\":{\"session\":["
-                    + String.join(",", sessionRows)
-                    + "]}}")
-            + "}}";
+    String body = uploadBody(dailyRows, sessionRows);
     var request =
         HttpRequest.newBuilder(base.resolve("/api/usage"))
             .timeout(TIMEOUT)

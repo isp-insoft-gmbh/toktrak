@@ -12,7 +12,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /// Inclusive calendar-date range shared by every chart on a dashboard page.
-record UsageRange(UsageRange.Kind kind, LocalDate from, LocalDate to) {
+public record UsageRange(UsageRange.Kind kind, LocalDate from, LocalDate to) {
   static final Set<String> QUERY_FIELDS = Set.of("range", "month", "year", "from", "to");
   private static final long DAYS_MAX = 3_660;
   private static final int YEAR_MIN = 2000;
@@ -22,14 +22,14 @@ record UsageRange(UsageRange.Kind kind, LocalDate from, LocalDate to) {
   private static final DateTimeFormatter MONTH =
       DateTimeFormatter.ofPattern("MMMM uuuu", Locale.ENGLISH);
 
-  enum Kind {
+  public enum Kind {
     MONTH,
     YEAR,
     ALL,
     CUSTOM
   }
 
-  UsageRange {
+  public UsageRange {
     Objects.requireNonNull(kind, "kind");
     Objects.requireNonNull(from, "from");
     Objects.requireNonNull(to, "to");
