@@ -165,6 +165,10 @@ test("given_unknownStringField_when_anonymizing_then_failsClosedWithFieldPath", 
     data: { hostname: "ada-workstation" },
   });
   assert.throws(() => anonymize(event, KEY), /usage-uploaded\.data\.hostname is an unsupported string field/u);
+  for (const name of ["constructor", "toString", "hasOwnProperty"]) {
+    const inherited = `{"id":"6c914202-a641-45da-89d2-b1ce10b4ec4b","type":"usage-uploaded","data":{"${name}":"private-machine"}}`;
+    assert.throws(() => anonymize(inherited, KEY), /unsupported string field/u, name);
+  }
 });
 
 test("given_modelNameShapes_when_anonymizing_then_acceptsHarnessPrefixOnlyInCanonicalForm", () => {

@@ -48,7 +48,8 @@ const parseEvents = (text) =>
     .filter((line) => line.trim())
     .map((line) => JSON.parse(line, (key, value, context) => (typeof value === "number" ? context.source : value)));
 
-/// Latest daily row per owner, period, and row agent, in log order.
+/// Daily row per owner, period, and row agent from the newest upload, like the server: a row
+/// replaces an earlier one unless its upload was generated before it.
 export const dailyRows = (events) => {
   const rows = new Map();
   for (const event of events) {
@@ -56,9 +57,15 @@ export const dailyRows = (events) => {
     const report = event.data?.upload?.reports?.daily;
     if (!report?.ok) continue;
     const owner = `${event.data.issuer}\u0000${event.data.subject}`;
-    for (const row of report.json.daily) rows.set(`${owner}\u0000${row.period}\u0000${row.agent}`, { owner, ...row });
+    const generatedAt = Date.parse(event.data.upload.generatedAt);
+    if (Number.isNaN(generatedAt)) fail(`invalid generatedAt in event ${event.id}`);
+    for (const row of report.json.daily) {
+      const key = `${owner}\u0000${row.period}\u0000${row.agent}`;
+      const existing = rows.get(key);
+      if (!existing || generatedAt >= existing.generatedAt) rows.set(key, { generatedAt, row: { owner, ...row } });
+    }
   }
-  return [...rows.values()];
+  return [...rows.values()].map((entry) => entry.row);
 };
 
 /// Splits one row's cost across tools; the parts always sum exactly to the row cost.

@@ -297,7 +297,8 @@ export function anonymize(text, key) {
       event,
       index + 1,
       (value, field) => {
-        const rule = RULES[field.name];
+        // Own properties only: an inherited name such as "constructor" must not count as a rule.
+        const rule = Object.hasOwn(RULES, field.name) ? RULES[field.name] : undefined;
         if (!rule) fail(`${field.path} is an unsupported string field; add an explicit anonymization rule`);
         const output = rule(value, field, context);
         if (SENSITIVE_FIELDS.has(field.name) && output !== value) {

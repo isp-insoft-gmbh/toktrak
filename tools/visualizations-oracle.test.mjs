@@ -90,13 +90,14 @@ test("given_renderedPage_when_comparing_then_detectsEveryPerturbedFigure", () =>
   }
 });
 
-test("given_repeatedUploads_when_readingEvents_then_keepsLatestRowPerOwnerPeriodAndAgent", () => {
-  const upload = (cost) => ({
+test("given_repeatedUploads_when_readingEvents_then_keepsNewestGeneratedRowPerOwnerPeriodAndAgent", () => {
+  const upload = (cost, generatedAt = "2026-07-02T00:00:00Z") => ({
     type: "usage-uploaded",
     data: {
       issuer: "i",
       subject: "s",
       upload: {
+        generatedAt,
         reports: { daily: { ok: true, json: { daily: [{ period: "2026-07-01", agent: "all", totalCost: cost }] } } },
       },
     },
@@ -108,4 +109,7 @@ test("given_repeatedUploads_when_readingEvents_then_keepsLatestRowPerOwnerPeriod
   ]);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].totalCost, "2");
+
+  const delayed = dailyRows([upload("20", "2026-07-03T00:00:00Z"), upload("10", "2026-07-02T00:00:00Z")]);
+  assert.equal(delayed[0].totalCost, "20");
 });
