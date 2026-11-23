@@ -268,10 +268,12 @@ public final class EventLog implements AutoCloseable {
       throws IOException {
     assert channel != null;
     assert buffer != null;
-    // Every pass writes at least one byte, so the buffer bounds the loop.
+    // Every pass writes at least one byte, so the buffer bounds the loop. A write never returns a
+    // negative count, so zero is the only stall.
     while (buffer.hasRemaining()) {
-      int writtenBytes = channel.write(buffer);
-      if (writtenBytes <= 0) throw new IllegalStateException("event log write made no progress");
+      if (channel.write(buffer) == 0) {
+        throw new IllegalStateException("event log write made no progress");
+      }
     }
     assert !buffer.hasRemaining();
   }
