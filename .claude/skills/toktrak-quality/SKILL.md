@@ -42,7 +42,7 @@ description: "Use when adding or updating TokTrak Java tests, Selfie snapshots, 
   `--no-history` ignores it for one run. PIT boolean options take values, such
   as `--verbose true`.
 - Pull-request CI mutates only the production sources a PR changes; the weekly
-  run mutates everything and may take up to 20 minutes.
+  run mutates everything. Every PIT run may take up to 20 minutes.
 - Unit tests share PIT's 5s per-test limit. Check the `slowest tests` list that
   `mise run test` prints and split or shrink a test long before it nears 5s.
 - Before pushing, run `mise run ci` from a clean tree. CI rejects Refaster
