@@ -36,6 +36,10 @@
   `output/pit.history` is on by default and a run on another selection replaces
   it. If history errors or looks inconsistent, delete `output/pit.history` and
   rerun.
+- Give code that most tests pass through, such as startup, shutdown, parsing,
+  and storage, direct fast unit tests that catch its mutants: a surviving mutant
+  reruns every covering test. Remove an equivalent mutant by simplifying the
+  code, never by excluding it.
 - Add meaningful coverage rather than weakening coverage floors.
 - Use Selfie only for stable, reviewable HTML, JSON, text, or protocol output.
   Inspect every `.ss` diff and trace each changed fragment to production code.
