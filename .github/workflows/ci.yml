@@ -25,6 +25,7 @@ jobs:
       perf: ${{ steps.changed.outputs.perf }}
       pit: ${{ steps.changed.outputs.pit }}
       changed: ${{ steps.changed.outputs.changed }}
+      pit_paths: ${{ steps.changed.outputs.pit_paths }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -45,6 +46,7 @@ jobs:
           PROD: ${{ steps.changed.outputs.prod }}
           PERF: ${{ steps.changed.outputs.perf }}
           PIT: ${{ steps.changed.outputs.pit }}
+          PIT_PATHS: ${{ steps.changed.outputs.pit_paths }}
         run: |
           {
             echo "## PR validation plan"
@@ -52,7 +54,7 @@ jobs:
             echo "- Tracker: \`$TRACKER\`"
             echo "- Production container: \`$PROD\`"
             echo "- Performance: \`$PERF\`"
-            echo "- PIT mutations: \`$PIT\`"
+            echo "- PIT mutations: \`$PIT\` (${PIT_PATHS:-all production sources})"
             echo "Watch the CI jobs for live progress; the final \`ci\` job reports every result."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -109,6 +111,8 @@ jobs:
     needs: scope
     if: needs.scope.outputs.pit == 'true'
     uses: ./.github/workflows/pit.yml
+    with:
+      paths: ${{ needs.scope.outputs.pit_paths }}
 
   ci:
     needs: [scope, core, tracker, prod, perf, pit]

@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "0 5 * * 1"
   workflow_call:
+    inputs:
+      paths:
+        description: Production source files to mutate; empty mutates everything.
+        type: string
+        default: ""
   workflow_dispatch:
 
 permissions:
@@ -29,8 +34,11 @@ jobs:
           path: output/pit.history
           key: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml', 'mise.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: pit-history-v2-${{ runner.os }}-${{ hashFiles('mise.toml', 'mise.lock') }}-
+      # Pull requests mutate only the production sources they change; scheduled runs mutate all.
       - if: github.event_name == 'pull_request'
-        run: mise run pit --no-history
+        env:
+          PIT_PATHS: ${{ inputs.paths }}
+        run: mise run pit --no-history -- $PIT_PATHS
       - if: github.event_name != 'pull_request'
         run: mise run pit --history
       - if: github.event_name != 'pull_request'
