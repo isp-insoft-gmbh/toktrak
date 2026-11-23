@@ -1,33 +1,75 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { closeSync, openSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import { command, lines, renderedTracker, waitFor } from "./scheduler-helpers.mjs";
 
-const exec = promisify(execFile);
+// Task Scheduler omits settings that equal these schema defaults from exported XML.
+const SETTING_DEFAULTS = {
+  StartWhenAvailable: "false",
+  DisallowStartIfOnBatteries: "true",
+  StopIfGoingOnBatteries: "true",
+  ExecutionTimeLimit: "PT72H",
+};
 
+// schtasks exports locale-independent XML in a fraction of a second; PowerShell's
+// Get-ScheduledTask took 3 to 5 seconds per call, and one PowerShell call hung past 30 seconds.
 async function taskSettings(taskName) {
-  const script =
-    "$t=Get-ScheduledTask -TaskName $env:TASK_NAME;" +
-    "[pscustomobject]@{" +
-    "StartWhenAvailable=$t.Settings.StartWhenAvailable;" +
-    "DisallowStartIfOnBatteries=$t.Settings.DisallowStartIfOnBatteries;" +
-    "StopIfGoingOnBatteries=$t.Settings.StopIfGoingOnBatteries;" +
-    "ExecutionTimeLimit=$t.Settings.ExecutionTimeLimit.ToString();" +
-    "StartBoundary=$t.Triggers.StartBoundary;" +
-    "State=$t.State.ToString()}|ConvertTo-Json -Compress";
-  const { stdout } = await exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
-    timeout: 30_000,
-    maxBuffer: 64 * 1_024,
-    windowsHide: true,
-    env: { ...process.env, TASK_NAME: taskName },
-  });
-  return JSON.parse(stdout);
+  const { stdout } = await command("schtasks.exe", ["/Query", "/TN", taskName, "/XML"]);
+  const element = (name) => stdout.match(new RegExp(`<${name}>([^<]*)</${name}>`, "u"))?.[1];
+  const setting = (name) => element(name) ?? SETTING_DEFAULTS[name];
+  return {
+    StartWhenAvailable: setting("StartWhenAvailable") === "true",
+    DisallowStartIfOnBatteries: setting("DisallowStartIfOnBatteries") === "true",
+    StopIfGoingOnBatteries: setting("StopIfGoingOnBatteries") === "true",
+    ExecutionTimeLimit: setting("ExecutionTimeLimit"),
+    StartBoundary: element("StartBoundary"),
+  };
+}
+
+/// Opening the raw disk device for reading requires an elevated token.
+function elevated() {
+  try {
+    closeSync(openSync("\\\\.\\PHYSICALDRIVE0", "r"));
+    return true;
+  } catch (error) {
+    if (error?.code === "EPERM" || error?.code === "EACCES") return false;
+    throw error;
+  }
+}
+
+function running(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+// The task ignores a start request while an instance runs, so callers wait for the previous
+// run's process to exit first; 120 immediate requests after such an exit all started a run.
+async function startRun(taskName, runLog, count) {
+  await command("schtasks.exe", ["/Run", "/TN", taskName]);
+  await waitFor(
+    async () => (await lines(runLog)).filter((line) => line === "run-start").length === count,
+    `scheduled run ${count} did not start`,
+  );
+}
+
+async function waitForRun(runLog, pidLog, count) {
+  await waitFor(
+    async () => (await lines(runLog)).filter((line) => line === "run-complete").length === count,
+    `scheduled run ${count} did not complete`,
+  );
+  const pid = Number((await lines(pidLog))[count - 1]);
+  assert.ok(Number.isSafeInteger(pid) && pid > 0, `run ${count} recorded no process ID`);
+  await waitFor(async () => !running(pid), `scheduled run ${count} did not exit`);
 }
 
 async function temporaryDefinitions() {
@@ -40,20 +82,12 @@ test("given_windowsProcess_when_verifyingInstallPrivileges_then_matchesWindowsPr
   const directory = await mkdtemp(path.join(tmpdir(), "toktrak-scheduler-test-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const { module: tracker } = await renderedTracker(directory);
-  const script =
-    "$identity=[Security.Principal.WindowsIdentity]::GetCurrent();" +
-    "$principal=[Security.Principal.WindowsPrincipal]::new($identity);" +
-    "$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)";
-  const { stdout } = await exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
-    timeout: 30_000,
-    maxBuffer: 64 * 1_024,
-    windowsHide: true,
-  });
 
-  if (stdout.trim() === "True") {
+  const elevatedProcess = elevated();
+  context.diagnostic(`elevated: ${elevatedProcess}`);
+  if (elevatedProcess) {
     await assert.rejects(() => tracker.verifyWindowsInstallPrivileges(), /must run without administrator privileges/u);
   } else {
-    assert.equal(stdout.trim(), "False");
     await assert.doesNotReject(() => tracker.verifyWindowsInstallPrivileges());
   }
 });
@@ -65,6 +99,7 @@ test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreser
   const directory = await mkdtemp(path.join(tmpdir(), "toktrak-tracker-windows-"));
   const taskName = `TokTrak-Test-${randomUUID()}`;
   const runLog = path.join(directory, "runs.log");
+  const pidLog = path.join(directory, "pids.log");
   const revision = path.join(directory, "scheduler-revision");
   const sentinel = path.join(directory, "task.xml");
   const fixture = path.join(directory, "Märker.mjs");
@@ -94,6 +129,7 @@ test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreser
       `const taskName=${JSON.stringify(taskName)};\n` +
       `const revision=${JSON.stringify(revision)};\n` +
       `const runLog=${JSON.stringify(runLog)};\n` +
+      `await appendFile(${JSON.stringify(pidLog)}, process.pid + "\\n");\n` +
       `await appendFile(runLog, "run-start\\nargs=" + JSON.stringify(process.argv.slice(2)) + "\\n");\n` +
       `let current;try{current=await readFile(revision,"utf8");}catch(error){if(error?.code!=="ENOENT")throw error;}\n` +
       `if(current!=="1"){await createWindowsTask(taskName,process.execPath,fileURLToPath(import.meta.url),"C:\\\\Pi & Sessions");await writeFile(revision,"1");await appendFile(runLog,"migrated\\n");}else{await appendFile(runLog,"migration-skipped\\n");}\n` +
@@ -116,19 +152,14 @@ test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreser
     StopIfGoingOnBatteries: true,
     ExecutionTimeLimit: "PT72H",
     StartBoundary: "2020-01-01T09:00:00",
-    State: "Ready",
   });
   await new Promise((resolve) => {
     setTimeout(resolve, 1_000);
   });
   assert.deepEqual(await lines(runLog), []);
 
-  await command("schtasks.exe", ["/Run", "/TN", taskName]);
-  await waitFor(
-    async () => (await lines(runLog)).filter((line) => line === "run-complete").length === 1,
-    "first scheduled run did not complete",
-  );
-  await waitFor(async () => (await taskSettings(taskName)).State === "Ready", "task stayed running");
+  await startRun(taskName, runLog, 1);
+  await waitForRun(runLog, pidLog, 1);
   const migrated = await taskSettings(taskName);
   assert.equal(migrated.StartWhenAvailable, true);
   assert.equal(migrated.DisallowStartIfOnBatteries, false);
@@ -137,11 +168,8 @@ test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreser
   assert.equal(await readFile(revision, "utf8"), "1");
   assert.equal(await readFile(sentinel, "utf8"), "preserve-me");
 
-  await command("schtasks.exe", ["/Run", "/TN", taskName]);
-  await waitFor(
-    async () => (await lines(runLog)).filter((line) => line === "run-complete").length === 2,
-    "second scheduled run did not complete",
-  );
+  await startRun(taskName, runLog, 2);
+  await waitForRun(runLog, pidLog, 2);
   assert.deepEqual(await lines(runLog), [
     "run-start",
     'args=["daily","--scheduled","--pi-path","C:\\\\Pi & Sessions"]',
