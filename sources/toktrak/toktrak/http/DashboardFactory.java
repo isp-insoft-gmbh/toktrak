@@ -384,6 +384,8 @@ public final class DashboardFactory {
   private static List<DashboardBlockRow> blocks(
       List<Row> rows, DashboardCurrency currency, FxRate rate) {
     return rows.stream()
+        // ccusage marks idle time between windows as gap blocks; they hold no usage.
+        .filter(row -> !Boolean.TRUE.equals(row.data().get("isGap")))
         .sorted(
             Comparator.comparing(
                     (Row row) -> text(row.data().get("startTime"), "", 64),
