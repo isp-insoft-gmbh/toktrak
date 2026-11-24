@@ -196,12 +196,13 @@ public final class Writer implements AutoCloseable {
     var future = new CompletableFuture<WriteResult>();
     synchronized (stateMonitor) {
       if (closed.get()) {
-        assert future.completeExceptionally(new IllegalStateException("writer is closed"));
-        return new Submission(false, future);
+        return new Submission(
+            false, CompletableFuture.failedFuture(new IllegalStateException("writer is closed")));
       }
       if (!queue.offer(new Request(command, future))) {
-        assert future.completeExceptionally(new IllegalStateException("writer queue is full"));
-        return new Submission(false, future);
+        return new Submission(
+            false,
+            CompletableFuture.failedFuture(new IllegalStateException("writer queue is full")));
       }
       stateMonitor.notifyAll();
     }
@@ -237,18 +238,32 @@ public final class Writer implements AutoCloseable {
   }
 
   private void run() {
+    boolean drained = false;
     try {
       while (true) {
         Request request = claimNext();
-        if (request == null) return;
+        if (request == null) {
+          drained = true;
+          return;
+        }
         afterClaim.run();
         processClaimed(request);
       }
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
-      if (!abort.get()) health.degrade("writes_failed");
     } finally {
-      failOutstanding("writer stopped");
+      stop(drained);
+    }
+  }
+
+  /// Ends the writer thread. Any exit other than draining after close, such as an unexpected
+  /// exception, degrades health. Nobody processes commands afterwards, so new ones are refused and
+  /// outstanding ones fail at once; a claimed command may already be durable.
+  private void stop(boolean drained) {
+    if (!drained) health.degrade("writes_failed");
+    synchronized (stateMonitor) {
+      closed.set(true);
+      failOutstanding("writer stopped; outcome is unknown", "writer stopped");
     }
   }
 
@@ -289,12 +304,10 @@ public final class Writer implements AutoCloseable {
   private void processClaimed(Request request) {
     assert request != null;
     assert inFlight.compareAndSet(request, request);
-    try {
-      process(request);
-    } finally {
-      boolean cleared = inFlight.compareAndSet(request, null);
-      assert cleared;
-    }
+    process(request);
+    // An exception keeps the request in flight, so the stopping writer fails it at once.
+    boolean cleared = inFlight.compareAndSet(request, null);
+    assert cleared;
   }
 
   private void process(Request request) {
@@ -363,7 +376,7 @@ public final class Writer implements AutoCloseable {
       health.degrade("writes_failed");
       thread.interrupt();
     } finally {
-      failOutstanding("writer is closed");
+      failOutstanding("writer is closed", "writer is closed");
       if (interrupted) Thread.currentThread().interrupt();
     }
   }
@@ -376,12 +389,15 @@ public final class Writer implements AutoCloseable {
     thread.join(timeoutMillis, additionalNanos);
   }
 
-  private void failOutstanding(String message) {
-    assert message != null && !message.isBlank();
-    var failure = new IllegalStateException(message);
+  private void failOutstanding(String inFlightMessage, String queuedMessage) {
+    assert inFlightMessage != null && !inFlightMessage.isBlank();
+    assert queuedMessage != null && !queuedMessage.isBlank();
+    var failure = new IllegalStateException(queuedMessage);
     synchronized (stateMonitor) {
       Request current = inFlight.get();
-      if (current != null) current.future.completeExceptionally(failure);
+      if (current != null) {
+        current.future.completeExceptionally(new IllegalStateException(inFlightMessage));
+      }
       // The queue holds at most its capacity, so draining it is bounded.
       var waiting = new java.util.ArrayList<Request>(queue.size());
       queue.drainTo(waiting);

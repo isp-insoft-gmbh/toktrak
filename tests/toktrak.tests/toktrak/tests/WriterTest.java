@@ -9,7 +9,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import toktrak.*;
 import toktrak.health.HealthState;
 import toktrak.projection.Projection;
@@ -19,7 +18,7 @@ import toktrak.store.WriteCommand;
 import toktrak.store.Writer;
 
 final class WriterTest {
-  @TempDir Path dir;
+  @MemoryTempDir Path dir;
 
   @Test
   void given_acceptedCommand_when_awaitingSuccess_then_appendsAndAppliesProjection()
@@ -67,6 +66,7 @@ final class WriterTest {
       assertEquals(4, projection.eventCount());
       assertEquals(4, log.replay(_ -> {}));
     }
+    assertTrue(health.healthy(), "a clean close keeps the writer healthy");
   }
 
   @Test
@@ -250,6 +250,8 @@ final class WriterTest {
             blockingHook(claimEntered, releaseClaim),
             () -> {});
     try {
+      // Waiting until idle first makes the busy check below observe the flag being reset.
+      Polling.until(writer::idleForTest);
       var future = writer.submit(WriteCommand.devTest("system"));
       claimEntered.await();
       assertFalse(writer.idleForTest(), "a writer inside a claim is not idle");
@@ -378,8 +380,39 @@ final class WriterTest {
       claimEntered.await();
       var queued = writer.submit(WriteCommand.devTest("second"));
       releaseClaim.countDown();
-      assertFailed("writer stopped", claimed);
+      assertFailed("writer stopped; outcome is unknown", claimed);
       assertFailed("writer stopped", queued);
+    } finally {
+      writer.close();
+    }
+  }
+
+  @Test
+  void given_unexpectedErrorWhileWriting_when_writing_then_failsAtOnceAndRefusesLaterCommands()
+      throws Exception {
+    var health = new HealthState();
+    var writer =
+        Writer.startForTest(
+            EventLog.open(dir.resolve("events.ndjson")),
+            Projection.empty(),
+            health,
+            ClockSource.system(),
+            4,
+            Duration.ofSeconds(1),
+            Duration.ofSeconds(1),
+            () -> {},
+            () -> {
+              throw new AssertionError("simulated invariant breach");
+            });
+    try {
+      // A request left waiting would block for the 10-second write timeout, past the test limit.
+      var failure =
+          assertThrows(IllegalStateException.class, () -> writer.write(WriteCommand.devTest("a")));
+      assertEquals("writer stopped; outcome is unknown", failure.getMessage());
+      assertFalse(health.healthy());
+      var later = writer.trySubmit(WriteCommand.devTest("b"));
+      assertFalse(later.accepted());
+      assertTrue(later.future().isCompletedExceptionally());
     } finally {
       writer.close();
     }

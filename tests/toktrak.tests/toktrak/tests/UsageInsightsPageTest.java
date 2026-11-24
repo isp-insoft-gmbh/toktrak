@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 /// Insight charts rendered from a small multi-person corpus with daily and session reports.
 final class UsageInsightsPageTest {
@@ -18,7 +17,7 @@ final class UsageInsightsPageTest {
       Pattern.compile("<tr><th scope=\"row\">([^<]+)</th><td><svg class=\"spark\"(.*?)</svg>");
   private static final String WARNING = "<strong>Session data incomplete</strong>";
 
-  @TempDir Path directory;
+  @MemoryTempDir Path directory;
 
   @Test
   void given_twoPeopleWithVeryDifferentSpend_when_openingRange_then_trendsShareOneLogScale()

@@ -13,7 +13,6 @@ import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import toktrak.ClockSource;
 import toktrak.fx.FxClient;
 import toktrak.fx.FxService;
@@ -23,7 +22,7 @@ import toktrak.store.EventLog;
 import toktrak.store.Writer;
 
 final class FxServiceTest {
-  @TempDir Path directory;
+  @MemoryTempDir Path directory;
 
   @Test
   void given_redirectThenSuccessThenFxFailure_when_refreshing_then_persistsAndRetainsLastGoodRate()

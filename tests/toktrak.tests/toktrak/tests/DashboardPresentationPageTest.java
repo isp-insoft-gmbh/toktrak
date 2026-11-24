@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 /// Pins the dashboard presentation helpers: avatar initials, half-up money rounding, grouped token
 /// counts, and the label length limits.
@@ -16,7 +15,7 @@ final class DashboardPresentationPageTest {
   private static final String SESSION_MODEL_AT_LIMIT = "x".repeat(256);
   private static final String SESSION_MODEL_BEYOND_LIMIT = "y".repeat(257);
 
-  @TempDir Path directory;
+  @MemoryTempDir Path directory;
 
   @Test
   void

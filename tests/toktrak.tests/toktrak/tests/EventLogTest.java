@@ -14,12 +14,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import toktrak.store.EventEnvelope;
 import toktrak.store.EventLog;
 
 final class EventLogTest {
-  @TempDir Path dir;
+  @MemoryTempDir Path dir;
 
   @Test
   void given_newEnvelope_when_appendingAndReplaying_then_returnsNewlineTerminatedEvent()
@@ -287,6 +286,16 @@ final class EventLogTest {
   }
 
   @Test
+  void given_negativeReportedSize_when_validatingLog_then_rejectsSize() {
+    var ex =
+        assertThrows(
+            IllegalStateException.class, () -> EventLog.requireFileBytesWithinLimitForTest(-1));
+
+    assertEquals("event log size is invalid", ex.getMessage());
+    assertEquals(0, EventLog.requireFileBytesWithinLimitForTest(0));
+  }
+
+  @Test
   void given_logAtExactFileLimit_when_validatingLog_then_acceptsSize() {
     assertEquals(
         EventLog.MAX_FILE_BYTES,
@@ -500,9 +509,15 @@ final class EventLogTest {
     }
   }
 
+  /// Makes no progress once, then fails any retry, so code that keeps writing after a stall fails
+  /// at once instead of spinning past the test limit.
   private static final class StalledChannel implements WritableByteChannel {
+    private boolean stalled;
+
     @Override
     public int write(ByteBuffer source) {
+      if (stalled) throw new AssertionError("write retried after making no progress");
+      stalled = true;
       return 0;
     }
 

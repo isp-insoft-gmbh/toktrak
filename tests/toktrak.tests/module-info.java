@@ -1,4 +1,5 @@
 module toktrak.tests {
+  requires com.github.marschall.memoryfilesystem;
   requires com.nimbusds.jose.jwt;
   requires io.jstach.jstachio;
   requires java.logging;
