@@ -509,9 +509,15 @@ final class EventLogTest {
     }
   }
 
+  /// Makes no progress once, then fails any retry, so code that keeps writing after a stall fails
+  /// at once instead of spinning past the test limit.
   private static final class StalledChannel implements WritableByteChannel {
+    private boolean stalled;
+
     @Override
     public int write(ByteBuffer source) {
+      if (stalled) throw new AssertionError("write retried after making no progress");
+      stalled = true;
       return 0;
     }
 
