@@ -1,4 +1,4 @@
-min_version = "2026.11.12"
+min_version = "2026.11.13"
 
 [tool_alias]
 hyperfine = "github:sharkdp/hyperfine"
