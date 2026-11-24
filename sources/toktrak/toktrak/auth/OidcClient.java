@@ -164,7 +164,10 @@ public final class OidcClient {
       String subject = required(claims.getSubject(), "subject");
       List<String> audience = claims.getAudience();
       if (audience == null || !audience.contains(clientId)) throw invalid();
-      if (audience.size() > 1 && !clientId.equals(claims.getStringClaim("azp"))) throw invalid();
+      String authorizedParty = claims.getStringClaim("azp");
+      if ((audience.size() > 1 || authorizedParty != null) && !clientId.equals(authorizedParty)) {
+        throw invalid();
+      }
       Date expires = claims.getExpirationTime();
       Date issued = claims.getIssueTime();
       Date notBefore = claims.getNotBeforeTime();
