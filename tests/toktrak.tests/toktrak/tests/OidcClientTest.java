@@ -173,6 +173,12 @@ final class OidcClientTest {
             complete(client, callback, transaction);
           });
 
+      // Even a single-audience token must not name another authorized party.
+      customizer.set(builder -> builder.claim("azp", "client"));
+      assertEquals("subject-1", complete(client, callback, transaction).key().subject());
+      customizer.set(builder -> builder.claim("azp", "other"));
+      assertThrows(IllegalArgumentException.class, () -> complete(client, callback, transaction));
+
       // A future not-before claim is rejected; one within clock skew is accepted.
       customizer.set(builder -> builder.notBeforeTime(Date.from(NOW)));
       assertEquals("user@example.com", complete(client, callback, transaction).email());
