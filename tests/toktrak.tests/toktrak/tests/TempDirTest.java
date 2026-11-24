@@ -9,9 +9,20 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-final class MemoryTempDirTest {
-  @MemoryTempDir Path directory;
+final class TempDirTest {
+  @TempDir Path directory;
+  @DiskTempDir Path disk;
+
+  @Test
+  void given_plainAndDiskTempDirs_when_injected_then_onlyDiskOneUsesTheDefaultFileSystem() {
+    assertSame(directory, MemoryTempDirFactory.requireInMemory(directory));
+    assertEquals(FileSystems.getDefault(), disk.getFileSystem());
+    var onDisk =
+        assertThrows(IllegalStateException.class, () -> MemoryTempDirFactory.requireInMemory(disk));
+    assertTrue(onDisk.getMessage().contains(MemoryTempDirFactory.PROPERTY), onDisk.getMessage());
+  }
 
   @Test
   void given_memoryTempDir_when_usingStorageOperations_then_staysOffTheDefaultFileSystem()

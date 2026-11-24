@@ -24,7 +24,9 @@ final class PageFixtureTest {
       throws Exception {
     var direct = PageFixture.corpus(directory.resolve("direct"), CORPUS, UsageFixture.CLOCK);
     try (var served =
-        new UsageFixture(directory.resolve("served"), List.of("--corpus", CORPUS.toString()))) {
+        new UsageFixture(
+            directory.resolve("served"),
+            List.of("--corpus", MemoryTempDirFactory.devCorpusIn(directory).toString()))) {
       for (String query : QUERIES) {
         assertSamePage(
             served.visualizations(query), direct.visualizations(query), String.valueOf(query));

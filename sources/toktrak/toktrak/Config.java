@@ -2,6 +2,8 @@ package toktrak;
 
 import java.net.InetAddress;
 import java.net.URI;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Base64;
@@ -45,8 +47,14 @@ public record Config(
   }
 
   public static Config from(String[] args, Map<String, String> environment) {
+    return from(args, environment, FileSystems.getDefault());
+  }
+
+  /// Resolves the data directory and corpus in `fileSystem`; tests pass an in-memory one.
+  public static Config from(String[] args, Map<String, String> environment, FileSystem fileSystem) {
     Objects.requireNonNull(args, "args");
     Objects.requireNonNull(environment, "environment");
+    Objects.requireNonNull(fileSystem, "fileSystem");
     if (args.length > ARGUMENTS_MAX) {
       throw new IllegalArgumentException("arguments exceed " + ARGUMENTS_MAX + " entries");
     }
@@ -59,7 +67,7 @@ public record Config(
     if (data == null || data.isBlank()) {
       if (!dev)
         throw new IllegalArgumentException("TOKTRAK_DEV_AUTH=true or TOKTRAK_DATA_DIR is required");
-      data = Path.of("output", "toktrak-dev", "data").toString();
+      data = fileSystem.getPath("output", "toktrak-dev", "data").toString();
     }
     String baseUrl = environmentValue(environment, "TOKTRAK_BASE_URL");
     if (!dev && (baseUrl == null || baseUrl.isBlank())) {
@@ -109,7 +117,7 @@ public record Config(
         case "--corpus" -> {
           requireValue(args, index, "--corpus");
           index = Math.addExact(index, 1);
-          corpus = Path.of(args[index]);
+          corpus = fileSystem.getPath(args[index]);
         }
         case "--fail-writes" -> failWrites = true;
         case "--clock" -> {
@@ -130,7 +138,7 @@ public record Config(
       throw new IllegalArgumentException("--clock requires TOKTRAK_DEV_AUTH=true");
     return new Config(
         port,
-        Path.of(data),
+        fileSystem.getPath(data),
         baseUrl,
         dev,
         corpus,

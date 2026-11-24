@@ -74,7 +74,11 @@ final class OidcLoginHttpTest {
     try (var providerExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
       provider.setExecutor(providerExecutor);
       provider.start();
-      try (var app = App.start(new String[] {}, productionEnvironment(directory, issuer))) {
+      try (var app =
+          App.start(
+              new String[] {},
+              productionEnvironment(directory, issuer),
+              directory.getFileSystem())) {
         URI login = URI.create("http://127.0.0.1:" + app.port() + "/login");
         var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
         List<CompletableFuture<HttpResponse<String>>> responses =
@@ -141,7 +145,9 @@ final class OidcLoginHttpTest {
                 exchange,
                 toktrak.json.Json.write(Map.of("id_token", token(key, issuer, nonce.get())))));
     provider.start();
-    try (var app = App.start(new String[] {}, productionEnvironment(directory, issuer))) {
+    try (var app =
+        App.start(
+            new String[] {}, productionEnvironment(directory, issuer), directory.getFileSystem())) {
       URI base = URI.create("http://127.0.0.1:" + app.port());
       var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
 

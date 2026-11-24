@@ -15,6 +15,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import toktrak.BuildInfo;
 import toktrak.ClockSource;
 import toktrak.auth.AuthService;
@@ -30,7 +31,7 @@ import toktrak.usage.UsageService;
 final class HttpAdmissionTest {
   private static final int WORKER_COUNT = 64;
   private static final int QUEUE_CAPACITY = 256;
-  @MemoryTempDir Path directory;
+  @TempDir Path directory;
 
   @Test
   void

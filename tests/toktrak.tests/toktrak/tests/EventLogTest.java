@@ -14,11 +14,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import toktrak.store.EventEnvelope;
 import toktrak.store.EventLog;
 
 final class EventLogTest {
-  @MemoryTempDir Path dir;
+  @TempDir Path dir;
 
   @Test
   void given_newEnvelope_when_appendingAndReplaying_then_returnsNewlineTerminatedEvent()

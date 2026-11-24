@@ -138,7 +138,8 @@ final class ApiErrorHttpTest {
         Map.of(
             "TOKTRAK_DEV_AUTH", "true",
             "TOKTRAK_DATA_DIR", directory.toString(),
-            "TOKTRAK_PORT", "0"));
+            "TOKTRAK_PORT", "0"),
+        directory.getFileSystem());
   }
 
   private static void assertApiError(HttpResponse<String> response, String code, String message) {

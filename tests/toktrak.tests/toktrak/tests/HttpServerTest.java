@@ -23,7 +23,7 @@ final class HttpServerTest {
 
   @Test
   void given_developmentApp_when_startingServer_then_bindsLoopback() {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       assertTrue(app.bindAddress().isLoopbackAddress());
     }
   }
@@ -33,7 +33,7 @@ final class HttpServerTest {
   void
       given_nonLoopbackAuthority_when_requestingDevelopmentLogin_then_rejectsBeforeAutomaticAuthentication()
           throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       String response;
       try (var socket = new Socket(app.bindAddress(), app.port())) {
         socket.setSoTimeout(2_000);
@@ -56,7 +56,8 @@ final class HttpServerTest {
 
   @Test
   void given_productionApp_when_startingServer_then_bindsContainerInterface() {
-    try (var app = App.start(new String[] {}, productionEnvironment(directory))) {
+    try (var app =
+        App.start(new String[] {}, productionEnvironment(directory), directory.getFileSystem())) {
       assertTrue(app.bindAddress().isAnyLocalAddress());
     }
   }
@@ -64,7 +65,7 @@ final class HttpServerTest {
   @Test
   void given_developmentApp_when_requestingChanges_then_rendersBundledReleaseHistory()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       var response = get(app, "/changes");
 
       assertEquals(200, response.statusCode());
@@ -79,7 +80,7 @@ final class HttpServerTest {
   @Test
   void given_healthyApp_when_requestingHealth_then_returnsJsonAndSecurityHeaders()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       var response = get(app, "/health");
       assertEquals(200, response.statusCode());
       assertEquals("nosniff", response.header("x-content-type-options"));
@@ -91,7 +92,7 @@ final class HttpServerTest {
   @Test
   void given_methodAtAndAboveLengthLimit_when_requestingRoutes_then_enforcesBoundary()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       var client = HttpClient.newHttpClient();
       var accepted =
           HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + app.port() + "/health"))
@@ -113,7 +114,7 @@ final class HttpServerTest {
 
   @Test
   void given_pathAboveLengthLimit_when_requestingRoute_then_returnsUriTooLong() throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       var response = get(app, "/" + "a".repeat(2_049));
       assertEquals(414, response.statusCode());
       assertEquals("text/html; charset=utf-8", response.header("content-type"));
@@ -125,7 +126,7 @@ final class HttpServerTest {
   @Test
   void given_queryAtAndAboveLengthLimit_when_requestingPublicRoute_then_enforcesLimit()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       String queryAtLimit = "probe=" + "a".repeat(8 * 1024 - "probe=".length());
       assertEquals(200, get(app, "/health?" + queryAtLimit).statusCode());
 
@@ -151,7 +152,7 @@ final class HttpServerTest {
       previous.put(name, System.getProperty(name));
       System.clearProperty(name);
     }
-    try (var _ = App.start(new String[] {}, devEnvironment())) {
+    try (var _ = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       for (var entry : expected.entrySet()) {
         assertEquals(entry.getValue(), System.getProperty(entry.getKey()));
       }
@@ -167,7 +168,7 @@ final class HttpServerTest {
   @Test
   void given_oversizedRequestHeader_when_reachingHttpServer_then_rejectsBeforeApplicationRouting()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       try (var socket = new Socket(app.bindAddress(), app.port())) {
         socket.setSoTimeout(2_000);
         String request =
@@ -186,7 +187,7 @@ final class HttpServerTest {
 
   @Test
   void given_unknownApiRoute_when_requestingRoute_then_returnsNotFoundEnvelope() throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       var response = get(app, "/api/nope");
       assertEquals(404, response.statusCode());
       assertTrue(response.body().startsWith("{\"error\":{"), response.body());
@@ -199,7 +200,7 @@ final class HttpServerTest {
   @Test
   void given_oversizedApiRoute_when_requestingRoute_then_returnsBoundedErrorEnvelope()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       var response = get(app, "/api/" + "x".repeat(2_050));
       assertEquals(414, response.statusCode());
       assertTrue(response.body().contains("\"code\":\"uri_too_long\""));
@@ -209,7 +210,7 @@ final class HttpServerTest {
   @Test
   void given_unknownDevelopmentBrowserRoute_when_requestingRoute_then_returnsDiagnosticHtml()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       var response = get(app, "/nope");
       assertEquals(404, response.statusCode());
       assertEquals("text/html; charset=utf-8", response.header("content-type"));
@@ -225,7 +226,7 @@ final class HttpServerTest {
   @Test
   void given_developmentFailureRoute_when_requestingRoute_then_returnsDiagnosticHtml()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       var response = get(app, "/debug/error");
       assertEquals(500, response.statusCode());
       assertTrue(response.body().contains("Internal server error. Try again."));
@@ -237,7 +238,8 @@ final class HttpServerTest {
   @Test
   void given_productionFailurePath_when_requestingRoute_then_returnsUsefulNotFoundHtml()
       throws Exception {
-    try (var app = App.start(new String[] {}, productionEnvironment(directory))) {
+    try (var app =
+        App.start(new String[] {}, productionEnvironment(directory), directory.getFileSystem())) {
       var response = get(app, "/debug/error");
       assertEquals(404, response.statusCode());
       assertTrue(response.body().contains("Route not found."));

@@ -6,6 +6,8 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
@@ -72,11 +74,18 @@ public final class App implements AutoCloseable {
   }
 
   public static App start(String[] args, Map<String, String> environment) {
+    return start(args, environment, FileSystems.getDefault());
+  }
+
+  /// Starts with the data directory and corpus resolved in `fileSystem`; tests pass an in-memory
+  /// one.
+  public static App start(String[] args, Map<String, String> environment, FileSystem fileSystem) {
     Objects.requireNonNull(args, "args");
     Objects.requireNonNull(environment, "environment");
+    Objects.requireNonNull(fileSystem, "fileSystem");
     configureHttpServer();
     configureLogging();
-    Config config = Config.from(args, environment);
+    Config config = Config.from(args, environment, fileSystem);
     Assets assets = Assets.load();
     try {
       return new App(config, assets, DataLock.acquire(config.dataDirectory()));

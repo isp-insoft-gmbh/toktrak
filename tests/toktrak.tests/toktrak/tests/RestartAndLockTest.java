@@ -10,12 +10,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import toktrak.*;
 import toktrak.store.WriteCommand;
 
 final class RestartAndLockTest {
-  @TempDir Path dir;
+  @DiskTempDir Path dir;
 
   @Test
   void given_existingEventLog_when_restartingApp_then_rebuildsProjection() throws Exception {
