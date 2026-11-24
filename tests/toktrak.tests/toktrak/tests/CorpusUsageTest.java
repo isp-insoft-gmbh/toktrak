@@ -15,14 +15,17 @@ final class CorpusUsageTest {
   @TempDir Path directory;
 
   @Test
-  void given_sanitizedDevelopmentCorpus_when_replaying_then_matchesAssertedCanonicalTotals() {
+  void given_sanitizedDevelopmentCorpus_when_replaying_then_matchesAssertedCanonicalTotals()
+      throws Exception {
+    String corpus = MemoryTempDirFactory.devCorpusIn(directory).toString();
     try (var app =
         App.start(
-            new String[] {"--corpus", "tests/corpus/dev.jsonl", "--clock", "2026-07-15T00:00:00Z"},
+            new String[] {"--corpus", corpus, "--clock", "2026-07-15T00:00:00Z"},
             Map.of(
                 "TOKTRAK_DEV_AUTH", "true",
                 "TOKTRAK_PORT", "0",
-                "TOKTRAK_DATA_DIR", directory.toString()))) {
+                "TOKTRAK_DATA_DIR", directory.resolve("data").toString()),
+            directory.getFileSystem())) {
       var summary = app.projection().usageSummary();
       assertEquals(new BigDecimal("6472.8836786188425035311"), summary.costUsd());
       assertEquals(BigInteger.valueOf(4_555_214_918L), summary.totalTokens());

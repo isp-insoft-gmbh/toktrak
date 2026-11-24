@@ -44,7 +44,8 @@ final class UsageFixture implements AutoCloseable {
             Map.of(
                 "TOKTRAK_DEV_AUTH", "true",
                 "TOKTRAK_PORT", "0",
-                "TOKTRAK_DATA_DIR", dataDirectory.toString()));
+                "TOKTRAK_DATA_DIR", dataDirectory.toString()),
+            MemoryTempDirFactory.requireInMemory(dataDirectory).getFileSystem());
     base = URI.create("http://127.0.0.1:" + app.port());
     client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
     HttpResponse<String> login =

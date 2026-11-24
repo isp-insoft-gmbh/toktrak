@@ -209,9 +209,15 @@ public final class Build {
           "toktrak.log", new CoverageMinimum(90, 75),
           "toktrak.projection", new CoverageMinimum(80, 70),
           "toktrak.store", new CoverageMinimum(75, 60));
+
+  /// Matches `TestLauncher`: every `@TempDir` lives in memory unless a test asks for the disk.
+  private static final String JUNIT_TEMP_DIRECTORIES =
+      "-Djunit.jupiter.tempdir.factory.default=toktrak.tests.MemoryTempDirFactory";
+
   private static final String PIT_JVM_ARGS =
       "-ea,-Djunit.jupiter.execution.timeout.default=5s,"
-          + "-Djunit.platform.execution.listeners.deactivate=com.diffplug.selfie.*";
+          + JUNIT_TEMP_DIRECTORIES
+          + ",-Djunit.platform.execution.listeners.deactivate=com.diffplug.selfie.*";
   private static final String PIT_MAIN =
       "org.pitest." + "mutation" + "test.commandline." + "Mutation" + "CoverageReport";
   private static final Set<String> DEV_EXCLUSIVE_COMMANDS =
@@ -599,6 +605,7 @@ public final class Build {
               List.of(
                   "-ea",
                   "-Djunit.jupiter.execution.timeout.default=5s",
+                  JUNIT_TEMP_DIRECTORIES,
                   "-cp",
                   classpath,
                   PIT_MAIN));
@@ -615,6 +622,7 @@ public final class Build {
                   List.of(
                       "-ea",
                       "-Djunit.jupiter.execution.timeout.default=5s",
+                      JUNIT_TEMP_DIRECTORIES,
                       "-cp",
                       classpath,
                       PIT_MAIN));

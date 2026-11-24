@@ -231,7 +231,9 @@ public final class EventLog implements AutoCloseable {
   }
 
   private static long requireFileBytesWithinLimit(long fileBytes) {
-    assert fileBytes >= 0;
+    // The size comes from the file system, so validate it; some providers report -1 for a
+    // directory.
+    if (fileBytes < 0) throw new IllegalStateException("event log size is invalid");
     if (fileBytes > MAX_FILE_BYTES) {
       throw new IllegalStateException("event log exceeds " + MAX_FILE_BYTES + " bytes");
     }

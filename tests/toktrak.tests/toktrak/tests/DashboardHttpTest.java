@@ -22,10 +22,12 @@ final class DashboardHttpTest {
   @Test
   void given_corpusViewer_when_exploringDashboard_then_rendersCanonicalNarrativeAndCurrency()
       throws Exception {
+    String corpus = MemoryTempDirFactory.devCorpusIn(directory).toString();
     try (var app =
         App.start(
-            new String[] {"--corpus", "tests/corpus/dev.jsonl", "--clock", "2026-07-15T00:00:00Z"},
-            environment(false))) {
+            new String[] {"--corpus", corpus, "--clock", "2026-07-15T00:00:00Z"},
+            environment(false),
+            directory.getFileSystem())) {
       URI base = URI.create("http://127.0.0.1:" + app.port());
       var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
       assertEquals(302, send(client, base.resolve("/visualizations"), null).statusCode());

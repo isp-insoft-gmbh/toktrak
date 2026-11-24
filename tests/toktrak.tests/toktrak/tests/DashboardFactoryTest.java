@@ -64,6 +64,7 @@ final class DashboardFactoryTest {
             session.lastActivity()));
     assertFalse(session.models().contains(SESSION_MODEL_BEYOND_LIMIT), session.models());
 
+    assertEquals(1, snapshot.blocks().size(), "gap blocks hold no usage and are not shown");
     var block = snapshot.blocks().getFirst();
     assertEquals(
         List.of("2026-07-14T07:00:00.000Z", "gpt-test", "$0.50", "4,294,967,296", "12"),
@@ -89,6 +90,13 @@ final class DashboardFactoryTest {
     assertEquals("213.64", snapshot.averageCounter());
     assertEquals(DashboardSnapshot.ReportCompleteness.PARTIAL, snapshot.reportCompleteness());
     assertEquals(DashboardSnapshot.DashboardHealth.HEALTHY, snapshot.health());
+    // Issue #132: half of the newest 20 corpus blocks are ccusage gaps; real windows fill the
+    // table.
+    assertEquals(20, snapshot.blocks().size());
+    for (var row : snapshot.blocks()) {
+      assertFalse(row.start().equals("2026-07-14T00:37:01.086Z"), row.toString());
+      assertFalse(row.start().equals("2026-07-07T23:41:46.671Z"), row.toString());
+    }
   }
 
   private static DashboardSnapshot snapshot(PageFixture pages) {
@@ -117,6 +125,10 @@ final class DashboardFactoryTest {
     String block =
         "{\"id\":\"block-1\",\"startTime\":\"2026-07-14T07:00:00.000Z\",\"models\":[\"gpt-test\"],"
             + "\"costUSD\":0.5,\"totalTokens\":4294967296,\"entries\":12}";
+    // Newer than block-1, so it would be the first row if gaps were shown.
+    String gap =
+        "{\"id\":\"gap-1\",\"isGap\":true,\"isActive\":false,\"entries\":0,\"models\":[],"
+            + "\"costUSD\":0,\"totalTokens\":0,\"startTime\":\"2026-07-14T12:00:00.000Z\"}";
     return "{\"trackerVersion\":\"1\",\"ccusageVersion\":\"20.0.17\",\"clientTimeZone\":\"UTC\","
         + "\"full\":true,\"generatedAt\":\"2026-07-14T23:00:00Z\",\"reports\":{"
         + "\"daily\":{\"ok\":true,\"json\":{\"daily\":["
@@ -125,6 +137,8 @@ final class DashboardFactoryTest {
         + session
         + "]}},\"blocks\":{\"ok\":true,\"json\":{\"blocks\":["
         + block
+        + ","
+        + gap
         + "]}}}}";
   }
 }
