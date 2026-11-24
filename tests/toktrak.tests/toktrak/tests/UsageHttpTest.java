@@ -338,7 +338,8 @@ final class UsageHttpTest {
         Map.of(
             "TOKTRAK_DEV_AUTH", "true",
             "TOKTRAK_DATA_DIR", directory.toString(),
-            "TOKTRAK_PORT", "0"));
+            "TOKTRAK_PORT", "0"),
+        directory.getFileSystem());
   }
 
   private static String login(HttpClient client, URI base) throws Exception {

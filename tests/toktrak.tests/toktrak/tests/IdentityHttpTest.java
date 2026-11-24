@@ -33,7 +33,8 @@ final class IdentityHttpTest {
             Map.of(
                 "TOKTRAK_DEV_AUTH", "true",
                 "TOKTRAK_DATA_DIR", directory.toString(),
-                "TOKTRAK_PORT", "0"))) {
+                "TOKTRAK_PORT", "0"),
+            directory.getFileSystem())) {
       URI base = URI.create("http://127.0.0.1:" + app.port());
       var client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
       HttpResponse<String> signedOutHome = send(client, base.resolve("/"), "GET", null, null, null);

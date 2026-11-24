@@ -19,6 +19,7 @@ import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /// Every money figure on the visualizations page must reconcile, for any range. Daily-based figures
 /// reconcile exactly with the range total; session figures with the session total, and the coverage
@@ -61,7 +62,7 @@ final class VisualizationsConsistencyTest {
     "claude-opus-4-8", "gpt-5.5", "[pi] gpt-5.5", "gemini-3", "glm-5", "kimi-k3", "Other models"
   };
 
-  @MemoryTempDir Path directory;
+  @TempDir Path directory;
 
   @Test
   void given_developmentCorpus_when_openingCalendarRanges_then_everyFigureReconciles()

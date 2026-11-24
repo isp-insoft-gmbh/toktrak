@@ -42,13 +42,13 @@ final class PageFixture {
 
   /// `corpus` rendered at `clock`; it is copied into `directory` only before the first append.
   static PageFixture corpus(Path directory, Path corpus, String clock) throws Exception {
-    Files.createDirectories(directory);
+    Files.createDirectories(MemoryTempDirFactory.requireInMemory(directory));
     return new PageFixture(directory.resolve("events.ndjson"), corpus, Instant.parse(clock));
   }
 
   /// Only the signed-in development viewer, rendered at the shared test clock.
   static PageFixture viewer(Path directory) throws Exception {
-    Files.createDirectories(directory);
+    Files.createDirectories(MemoryTempDirFactory.requireInMemory(directory));
     Path events = directory.resolve("events.ndjson");
     var fixture = new PageFixture(events, null, Instant.parse(UsageFixture.CLOCK));
     fixture.append(

@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import toktrak.*;
 import toktrak.health.HealthState;
 import toktrak.projection.Projection;
@@ -14,7 +13,7 @@ import toktrak.store.WriteCommand;
 import toktrak.store.Writer;
 
 final class ShutdownTest {
-  @TempDir Path dir;
+  @DiskTempDir Path dir;
 
   @Test
   void given_runningApp_when_closingTwice_then_completesWithoutError() {

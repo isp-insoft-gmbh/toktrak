@@ -895,7 +895,7 @@ public final class BuildTest {
             "--threads",
             "--mutationUnitSize",
             "--timeoutConst",
-            "-ea,-Djunit.jupiter.execution.timeout.default=5s,-Djunit.platform.execution.listeners.deactivate=com.diffplug.selfie.*",
+            "-ea,-Djunit.jupiter.execution.timeout.default=5s,-Djunit.jupiter.tempdir.factory.default=toktrak.tests.MemoryTempDirFactory,-Djunit.platform.execution.listeners.deactivate=com.diffplug.selfie.*",
             "--verbosity",
             "NO_SPINNER",
             "--fullMutationMatrix")) {

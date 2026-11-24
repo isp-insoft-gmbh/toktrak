@@ -59,7 +59,8 @@ final class DevDataTest {
             Map.of(
                 "TOKTRAK_DEV_AUTH", "true",
                 "TOKTRAK_PORT", "0",
-                "TOKTRAK_DATA_DIR", dataDirectory.toString()))) {
+                "TOKTRAK_DATA_DIR", dataDirectory.toString()),
+            directory.getFileSystem())) {
       assertNotNull(app);
       assertEquals(
           Files.readString(corpus), Files.readString(dataDirectory.resolve("events.ndjson")));

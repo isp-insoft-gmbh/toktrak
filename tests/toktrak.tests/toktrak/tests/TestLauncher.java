@@ -51,6 +51,8 @@ public final class TestLauncher {
     if (args.length == 0) throw new IllegalArgumentException("test group required");
     TestGroup group = TestGroup.parse(args[0]);
     System.setProperty("toktrak.quiet", "true");
+    // Same default as PIT and coverage (tools/Build.java): temporary directories live in memory.
+    System.setProperty(MemoryTempDirFactory.PROPERTY, MemoryTempDirFactory.class.getName());
     if (group == TestGroup.UNIT) {
       // Same limit as PIT (tools/Build.java), so a test too slow for PIT fails here first.
       System.setProperty("junit.jupiter.execution.timeout.default", "5s");

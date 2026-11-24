@@ -25,7 +25,8 @@ final class HealthModeTest {
 
   @Test
   void given_failWritesMode_when_startingApp_then_reportsDegradedHealth() throws Exception {
-    try (var app = App.start(new String[] {"--fail-writes"}, devEnvironment())) {
+    try (var app =
+        App.start(new String[] {"--fail-writes"}, devEnvironment(), directory.getFileSystem())) {
       var response = get(app, "/health");
       assertEquals(503, response.statusCode());
       assertTrue(response.body().contains("\"status\":\"degraded\""));
@@ -35,7 +36,7 @@ final class HealthModeTest {
 
   @Test
   void given_devAuthMode_when_requestingRoot_then_returnsDevAuthStrip() throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       var response = get(app, "/");
       assertEquals(200, response.statusCode());
       assertTrue(response.body().contains("Dev auth"));
@@ -51,7 +52,7 @@ final class HealthModeTest {
   @Test
   void given_fingerprintedStylesheet_when_requestingAsset_then_returnsImmutableVerifiedBytes()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       String assetUrl = stylesheetUrl(get(app, "/"));
       var response = get(app, assetUrl);
       String expected = Files.readString(Path.of("sources/toktrak/assets/public/main.css"));
@@ -76,7 +77,7 @@ final class HealthModeTest {
   @Test
   void given_noncanonicalAssetRequests_when_requestingRoutes_then_returnsBrowserNotFound()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       String assetUrl = stylesheetUrl(get(app, "/"));
       int fingerprintStart = "/assets/main.".length();
       char replacement = assetUrl.charAt(fingerprintStart) == '0' ? '1' : '0';
@@ -101,7 +102,7 @@ final class HealthModeTest {
   @Test
   void given_noncanonicalAssetTargets_when_requestingRawHttp_then_returnsNotFound()
       throws Exception {
-    try (var app = App.start(new String[] {}, devEnvironment())) {
+    try (var app = App.start(new String[] {}, devEnvironment(), directory.getFileSystem())) {
       String assetUrl = stylesheetUrl(get(app, "/"));
       String fileName = assetUrl.substring("/assets/".length());
       for (String target :

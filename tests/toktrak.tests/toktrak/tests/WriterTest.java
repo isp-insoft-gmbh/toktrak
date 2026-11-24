@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import toktrak.*;
 import toktrak.health.HealthState;
 import toktrak.projection.Projection;
@@ -18,7 +19,7 @@ import toktrak.store.WriteCommand;
 import toktrak.store.Writer;
 
 final class WriterTest {
-  @MemoryTempDir Path dir;
+  @TempDir Path dir;
 
   @Test
   void given_acceptedCommand_when_awaitingSuccess_then_appendsAndAppliesProjection()
