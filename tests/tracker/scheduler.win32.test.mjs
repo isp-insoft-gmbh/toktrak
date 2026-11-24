@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -90,6 +90,30 @@ test("given_windowsProcess_when_verifyingInstallPrivileges_then_matchesWindowsPr
   } else {
     await assert.doesNotReject(() => tracker.verifyWindowsInstallPrivileges());
   }
+});
+
+test("given_unusualWindowsDirectory_when_verifyingInstallPrivileges_then_decidesFromListingOnly", {
+  skip: process.platform !== "win32",
+}, async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "toktrak-elevation-test-"));
+  const systemRoot = process.env.SystemRoot;
+  context.after(async () => {
+    process.env.SystemRoot = systemRoot;
+    await rm(directory, { recursive: true, force: true });
+  });
+  const { module: tracker } = await renderedTracker(directory);
+  const verifyWith = (root) => {
+    process.env.SystemRoot = root;
+    return tracker.verifyWindowsInstallPrivileges();
+  };
+
+  await assert.rejects(() => verifyWith("relative\\Windows"), /could not be determined/u);
+  await assert.rejects(() => verifyWith(""), /could not be determined/u);
+  const windows = path.join(directory, "Windows");
+  await assert.rejects(() => verifyWith(windows), /could not be determined/u);
+  // A listable directory reads as elevated: the check trusts only the operating system's ACL.
+  await mkdir(path.join(windows, "System32", "config"), { recursive: true });
+  await assert.rejects(() => verifyWith(windows), /must run without administrator privileges/u);
 });
 
 test("given_oldWindowsTask_when_runningUpdatedTracker_then_migratesOnceAndPreservesFiles", {

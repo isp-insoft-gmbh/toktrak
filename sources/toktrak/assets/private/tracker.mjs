@@ -270,31 +270,32 @@ async function completeUsageRepair(scriptPath, reports) {
   await atomicWrite(usageRepairPath(scriptPath), Buffer.from(USAGE_REPAIR_REVISION));
 }
 
-export function windowsIntegrityLevel(groups) {
-  if (typeof groups !== "string")
-    throw new Error("Windows privilege level could not be determined; installation stopped");
-  const levels = [...groups.matchAll(/S-1-16-([0-9]+)(?![0-9])/gu)];
-  if (levels.length !== 1) throw new Error("Windows privilege level could not be determined; installation stopped");
-  return Number.parseInt(levels[0][1], 10);
+/// Classifies the attempt to list a directory that only an elevated token may read: success
+/// means elevated, access denied means not elevated, and any other outcome cannot decide.
+export function windowsElevated(listingError) {
+  if (listingError === undefined) return true;
+  if (listingError?.code === "EPERM" || listingError?.code === "EACCES") return false;
+  throw new Error("Windows privilege level could not be determined; installation stopped");
 }
 
 export async function verifyWindowsInstallPrivileges() {
   if (process.platform !== "win32") return;
-  let stdout;
+  let listingError;
   try {
     const windowsDirectory = requiredPath(process.env.SystemRoot, "Windows directory");
     if (!path.isAbsolute(windowsDirectory)) throw new Error("Windows directory is invalid");
-    ({ stdout } = await exec(path.join(windowsDirectory, "System32", "whoami.exe"), ["/groups", "/fo", "csv", "/nh"], {
-      timeout: 30_000,
-      maxBuffer: 64 * 1_024,
-      windowsHide: true,
-    }));
-  } catch {
-    throw new Error("Windows privilege level could not be determined; installation stopped");
+    // Only SYSTEM and Administrators may list the registry hive directory (32-bit Node reads the
+    // equally restricted SysWOW64 copy), so listing needs an elevated token. This avoids the child
+    // process and account-name lookups of whoami, which stalled on a domain-joined machine.
+    // Trade-off: any access denial counts as not elevated, so a policy that denies even
+    // administrators would let an elevated install proceed.
+    await readdir(path.join(windowsDirectory, "System32", "config"));
+  } catch (error) {
+    listingError = error;
   }
-  if (windowsIntegrityLevel(stdout) >= 12_288) {
+  if (windowsElevated(listingError)) {
     throw new Error(
-      "Windows installation must run without administrator privileges; close this terminal and run it from a normal PowerShell window",
+      "Windows installation must run without administrator privileges; close this terminal and run it from a normal, non-elevated one",
     );
   }
 }

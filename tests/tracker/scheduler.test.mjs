@@ -5,15 +5,19 @@ import path from "node:path";
 import test from "node:test";
 import { renderedTracker } from "./scheduler-helpers.mjs";
 
-test("given_windowsGroupOutput_when_readingIntegrityLevel_then_returnsMandatoryLevel", async (context) => {
+const failure = (code) => Object.assign(new Error(code ?? "no code"), code ? { code } : {});
+
+test("given_restrictedDirectoryListingOutcome_when_classifyingElevation_then_failsClosedOnUnknowns", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "toktrak-scheduler-test-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const { module: tracker } = await renderedTracker(directory);
 
-  assert.equal(tracker.windowsIntegrityLevel('"Mandatory Label","S-1-16-8192"'), 8_192);
-  assert.equal(tracker.windowsIntegrityLevel('"Mandatory Label","S-1-16-12288"'), 12_288);
-  assert.throws(() => tracker.windowsIntegrityLevel("no integrity SID"), /could not be determined/u);
-  assert.throws(() => tracker.windowsIntegrityLevel("S-1-16-8192 S-1-16-12288"), /could not be determined/u);
+  assert.equal(tracker.windowsElevated(undefined), true);
+  assert.equal(tracker.windowsElevated(failure("EPERM")), false);
+  assert.equal(tracker.windowsElevated(failure("EACCES")), false);
+  for (const unknown of [failure("ENOENT"), failure("EIO"), failure(undefined), null, "EPERM"]) {
+    assert.throws(() => tracker.windowsElevated(unknown), /could not be determined/u, String(unknown));
+  }
 });
 
 test("given_schedulerInputs_when_renderingWindowsDefinition_then_emitsBoundedNativeXml", async (context) => {
