@@ -5,6 +5,11 @@
   "lockFileMaintenance": { "enabled": true },
   "packageRules": [
     {
+      "description": "min_version in mise.toml requires this release locally; mise self-update only installs releases at least 24 hours old",
+      "matchPackageNames": ["jdx/mise"],
+      "minimumReleaseAge": "2 days"
+    },
+    {
       "matchDatasources": ["docker", "java-version"],
       "matchPackageNames": ["java", "/(^|\\/)eclipse-temurin$/", "/(^|\\/)amazoncorretto$/"],
       "groupName": "Java toolchain",
