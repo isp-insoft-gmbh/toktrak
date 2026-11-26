@@ -67,9 +67,9 @@ Realistic data matters more than full anonymity when designing dashboards or
 checking migrations. `mise run corpus-import` turns a deployment's
 `events.ndjson` into pseudonymous development data:
 
-1. Copy `TOKTRAK_DATA_DIR/events.ndjson` from your deployment to a private
-   location outside this repository. The log is append-only, so a copy taken
-   while the server runs is consistent up to its last complete line.
+1. Stop TokTrak, copy `TOKTRAK_DATA_DIR/events.ndjson` to a private location
+   outside this repository, then restart it. A live copy can end in a partial
+   event, which the importer rejects rather than skipping.
 2. Run `mise run corpus-import <events.ndjson>`.
 3. Run `mise run dev --corpus output/corpus/production-anonymized.jsonl`.
 
