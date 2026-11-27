@@ -97,13 +97,8 @@ public final class HttpSupport {
     assert body != null;
     byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
     if (bytes.length > 64 * 1024) throw new IllegalArgumentException("SSE body is too large");
-    var headers = exchange.getResponseHeaders();
-    headers.set("Content-Type", "text/event-stream; charset=utf-8");
-    headers.set("Cache-Control", "no-store");
-    headers.set("X-Content-Type-Options", "nosniff");
-    headers.set("X-Frame-Options", "DENY");
-    headers.set("Referrer-Policy", "no-referrer");
-    headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY);
+    exchange.getResponseHeaders().set("Cache-Control", "no-store");
+    setResponseHeaders(exchange, "text/event-stream; charset=utf-8");
     exchange.sendResponseHeaders(200, 0);
     try (var output = exchange.getResponseBody()) {
       output.write(bytes);
@@ -181,6 +176,17 @@ public final class HttpSupport {
       throw new IllegalArgumentException(
           "response body exceeds " + RESPONSE_BODY_BYTES_MAX + " bytes");
     }
+    setResponseHeaders(exchange, contentType);
+    exchange.sendResponseHeaders(status, body.length);
+    try (var output = exchange.getResponseBody()) {
+      output.write(body);
+    }
+    assert exchange.getResponseCode() == status;
+  }
+
+  private static void setResponseHeaders(HttpExchange exchange, String contentType) {
+    assert exchange != null;
+    assert contentType != null && !contentType.isBlank();
     var headers = exchange.getResponseHeaders();
     assert headers != null;
     headers.set("Content-Type", contentType);
@@ -193,10 +199,5 @@ public final class HttpSupport {
         contentType.startsWith("text/html")
             ? HTML_CONTENT_SECURITY_POLICY
             : CONTENT_SECURITY_POLICY);
-    exchange.sendResponseHeaders(status, body.length);
-    try (var output = exchange.getResponseBody()) {
-      output.write(body);
-    }
-    assert exchange.getResponseCode() == status;
   }
 }

@@ -38,6 +38,59 @@ final class HttpSupportTest {
   }
 
   @Test
+  void given_jsonResponse_when_sending_then_setsNoStoreAndRestrictiveSecurityHeaders()
+      throws Exception {
+    HttpResponse<byte[]> response = serve(exchange -> HttpSupport.json(exchange, 201, "{}"));
+    assertEquals(201, response.statusCode());
+    assertEquals("application/json; charset=utf-8", header(response, "Content-Type"));
+    assertEquals("no-store", header(response, "Cache-Control"));
+    assertSecurityHeaders(response, "default-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+  }
+
+  @Test
+  void given_htmlResponse_when_sending_then_setsHtmlPolicyWithoutWeakeningOtherHeaders()
+      throws Exception {
+    HttpResponse<byte[]> response = serve(exchange -> HttpSupport.html(exchange, 200, "<p>ok</p>"));
+    assertEquals(200, response.statusCode());
+    assertEquals("text/html; charset=utf-8", header(response, "Content-Type"));
+    assertEquals("no-store", header(response, "Cache-Control"));
+    assertSecurityHeaders(
+        response,
+        "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri"
+            + " 'none'");
+  }
+
+  @Test
+  void given_assetResponse_when_sending_then_preservesImmutableCacheAndResourcePolicy()
+      throws Exception {
+    HttpResponse<byte[]> response =
+        serve(exchange -> HttpSupport.asset(exchange, "text/css", bytes(1)));
+    assertEquals(200, response.statusCode());
+    assertEquals("text/css", header(response, "Content-Type"));
+    assertEquals("public, max-age=31536000, immutable", header(response, "Cache-Control"));
+    assertEquals("same-origin", header(response, "Cross-Origin-Resource-Policy"));
+    assertSecurityHeaders(response, "default-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+  }
+
+  @Test
+  void given_eventStreamWithCacheHeader_when_sending_then_overridesItWithNoStore()
+      throws Exception {
+    HttpResponse<byte[]> response =
+        serve(exchange -> {
+          exchange.getResponseHeaders().set("Cache-Control", "public, max-age=60");
+          HttpSupport.eventStream(exchange, "data: {}\n\n");
+        });
+    assertEquals("no-store", header(response, "Cache-Control"));
+  }
+
+  private static void assertSecurityHeaders(HttpResponse<?> response, String policy) {
+    assertEquals("nosniff", header(response, "X-Content-Type-Options"));
+    assertEquals("DENY", header(response, "X-Frame-Options"));
+    assertEquals("no-referrer", header(response, "Referrer-Policy"));
+    assertEquals(policy, header(response, "Content-Security-Policy"));
+  }
+
+  @Test
   void given_eventStreamBodyBoundary_when_sending_then_acceptsLimitAndRejectsOverflow()
       throws Exception {
     String atLimit = text(EVENT_STREAM_BYTES_MAX);
